@@ -101,8 +101,8 @@ test("org apply: success publishes atomically, archives disbandments, bumps vers
     assert.ok(hiredPosition.isFile(), "hired position package must land in the live workspace");
     assert.notEqual(after.updatedAt, before.updatedAt);
     const tree = await api(server.baseUrl, "/org/tree", { token: server.token });
-    const snapshot = tree.body as { version: { seq: number } };
-    assert.equal(snapshot.version.seq, hired.version.seq);
+    const snapshot = tree.body as { updatedAt: string; positionCount: number };
+    assert.equal(snapshot.updatedAt, hired.version.updatedAt, "org-tree.v1 updatedAt aligns the applied state");
 
     const move = await api(server.baseUrl, "/org/apply", {
       method: "POST",

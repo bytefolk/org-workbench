@@ -1,77 +1,42 @@
 import type { OrgTreeSnapshot } from "@org-workbench/shared";
 
-/** Fixture mirrors the oss-maintainer workspace shape (1 owner + 3 positions). */
+/**
+ * Fixture mirrors the engine's org-tree.v1 fixture shape
+ * (tests/apps/fixtures/org-tree-oss-maintainer.json): nested tree, children
+ * sorted by id, budget on every node.
+ */
 export const SNAPSHOT: OrgTreeSnapshot = {
   schemaVersion: "org-tree.v1",
-  workspacePath: "/ws/oss-maintainer",
   business: "oss-maintainer",
   owner: "repo-owner",
-  edges: [
-    { positionId: "repo-owner", reportTo: null },
-    { positionId: "issue-researcher", reportTo: "repo-owner" },
-    { positionId: "release-engineer", reportTo: "repo-owner" },
-    { positionId: "community-operator", reportTo: "repo-owner" },
-  ],
-  positions: [
+  updatedAt: "2026-08-23T00:00:00.000Z",
+  positionCount: 4,
+  depth: 2,
+  tree: [
     {
       id: "repo-owner",
-      name: "Repo Owner",
-      description: "Owns the repository roadmap.",
       reportTo: null,
-      package: { name: "repo-owner", version: "0.1.0", digest: "", localReference: "/ws/x" },
-      mode: "read_only",
-      memoryScope: "/",
-      toolAllow: ["Read", "Grep", "Glob"],
-      toolDeny: [],
       budget: { perTask: { tokens: 40000, iterations: 12 }, perDay: { tokens: 400000, iterations: 96 } },
-      metadata: {},
-    },
-    {
-      id: "issue-researcher",
-      name: "Issue Researcher",
-      description: "Triages issues.",
-      reportTo: "repo-owner",
-      package: { name: "issue-researcher", version: "0.1.0", digest: "", localReference: "/ws/x" },
-      mode: "read_only",
-      memoryScope: "/",
-      toolAllow: ["Read", "Grep", "Glob"],
-      toolDeny: [],
-      budget: { perTask: { tokens: 20000, iterations: 8 }, perDay: { tokens: 200000, iterations: 64 } },
-      metadata: {},
-    },
-    {
-      id: "release-engineer",
-      name: "Release Engineer",
-      description: "Prepares release notes.",
-      reportTo: "repo-owner",
-      package: { name: "release-engineer", version: "0.1.0", digest: "", localReference: "/ws/x" },
-      mode: "read_only",
-      memoryScope: "/",
-      toolAllow: ["Read"],
-      toolDeny: [],
-      budget: { perTask: { tokens: 20000 }, perDay: { tokens: 200000 } },
-      metadata: {},
-    },
-    {
-      id: "community-operator",
-      name: "Community Operator",
-      description: "Summarizes community feedback.",
-      reportTo: "repo-owner",
-      package: { name: "community-operator", version: "0.1.0", digest: "", localReference: "/ws/x" },
-      mode: "read_only",
-      memoryScope: "/",
-      toolAllow: ["Read"],
-      toolDeny: [],
-      metadata: {},
+      children: [
+        {
+          id: "community-operator",
+          reportTo: "repo-owner",
+          budget: { perTask: { tokens: 20000, iterations: 8 }, perDay: { tokens: 200000, iterations: 64 } },
+          children: [],
+        },
+        {
+          id: "issue-researcher",
+          reportTo: "repo-owner",
+          budget: { perTask: { tokens: 20000, iterations: 8 }, perDay: { tokens: 200000, iterations: 64 } },
+          children: [],
+        },
+        {
+          id: "release-engineer",
+          reportTo: "repo-owner",
+          budget: { perTask: { tokens: 20000 }, perDay: { tokens: 200000 } },
+          children: [],
+        },
+      ],
     },
   ],
-  organization: {
-    schemaVersion: "workspace-org.v1",
-    business: "oss-maintainer",
-    description: "Open-source maintainer organization.",
-    owner: "repo-owner",
-    roles: [],
-    updatedAt: "2026-08-23T00:00:00.000Z",
-  },
-  version: { seq: 1, updatedAt: "2026-08-23T00:00:00.000Z" },
 };

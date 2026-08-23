@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import {
   AppShell,
-  Badge,
   Button,
   ModuleRail,
   Sidebar,
@@ -13,6 +12,7 @@ import { BudgetBar, OrgTree, PositionCard } from "@org-workbench/ui";
 import type { PositionCardData } from "@org-workbench/ui";
 import type {
   HealthResponse,
+  OrgTreeNodeV1,
   OrgTreeSnapshot,
   WorkspaceInfoResponse,
 } from "@org-workbench/shared";
@@ -95,10 +95,9 @@ export function App() {
   }, [refresh]);
 
   const engineOk = health?.engine?.available === true;
-  const missingBudgetCount =
-    snapshot?.positions.filter((position) => !position.budget).length ?? 0;
-  const selectedPosition =
-    snapshot?.positions.find((position) => position.id === selectedId) ?? null;
+  /** The frozen org-tree.v1 carries ids/budgets only; display names and modes
+   * arrive via the selected position card (/positions/:id). */
+  const selectedPosition = card.data;
 
   return (
     <AppShell
@@ -132,7 +131,7 @@ export function App() {
             ) : snapshot ? (
               <OrgTree
                 snapshot={snapshot}
-                versionStamp={snapshot.version.seq}
+                versionStamp={snapshot.updatedAt}
                 selectedId={selectedId}
                 onSelect={(id) => void selectPosition(id)}
               />
@@ -149,9 +148,6 @@ export function App() {
           breadcrumbs={<Breadcrumbs workspace={workspaceInfo} selected={selectedPosition} snapshot={snapshot} />}
           actions={
             <div className="owb-topbar-actions">
-              {missingBudgetCount > 0 ? (
-                <Badge tone="warning">{missingBudgetCount} 个岗位预算未配齐</Badge>
-              ) : null}
               {selectedPosition?.budget ? (
                 <BudgetBar
                   format="compact"
@@ -204,6 +200,15 @@ function TreeSkeleton() {
   );
 }
 
+function findNodeById(nodes: OrgTreeNodeV1[], id: string): OrgTreeNodeV1 | null {
+  for (const node of nodes) {
+    if (node.id === id) return node;
+    const found = findNodeById(node.children, id);
+    if (found) return found;
+  }
+  return null;
+}
+
 function Breadcrumbs({
   workspace,
   selected,
@@ -223,9 +228,9 @@ function Breadcrumbs({
     let cursor: string | null = selected.reportTo;
     while (cursor && !guard.has(cursor)) {
       guard.add(cursor);
-      const parent = snapshot?.positions.find((position) => position.id === cursor);
+      const parent = snapshot ? findNodeById(snapshot.tree, cursor) : null;
       if (!parent) break;
-      chain.unshift(parent.name);
+      chain.unshift(parent.id);
       cursor = parent.reportTo;
     }
     parts.push(...chain);

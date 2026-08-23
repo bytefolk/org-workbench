@@ -3,8 +3,8 @@ import { describe, expect, it, vi } from "vitest";
 import { OrgTree } from "../src/org-tree";
 import { SNAPSHOT } from "./fixtures";
 
-describe("OrgTree (D1 spec §2)", () => {
-  it("renders enterprise root + positions: root=企业, owner beneath it, deeper by reportTo", () => {
+describe("OrgTree (D1 spec §2, frozen org-tree.v1)", () => {
+  it("renders enterprise root + nested positions: root=企业, owner beneath, children by reportTo", () => {
     render(<OrgTree snapshot={SNAPSHOT} />);
     const tree = screen.getByRole("tree");
     expect(tree).toBeInTheDocument();
@@ -17,26 +17,27 @@ describe("OrgTree (D1 spec §2)", () => {
     expect(enterprise).toHaveAttribute("aria-level", "1");
     expect(enterprise).toHaveAttribute("aria-expanded", "true");
 
-    const owner = screen.getByText("Repo Owner").closest('[role="treeitem"]');
+    const owner = screen.getByText("repo-owner").closest('[role="treeitem"]');
     expect(owner).toHaveAttribute("aria-level", "2");
+    expect(owner).toHaveAttribute("aria-selected", "false");
 
-    const child = screen.getByText("Issue Researcher").closest('[role="treeitem"]');
+    const child = screen.getByText("issue-researcher").closest('[role="treeitem"]');
     expect(child).toHaveAttribute("aria-level", "3");
   });
 
-  it("falls back to reportTo-null positions as top level when business is missing", () => {
+  it("falls back to the engine tree as top level when business is missing", () => {
     render(<OrgTree snapshot={{ ...SNAPSHOT, business: "" }} />);
     const items = screen.getAllByRole("treeitem");
     expect(items).toHaveLength(4);
     expect(screen.queryByText("oss-maintainer")).not.toBeInTheDocument();
-    const owner = screen.getByText("Repo Owner").closest('[role="treeitem"]');
+    const owner = screen.getByText("repo-owner").closest('[role="treeitem"]');
     expect(owner).toHaveAttribute("aria-level", "1");
   });
 
   it("selects a position on click and reports it", () => {
     const onSelect = vi.fn();
     render(<OrgTree snapshot={SNAPSHOT} onSelect={onSelect} />);
-    fireEvent.click(screen.getByText("Issue Researcher"));
+    fireEvent.click(screen.getByText("issue-researcher"));
     expect(onSelect).toHaveBeenCalledWith("issue-researcher");
   });
 
@@ -48,12 +49,12 @@ describe("OrgTree (D1 spec §2)", () => {
 
     fireEvent.click(toggles[1]!); // collapse repo-owner
     expect(onExpand).toHaveBeenCalledWith("repo-owner", false);
-    expect(screen.queryByText("Issue Researcher")).not.toBeInTheDocument();
-    expect(screen.getByText("Repo Owner")).toBeInTheDocument();
+    expect(screen.queryByText("issue-researcher")).not.toBeInTheDocument();
+    expect(screen.getByText("repo-owner")).toBeInTheDocument();
 
     fireEvent.click(toggles[0]!); // collapse enterprise
     expect(onExpand).toHaveBeenCalledWith("__enterprise__", false);
-    expect(screen.queryByText("Repo Owner")).not.toBeInTheDocument();
+    expect(screen.queryByText("repo-owner")).not.toBeInTheDocument();
   });
 
   it("supports keyboard navigation (ModuleRail arrow pattern)", () => {
@@ -76,30 +77,12 @@ describe("OrgTree (D1 spec §2)", () => {
 
     // Enter collapses the focused enterprise root.
     fireEvent.keyDown(tree, { key: "Enter" });
-    expect(screen.queryByText("Repo Owner")).not.toBeInTheDocument();
+    expect(screen.queryByText("repo-owner")).not.toBeInTheDocument();
   });
 
-  it("renders the empty state when there are no positions", () => {
-    render(<OrgTree snapshot={{ ...SNAPSHOT, positions: [], edges: [] }} />);
+  it("renders the empty state when the tree has no positions", () => {
+    render(<OrgTree snapshot={{ ...SNAPSHOT, tree: [], positionCount: 0, depth: 0 }} />);
     expect(screen.getByText("尚无岗位，点击招聘")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "招聘岗位" })).toBeDisabled();
-  });
-
-  it("all-read-only workspace: suppresses per-row locks, shows the read-only note", () => {
-    render(<OrgTree snapshot={SNAPSHOT} />);
-    expect(screen.getByText("本工作区为只读模式")).toBeInTheDocument();
-    expect(document.querySelectorAll(".ui-org-tree__status svg")).toHaveLength(0);
-  });
-
-  it("mixed workspace: per-row lock on read_only positions, no read-only note", () => {
-    const mixed = {
-      ...SNAPSHOT,
-      positions: SNAPSHOT.positions.map((position, index) =>
-        index === 1 ? { ...position, mode: "approval_required" as const } : position,
-      ),
-    };
-    render(<OrgTree snapshot={mixed} />);
-    expect(screen.queryByText("本工作区为只读模式")).not.toBeInTheDocument();
-    expect(document.querySelectorAll(".ui-org-tree__status svg")).toHaveLength(3);
   });
 });

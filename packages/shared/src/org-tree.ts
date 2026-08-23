@@ -1,14 +1,16 @@
 /**
  * Organization tree contract mirror.
  *
- * Mirrors digital-employee `apps/cli/workspace/templates.ts` RenderedOrganization
- * (schemaVersion workspace-org.v1, origin/main) plus the budget field approved in
- * #157 R3 (DEC-DE-157-002) and specified by the V1 design
- * (apps/cli/org/budget.ts, configs/workspace-org.schema.json — pending publish).
+ * org-tree.v1 mirrors the engine's frozen minimal shape
+ * (digital-employee apps/cli/org/model.ts buildOrgTree +
+ * configs/org-tree.schema.json, published per the schema-publishing
+ * discipline). The node deliberately carries only id/reportTo/budget/
+ * children; display names and modes live in workspace-org.v1 roles and are
+ * served via /positions/:id — the client never invents semantics.
  *
- * Mirror discipline: when digital-employee publishes the schema or changes the
- * shape, this file follows; the client never invents semantics. Budget units are
- * tokens / iterations only — never currency (#155 non-goal).
+ * workspace-org.v1 mirrors digital-employee `apps/cli/workspace/templates.ts`
+ * RenderedOrganization plus the #157 R3 budget field (DEC-DE-157-002).
+ * Budget units are tokens / iterations only — never currency (#155 non-goal).
  */
 
 export const WORKSPACE_ORG_SCHEMA_VERSION = "workspace-org.v1" as const;
@@ -22,10 +24,10 @@ export interface BudgetScope {
 }
 
 /**
- * Position budget declaration (REQ-006: hire = budget attached, exactly one per
- * position). "Fully allocated" = perTask AND perDay each carry at least one
- * positive integer cap; checking full allocation is the engine's job
- * (digital-employee org apply), never the client's.
+ * Position budget declaration (REQ-006: hire = budget attached, exactly one
+ * per position). "Fully allocated" = perTask AND perDay each carry at least
+ * one positive integer cap; checking full allocation is the engine's job,
+ * never the client's.
  */
 export interface PositionBudget {
   perTask: BudgetScope;
@@ -46,18 +48,13 @@ export interface OrgRole {
   id: string;
   name: string;
   description: string;
-  /** null = root/owner position. */
   reportTo: string | null;
   package: PositionPackageRef;
   mode: PositionMode;
   memoryScope: string;
   toolAllow: string[];
   toolDeny: string[];
-  /**
-   * Present once the workspace materializes the #157 budget contract. The D0
-   * example workspace carries it; the #166-era template output does not yet.
-   */
-  budget?: PositionBudget;
+  budget: PositionBudget;
   metadata: Record<string, string>;
 }
 
@@ -77,17 +74,24 @@ export interface OrgTreeVersion {
   updatedAt: string;
 }
 
-/** Snapshot served by GET /org/tree. */
+/** org-tree.v1 node (frozen minimal shape — mirrors the engine builder). */
+export interface OrgTreeNodeV1 {
+  id: string;
+  reportTo: string | null;
+  budget: PositionBudget;
+  children: OrgTreeNodeV1[];
+}
+
+/** org-tree.v1 snapshot served by GET /org/tree (frozen minimal shape). */
 export interface OrgTreeSnapshot {
   schemaVersion: typeof ORG_TREE_SCHEMA_VERSION;
-  workspacePath: string;
   business: string;
   owner: string;
-  /** Reporting edges derived from roles (child -> parent). */
-  edges: Array<{ positionId: string; reportTo: string | null }>;
-  positions: OrgRole[];
-  organization: OrganizationFile;
-  version: OrgTreeVersion;
+  /** Applied-state stamp from the organization model; aligns org.updated. */
+  updatedAt: string;
+  positionCount: number;
+  depth: number;
+  tree: OrgTreeNodeV1[];
 }
 
 export interface WorkspaceManifest {

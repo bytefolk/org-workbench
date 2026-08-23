@@ -1,13 +1,13 @@
-import { Building2, ChevronRight, Folder, FolderOpen, Lock, TriangleAlert } from "lucide-react";
+import { Building2, ChevronRight, Folder, FolderOpen } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import { cn } from "@fullstack-ai-infra/ui";
 import { BudgetBar } from "./budget-bar";
-import type { OrgRole, OrgTreeSnapshot, TreeNodeState } from "./types";
+import type { OrgTreeNodeV1, OrgTreeSnapshot } from "./types";
 
 export interface OrgTreeProps {
   snapshot: OrgTreeSnapshot;
-  /** Monotonic control-plane version stamp; change re-triggers the 180ms fade. */
-  versionStamp?: number | null;
+  /** Applied-state stamp (updatedAt); change re-triggers the 180ms fade. */
+  versionStamp?: string | null;
   selectedId?: string | null;
   onSelect?: (id: string) => void;
   onExpand?: (id: string, expanded: boolean) => void;
@@ -16,9 +16,8 @@ export interface OrgTreeProps {
 }
 
 export interface OrgTreeNodeProps {
-  node: OrgRole;
+  node: OrgTreeNodeV1;
   depth: number;
-  state: TreeNodeState;
   selected: boolean;
   expanded: boolean;
   hasChildren: boolean;
@@ -28,18 +27,9 @@ export interface OrgTreeNodeProps {
   onFocus: () => void;
 }
 
-/** Node state per the D1 spec §2: readonly = mode read_only (execution-mode
- * metadata, not "you have no permission"). Consumption-driven states
- * (warning/over/ai) land with D3/D4. */
-export function treeNodeState(node: OrgRole): TreeNodeState {
-  if (node.mode === "read_only") return "readonly";
-  return "ok";
-}
-
 export function OrgTreeNode({
   node,
   depth,
-  state,
   selected,
   expanded,
   hasChildren,
@@ -56,13 +46,7 @@ export function OrgTreeNode({
       aria-selected={selected}
       aria-expanded={hasChildren ? expanded : undefined}
       tabIndex={tabIndex}
-      className={cn(
-        "ui-org-tree__row",
-        selected && "is-selected",
-        state === "warning" && "is-warning",
-        state === "over" && "is-over",
-        state === "readonly" && "is-readonly",
-      )}
+      className={cn("ui-org-tree__row", selected && "is-selected")}
       style={{ paddingLeft: `calc(${depth} * var(--ui-space-4, 16px) + 8px)` }}
       onClick={(event) => {
         if ((event.target as HTMLElement).closest("[data-ui-org-toggle]")) {
@@ -93,21 +77,14 @@ export function OrgTreeNode({
       <span className="ui-org-tree__icon" aria-hidden="true">
         {expanded ? <FolderOpen size={15} /> : <Folder size={15} />}
       </span>
-      <span className="ui-org-tree__label" title={node.name}>
-        {node.name}
+      <span className="ui-org-tree__label" title={node.id}>
+        {node.id}
       </span>
-      {node.budget ? (
-        <BudgetBar
-          className="ui-org-tree__budget"
-          format="compact"
-          declared={{ taskLimit: node.budget.perTask, dailyLimit: node.budget.perDay }}
-        />
-      ) : null}
-      <span className="ui-org-tree__status" aria-hidden="true">
-        {state === "readonly" ? <Lock size={13} /> : null}
-        {state === "warning" ? <TriangleAlert size={13} /> : null}
-        {state === "over" ? <TriangleAlert size={13} className="is-over" /> : null}
-      </span>
+      <BudgetBar
+        className="ui-org-tree__budget"
+        format="compact"
+        declared={{ taskLimit: node.budget.perTask, dailyLimit: node.budget.perDay }}
+      />
     </div>
   );
 }
@@ -117,7 +94,7 @@ const ENTERPRISE_ID = "__enterprise__";
 interface FlatNode {
   id: string;
   kind: "enterprise" | "position";
-  role: OrgRole | null;
+  node: OrgTreeNodeV1 | null;
   name: string;
   depth: number;
   hasChildren: boolean;
@@ -125,19 +102,18 @@ interface FlatNode {
 }
 
 /**
- * OrgTree — accessible read-only org directory tree (D1 spec §2).
+ * OrgTree — accessible org directory tree (D1 spec §2, frozen org-tree.v1).
  *
- * Root = the enterprise (snapshot.business, Brand icon); the owner position
- * (reportTo === null) renders as the first level beneath it; deeper levels
- * hang off reportTo edges. Fallback: when business is missing, reportTo-null
- * positions become the top level. Per spec §5 clarifications: when every
- * position is mode read_only, per-row lock icons are suppressed and a tree
- * header note "本工作区为只读模式" is shown instead.
+ * Root = the enterprise (snapshot.business, Brand icon); the engine's nested
+ * tree[] (reportTo-null owner as first level, children by reporting line)
+ * renders beneath it. Labels are position ids — the frozen org-tree.v1 node
+ * deliberately carries only id/reportTo/budget/children; display names and
+ * modes are served via /positions/:id (position card).
  *
  * Accessibility: role=tree/treeitem, roving tabindex; ArrowUp/Down/Home/End
  * move, ArrowRight/Left expand/collapse or move to child/parent, Enter
- * toggles (ModuleRail arrow pattern). Version-stamp driven updates with a
- * 180ms fade; the UI never polls.
+ * toggles (ModuleRail arrow pattern). Version-stamp (updatedAt) driven
+ * updates with a 180ms fade; the UI never polls.
  */
 export function OrgTree({
   snapshot,
@@ -148,35 +124,20 @@ export function OrgTree({
   className,
   ariaLabel = "组织目录树",
 }: OrgTreeProps) {
-  const childrenOf = useMemo(() => {
-    const map = new Map<string | null, OrgRole[]>();
-    for (const position of snapshot.positions) {
-      const key = position.reportTo ?? null;
-      const bucket = map.get(key);
-      if (bucket) bucket.push(position);
-      else map.set(key, [position]);
-    }
-    return map;
-  }, [snapshot.positions]);
-
-  const roots = childrenOf.get(null) ?? [];
   const enterpriseName = snapshot.business?.trim() ?? "";
-  const useEnterpriseRoot = enterpriseName.length > 0 && roots.length > 0;
-  /** Positions with no owner root degrade to top level (fallback per spec). */
-  const topLevel = roots.length > 0 ? roots : snapshot.positions;
-
-  const allReadOnly =
-    snapshot.positions.length > 0 &&
-    snapshot.positions.every((position) => position.mode === "read_only");
+  const useEnterpriseRoot = enterpriseName.length > 0 && snapshot.tree.length > 0;
+  const topLevel = snapshot.tree;
 
   const allParentIds = useMemo(() => {
     const ids = new Set<string>();
     if (useEnterpriseRoot && topLevel.length > 0) ids.add(ENTERPRISE_ID);
-    for (const position of snapshot.positions) {
-      if ((childrenOf.get(position.id) ?? []).length > 0) ids.add(position.id);
-    }
+    const visit = (node: OrgTreeNodeV1): void => {
+      if (node.children.length > 0) ids.add(node.id);
+      for (const child of node.children) visit(child);
+    };
+    for (const node of topLevel) visit(node);
     return ids;
-  }, [snapshot.positions, childrenOf, useEnterpriseRoot, topLevel.length]);
+  }, [topLevel, useEnterpriseRoot]);
 
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set(allParentIds));
   const [focusedId, setFocusedId] = useState<string | null>(selectedId ?? null);
@@ -192,26 +153,26 @@ export function OrgTree({
 
   const flatNodes = useMemo<FlatNode[]>(() => {
     const result: FlatNode[] = [];
-    const pushPosition = (role: OrgRole, depth: number): void => {
-      const hasChildren = (childrenOf.get(role.id) ?? []).length > 0;
-      const isExpanded = hasChildren && expanded.has(role.id);
-      result.push({ id: role.id, kind: "position", role, name: role.name, depth, hasChildren, expanded: isExpanded });
+    const pushNode = (node: OrgTreeNodeV1, depth: number): void => {
+      const hasChildren = node.children.length > 0;
+      const isExpanded = hasChildren && expanded.has(node.id);
+      result.push({ id: node.id, kind: "position", node, name: node.id, depth, hasChildren, expanded: isExpanded });
       if (isExpanded) {
-        for (const child of childrenOf.get(role.id) ?? []) pushPosition(child, depth + 1);
+        for (const child of node.children) pushNode(child, depth + 1);
       }
     };
     if (useEnterpriseRoot) {
       const hasChildren = topLevel.length > 0;
       const isExpanded = hasChildren && expanded.has(ENTERPRISE_ID);
-      result.push({ id: ENTERPRISE_ID, kind: "enterprise", role: null, name: enterpriseName, depth: 0, hasChildren, expanded: isExpanded });
+      result.push({ id: ENTERPRISE_ID, kind: "enterprise", node: null, name: enterpriseName, depth: 0, hasChildren, expanded: isExpanded });
       if (isExpanded) {
-        for (const role of topLevel) pushPosition(role, 1);
+        for (const node of topLevel) pushNode(node, 1);
       }
     } else {
-      for (const role of topLevel) pushPosition(role, 0);
+      for (const node of topLevel) pushNode(node, 0);
     }
     return result;
-  }, [childrenOf, expanded, topLevel, useEnterpriseRoot, enterpriseName]);
+  }, [topLevel, expanded, useEnterpriseRoot, enterpriseName]);
 
   const focusedIndex = flatNodes.findIndex((entry) => entry.id === focusedId);
 
@@ -276,7 +237,7 @@ export function OrgTree({
         if (current.kind === "enterprise") {
           moveFocus(focusedIndex + 1);
         } else {
-          const childIndex = flatNodes.findIndex((entry) => entry.role?.reportTo === current.id);
+          const childIndex = flatNodes.findIndex((entry) => entry.node?.id === current.node?.children[0]?.id);
           if (childIndex >= 0) moveFocus(childIndex);
         }
       }
@@ -286,8 +247,8 @@ export function OrgTree({
       event.preventDefault();
       if (current.hasChildren && current.expanded) {
         toggleNode(current.id);
-      } else if (current.kind === "position" && current.role?.reportTo) {
-        const parentIndex = flatNodes.findIndex((entry) => entry.id === current.role?.reportTo);
+      } else if (current.kind === "position" && current.node?.reportTo) {
+        const parentIndex = flatNodes.findIndex((entry) => entry.id === current.node?.reportTo);
         if (parentIndex >= 0) moveFocus(parentIndex);
       }
       return;
@@ -306,7 +267,7 @@ export function OrgTree({
     return () => clearTimeout(timer);
   }, [versionStamp]);
 
-  if (snapshot.positions.length === 0) {
+  if (snapshot.positionCount === 0 || snapshot.tree.length === 0) {
     return (
       <div className={cn("ui-org-tree", "ui-org-tree--empty", className)}>
         <p>尚无岗位，点击招聘</p>
@@ -326,11 +287,6 @@ export function OrgTree({
       className={cn("ui-org-tree", refreshed && "is-refreshed", className)}
       onKeyDown={handleKeyDown}
     >
-      {allReadOnly ? (
-        <div className="ui-org-tree__readonly-note" role="note">
-          本工作区为只读模式
-        </div>
-      ) : null}
       {flatNodes.map((entry) =>
         entry.kind === "enterprise" ? (
           <div
@@ -369,9 +325,8 @@ export function OrgTree({
         ) : (
           <OrgTreeNode
             key={entry.id}
-            node={entry.role as OrgRole}
+            node={entry.node as OrgTreeNodeV1}
             depth={entry.depth}
-            state={allReadOnly ? "ok" : treeNodeState(entry.role as OrgRole)}
             selected={selectedId === entry.id}
             expanded={entry.expanded}
             hasChildren={entry.hasChildren}

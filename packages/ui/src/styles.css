@@ -47,18 +47,6 @@
   box-shadow: inset 3px 0 0 var(--ui-primary);
 }
 
-.ui-org-tree__row.is-over > .ui-org-tree__status {
-  color: var(--ui-danger);
-}
-
-.ui-org-tree__row.is-warning > .ui-org-tree__status {
-  color: var(--ui-warning);
-}
-
-.ui-org-tree__row.is-readonly > .ui-org-tree__status {
-  color: var(--ui-foreground-muted);
-}
-
 .ui-org-tree__toggle {
   display: inline-flex;
   align-items: center;
@@ -111,16 +99,6 @@
   flex: none;
 }
 
-.ui-org-tree__status {
-  display: inline-flex;
-  flex: none;
-  align-items: center;
-}
-
-.ui-org-tree__status .is-over {
-  color: var(--ui-danger);
-}
-
 .ui-org-tree--empty {
   align-items: center;
   justify-content: center;
@@ -128,15 +106,6 @@
   gap: var(--ui-space-3, 12px);
   color: var(--ui-foreground-muted);
   text-align: center;
-}
-
-.ui-org-tree__readonly-note {
-  padding: 4px var(--ui-space-2, 8px);
-  margin-bottom: var(--ui-space-2, 8px);
-  font-size: 12px;
-  color: var(--ui-foreground-muted);
-  background: var(--ui-surface-inset);
-  border-radius: var(--ui-radius-md, 10px);
 }
 
 .ui-org-tree__row--enterprise {

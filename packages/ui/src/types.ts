@@ -1,7 +1,8 @@
 /** Org-workbench UI types. Field semantics mirror digital-employee contracts
- * (#157 R3, workspace-org.v1); the client never invents semantics. */
+ * (org-tree.v1 frozen minimal shape; workspace-org.v1 roles via /positions/:id);
+ * the client never invents semantics. */
 
-export type { OrgRole, OrgTreeSnapshot } from "@org-workbench/shared";
+export type { OrgRole, OrgTreeSnapshot, OrgTreeNodeV1 } from "@org-workbench/shared";
 
 export interface BudgetCaps {
   tokens?: number;
@@ -20,9 +21,6 @@ export interface PositionCardData {
   budget: { perTask: BudgetCaps; perDay: BudgetCaps } | null;
   metadata: Record<string, string>;
 }
-
-/** D1 display state of a tree node (consumption-driven states land with D3/D4). */
-export type TreeNodeState = "ok" | "warning" | "over" | "readonly" | "ai";
 
 export function primaryCap(caps: BudgetCaps | null | undefined): number | null {
   if (!caps) return null;
