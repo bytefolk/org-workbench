@@ -130,6 +130,19 @@
   text-align: center;
 }
 
+.ui-org-tree__readonly-note {
+  padding: 4px var(--ui-space-2, 8px);
+  margin-bottom: var(--ui-space-2, 8px);
+  font-size: 12px;
+  color: var(--ui-foreground-muted);
+  background: var(--ui-surface-inset);
+  border-radius: var(--ui-radius-md, 10px);
+}
+
+.ui-org-tree__row--enterprise {
+  font-weight: 600;
+}
+
 .ui-org-tree__hire-placeholder {
   border: 1px dashed var(--ui-border-strong);
   background: none;

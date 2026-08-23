@@ -32,8 +32,8 @@ export function primaryCap(caps: BudgetCaps | null | undefined): number | null {
 export function capsText(caps: BudgetCaps | null | undefined): string {
   const tokens = caps?.tokens;
   const iterations = caps?.iterations;
-  if (tokens !== undefined && iterations !== undefined) return `${tokens.toLocaleString()} tok · ${iterations} iter`;
+  if (tokens !== undefined && iterations !== undefined) return `${tokens.toLocaleString()} tokens · ${iterations} iterations`;
   if (tokens !== undefined) return `${tokens.toLocaleString()} tokens`;
-  if (iterations !== undefined) return `${iterations.toLocaleString()} iter`;
+  if (iterations !== undefined) return `${iterations.toLocaleString()} iterations`;
   return "—";
 }

@@ -14,7 +14,7 @@ describe("BudgetBar (D1 spec §4 dual-phase contract)", () => {
     const daily = screen.getByRole("meter", { name: "单日声明" });
     expect(task).toHaveClass("is-declared");
     expect(daily).toHaveClass("is-declared");
-    expect(screen.getByText(/40,000 tok · 12 iter/)).toBeInTheDocument();
+    expect(screen.getByText(/40,000 tokens · 12 iterations/)).toBeInTheDocument();
     expect(screen.queryByText(/%$/)).not.toBeInTheDocument();
   });
 
