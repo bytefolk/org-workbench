@@ -1,0 +1,11 @@
+{
+  "$schema": "https://raw.githubusercontent.com/fullstack-ai-infra/digital-employee/main/configs/workspace.schema.json",
+  "schemaVersion": "workspace.v1alpha1",
+  "name": "oss-maintainer",
+  "description": "Open-source maintainer organization: a repo-owner lead with issue research, release engineering, and community operations positions.",
+  "template": "oss-maintainer",
+  "createdAt": "2026-08-23T13:40:37.394Z",
+  "organization": "./organization.v1alpha1.json",
+  "positions": "./positions",
+  "context": "./context"
+}

@@ -1,0 +1,13 @@
+# Electron packaging skeleton.
+# NOTE (D0 honesty): full packaging/notarization wiring lands with the
+# macOS-first build milestone; this file pins identity and mac targets so the
+# later pass is a config change, not a design change.
+appId: org.fullstack-ai-infra.org-workbench
+productName: Org Workbench
+directories:
+  output: release
+mac:
+  category: public.app-category.developer-tools
+  target:
+    - dmg
+    - zip

@@ -1,0 +1,14 @@
+{
+  "name": "@org-workbench/desktop",
+  "version": "0.0.0",
+  "description": "Electron shell for org-workbench. Spawns the local control plane and renders via a whitelisted IPC bridge.",
+  "license": "Apache-2.0",
+  "private": true,
+  "main": "src/main.js",
+  "scripts": {
+    "start": "electron ."
+  },
+  "devDependencies": {
+    "electron": "^33.0.0"
+  }
+}

@@ -1,0 +1,26 @@
+{
+  "name": "org-workbench",
+  "private": true,
+  "version": "0.0.0",
+  "description": "Org Workbench — file tree is the org chart. Electron shell + local control plane for digital-employee workspaces.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "build": "tsc -b",
+    "check": "npm run build && node --test \"apps/server/dist/test/*.test.js\"",
+    "dev:server": "npm run build && node apps/server/dist/src/index.js",
+    "dev:desktop": "npm run build && electron apps/desktop/src/main.js",
+    "typecheck": "tsc -b --force"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "typescript": "^5.6.0"
+  }
+}

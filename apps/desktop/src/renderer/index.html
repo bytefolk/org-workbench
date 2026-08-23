@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta
+    http-equiv="Content-Security-Policy"
+    content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'"
+  />
+  <title>org-workbench · D0</title>
+  <link rel="stylesheet" href="./style.css" />
+</head>
+<body>
+  <header>
+    <h1>org-workbench <span class="badge">D0 骨架</span></h1>
+    <p class="subtitle">文件树即组织架构 · 本地控制面 · API v0</p>
+  </header>
+
+  <main>
+    <section id="status-card" class="card">
+      <h2>控制面状态</h2>
+      <div id="status-body">加载中…</div>
+      <button id="refresh-status" type="button">刷新</button>
+    </section>
+
+    <section id="workspace-card" class="card">
+      <h2>工作区</h2>
+      <div id="workspace-body">尚未打开工作区</div>
+      <button id="open-workspace" type="button">打开示例工作区…</button>
+    </section>
+
+    <section id="tree-card" class="card">
+      <h2>组织树（org-tree.v1 快照）</h2>
+      <div id="tree-body">打开工作区后显示</div>
+    </section>
+
+    <section id="events-card" class="card">
+      <h2>事件流（SSE）</h2>
+      <ul id="events-body"></ul>
+    </section>
+  </main>
+
+  <script src="./app.js"></script>
+</body>
+</html>

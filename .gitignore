@@ -1,0 +1,11 @@
+node_modules/
+dist/
+*.tsbuildinfo
+.DS_Store
+*.log
+
+# Runtime state inside an opened workspace (never committed)
+.digital-employee/staging/
+.digital-employee/rejected/
+.digital-employee/applied/
+.digital-employee/archive/
