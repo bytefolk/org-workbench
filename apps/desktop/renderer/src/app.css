@@ -1,0 +1,86 @@
+/* org-workbench D1 renderer layout helpers (semantic tokens only). */
+
+.owb-rail-brand {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  color: var(--ui-primary);
+}
+
+.owb-sidebar-header {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ui-foreground-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.owb-tree-skeleton {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ui-space-2, 8px);
+  padding: var(--ui-space-2, 8px);
+}
+
+.owb-main {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ui-space-3, 12px);
+  padding: var(--ui-space-4, 16px);
+  overflow: auto;
+}
+
+.owb-banner {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  border-radius: var(--ui-radius-md, 10px);
+  padding: 8px 12px;
+  font-size: var(--ui-text-sm, 13px);
+}
+
+.owb-banner--info {
+  background: var(--ui-info-soft);
+  color: var(--ui-foreground);
+}
+
+.owb-banner--warn {
+  background: var(--ui-warning-soft);
+  color: var(--ui-foreground);
+}
+
+.owb-topbar-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--ui-space-2, 8px);
+}
+
+.owb-breadcrumbs {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--ui-text-sm, 13px);
+}
+
+.owb-breadcrumb {
+  color: var(--ui-foreground);
+}
+
+.owb-breadcrumb + .owb-breadcrumb::before {
+  content: "/";
+  margin-right: 6px;
+  color: var(--ui-foreground-muted);
+}
+
+.owb-breadcrumb:last-child {
+  color: var(--ui-foreground-muted);
+}
+
+.owb-muted {
+  color: var(--ui-foreground-muted);
+  font-size: var(--ui-text-sm, 13px);
+}
