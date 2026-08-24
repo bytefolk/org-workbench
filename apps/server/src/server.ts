@@ -8,6 +8,7 @@ import { handleHealth } from "./routes/health.js";
 import { handleOrgApply, handleOrgTree } from "./routes/org.js";
 import { handlePositionGet } from "./routes/positions.js";
 import { handleReports } from "./routes/reports.js";
+import { handleTurnHistory, handleTurnPost } from "./routes/turns.js";
 import { handleWorkspaceGet, handleWorkspaceOpen } from "./routes/workspace.js";
 
 /**
@@ -61,6 +62,14 @@ async function dispatch(
     }
     if (pathname === routes.reports && method === "GET") {
       await handleReports(ctx, res);
+      return;
+    }
+    if (pathname === routes.turns && method === "POST") {
+      await handleTurnPost(ctx, req, res);
+      return;
+    }
+    if (pathname === routes.turns && method === "GET") {
+      await handleTurnHistory(ctx, res, url);
       return;
     }
     if (pathname === routes.events && method === "GET") {

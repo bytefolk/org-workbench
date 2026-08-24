@@ -4,14 +4,15 @@
 
 org-workbench 是 [digital-employee](https://github.com/fullstack-ai-infra/digital-employee) 工作区的组织工作台：Electron 桌面壳 + 本地控制面服务，围绕组织树提供只读视图、目录提案、引擎校验与上报中心。macOS 首版聚焦组织树完整闭环；web/移动端未来同仓复用同一控制面与契约。
 
-## 当前状态：D1 组织树 + D2 服务侧 apply（开发预览）
+## 当前状态：D1 组织树 + D2 服务侧 apply + D3 后端（开发预览）
 
 - 壳-服务分离：Electron main 拉起 `apps/server`（Node，仅 127.0.0.1，每启动随机 boot-token）；控制面可脱离壳独立运行。
 - 引擎消费：spawn 钉版 `digital-employee` CLI（ADR-0002）；`/health` 报告引擎可用性与下一步。
 - `org apply`：客户端直接物化 `positions/` 提案树，再运行 `digital-employee org apply <workspace> --json`；成功后重载引擎应用态，失败保留提案供修正。裁撤目录移至树外 `.digital-employee/backup/`，应用态由引擎原子维护（ADR-0005）。
 - `/reports` 审计流读取引擎 `.digital-employee/org-audit.jsonl`；旧 staging、`apply-log.ndjson`、`archive/` 发布链路已退役。
-- API 契约 v0 已冻结：见 [`docs/api-contract-v0.md`](docs/api-contract-v0.md)（8 端点全量；新增走增量，破坏性变更升 v1）。
+- API 契约 v0 已冻结并以加法扩展：见 [`docs/api-contract-v0.md`](docs/api-contract-v0.md)（D0 端点 + D3 `/turns`；破坏性变更升 v1）。
 - D1（组织树只读）：`packages/ui` 四组件（OrgTree/OrgTreeNode/PositionCard/BudgetBar，消费 design-system 语义 token）+ React/Vite 渲染层（AppShell 四区、Sidebar 288px、键盘树导航、SSE 驱动刷新）。
+- D3 后端切片：Bearer 保护的 `POST /turns` 与 `GET /turns?positionId=...`，只允许 Qoder/Claude Code；密封信封、严格 `engine.v1`、turn SSE、退出码 1 不自动重试，以及工作区内 0600 原子回合持久化已具备。本切片尚未包含 `@岗位` renderer，也未声称 live Host 或 mem recall 已验证。
 - 里程碑：D0 骨架 → D1 组织树只读 → D2 拖拽/预算闭环（服务侧已接约，UI 待完成）→ D3 @岗位对话 → D4 上报中心。
 - 当前仓库尚无 tag、Release 或签名安装包；快速开始面向源码开发者，不代表已发布客户端。
 
@@ -35,6 +36,13 @@ curl -s -H "Authorization: Bearer <token>" http://127.0.0.1:N/workspace
 curl -s -X POST -H "Authorization: Bearer <token>" -H "Content-Type: application/json" \
      -d '{"path":"examples/oss-maintainer"}' http://127.0.0.1:N/workspace/open
 curl -s -H "Authorization: Bearer <token>" http://127.0.0.1:N/org/tree
+
+# D3：凭据只放服务进程环境；请求体不接受 token/key
+curl -s -X POST -H "Authorization: Bearer <token>" -H "Content-Type: application/json" \
+     -d '{"positionId":"repo-owner","input":"Summarize the open issues.","engine":"qoder"}' \
+     http://127.0.0.1:N/turns
+curl -s -H "Authorization: Bearer <token>" \
+     'http://127.0.0.1:N/turns?positionId=repo-owner'
 ```
 
 **桌面壳**（需 `npm install` 安装 Electron 后）：`npm run dev:desktop`（自动构建 renderer 再启动）。
@@ -49,7 +57,7 @@ curl -s -H "Authorization: Bearer <token>" http://127.0.0.1:N/org/tree
 ```
 apps/desktop/        Electron 壳：main + preload 白名单桥 + renderer（D0 零依赖渲染）
 apps/server/         本地控制面服务（零第三方运行时依赖，纯 node: 内建）
-packages/shared/     契约类型镜像：org-tree.v1 / change-manifest.v1 / 错误码 / SSE 事件
+packages/shared/     契约类型镜像：org-tree.v1 / turn-envelope.v1 / turn-record.v1 / 错误码 / SSE 事件
 packages/ui/         组织树组件族（D1 起消费 design-system；React）
 docs/                API 契约 v0（冻结）+ ADR
 examples/            oss-maintainer 示例工作区（1 owner + 3 岗位，含预算声明）

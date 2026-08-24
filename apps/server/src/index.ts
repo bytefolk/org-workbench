@@ -13,13 +13,17 @@ import type { ControlPlaneContext } from "./context.js";
 import { DigitalEmployeeCliDriver } from "./engine/driver-cli.js";
 import { WorkspaceState } from "./workspace-state.js";
 import { createControlPlane } from "./server.js";
+import { TurnStore } from "./turns/store.js";
 
 const config = resolveServerConfig(process.env, process.argv.slice(2));
+const driver = new DigitalEmployeeCliDriver(config.cliCommand);
 const ctx: ControlPlaneContext = {
   config,
   workspace: new WorkspaceState(),
   bus: new EventBus(),
-  driver: new DigitalEmployeeCliDriver(config.cliCommand),
+  driver,
+  turnDriver: driver,
+  turnStore: new TurnStore(),
 };
 const server = createControlPlane(ctx);
 

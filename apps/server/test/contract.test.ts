@@ -27,6 +27,8 @@ test("contract v0: every frozen endpoint exists with the contracted auth behavio
       { path: routes.orgApply, method: "POST" },
       { path: `${routes.positions}/repo-owner`, method: "GET" },
       { path: routes.reports, method: "GET" },
+      { path: `${routes.turns}?positionId=repo-owner`, method: "GET" },
+      { path: routes.turns, method: "POST" },
     ];
     for (const route of protectedRoutes) {
       const unauthenticated = await api(server.baseUrl, route.path, { method: route.method });
@@ -65,6 +67,9 @@ test("contract v0: every frozen endpoint exists with the contracted auth behavio
 
 function minimalBody(path: string): unknown {
   if (path === routes.workspaceOpen) return { path: "." };
+  if (path === routes.turns) {
+    return { positionId: "repo-owner", input: "hello", engine: "qoder" };
+  }
   return { schemaVersion: "change-manifest.v1", changes: [] };
 }
 

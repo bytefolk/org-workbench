@@ -3,7 +3,7 @@
 本仓库采用 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 格式。
 版本号在首个正式 release 前以里程碑（D0/D1/D2…）标注。
 
-## [Unreleased] — D2 目录提案 apply（服务侧）
+## [Unreleased] — D2 目录提案 apply + D3 对话控制面
 
 含 PR #3（feat(d1): 组织树只读）与 PR #7（fix(examples)）。
 
@@ -18,6 +18,8 @@
 - **冻结契约类型**：`packages/shared/src/org-tree.ts` 提供 org-tree.v1 类型与运行时守卫。
 - **workspace-state**：服务端工作区状态管理，`/org/tree` 返回冻结形状快照。
 - 测试：ui 14 用例（vitest）+ server 侧 workspace/apply 断言扩展。
+- D3 `POST /turns` / `GET /turns?positionId=...` 控制面，只允许 Qoder 与 Claude Code；密封 `turn-envelope.v1`、严格 `engine.v1` NDJSON、turn SSE 与退出码 1 不自动重试。
+- 工作区本地 `turn-record.v1` / `turn-history.v1`：0600 原子文件、0700 目录、崩溃遗留 running 回合恢复为 indeterminate，拒绝符号链接与无界历史。
 
 ### Changed
 
@@ -44,6 +46,7 @@
 - `npm run check` 全绿（ui 14/14、server 12/12、renderer 1/1、desktop-main 1/1，依赖审计 0 漏洞）。
 - 真实本地引擎 E2E：digital-employee `7a92690` 成功招聘后 `/org/tree` 重载 5 岗位；非法预算拒绝码透传，`org.json`/`org-audit.jsonl`/`permissions.json` 前后 SHA-256 一致，提案和 0600 `budget.json` 保留。
 - macOS 桌面壳实测：组织树渲染、岗位卡片、SSE 刷新、关窗进程退出全部通过（issue #4 验收，证据见 issue #1/#2 评论）。
+- D3 后端以 fixture CLI 和 HTTP 集成测试验证；Qoder/Claude Code live Host 未在本机执行，`@岗位` renderer 与 mem recall 不在本切片范围。
 
 ## [D0] — 骨架
 

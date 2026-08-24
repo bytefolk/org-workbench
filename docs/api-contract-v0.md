@@ -9,6 +9,7 @@
 2. 破坏性变更升 v1，并双轨过渡（v0/v1 并行至少一个里程碑）。
 3. `/org/apply` 的变更清单形状与引擎错误码以 #157 契约为准，契约变更时客户端跟随，不自造语义。
 4. 本文件与实现逐端点一致，由 `apps/server/test/contract.test.ts` 持续核对。
+5. D3 `/turns` 为 v0 加法修订，代码切片已按 org-workbench #5 与 digital-employee #158 的边界实现；其外部 Issue 决策评论在发布前仍须完成登记，不以本地实现替代产品批准。
 
 ## 1. 通用约定
 
@@ -195,13 +196,43 @@ event: org.updated
 data: {"seq":4,"type":"org.updated","at":"...","payload":{...}}
 ```
 
-事件词汇（v0 冻结）：`org.updated` / `turn.started` / `turn.completed` / `escalation.created` / `evidence.created`。D0 实现 `org.updated`（工作区打开与 org apply 发布时触发），其余在 D3/D4 接引擎后点亮，事件体形状已冻结。
+事件词汇（v0 冻结 + D3 加法）：`org.updated` / `turn.started` / `turn.model.delta` / `turn.usage` / `turn.completed` / `turn.failed` / `turn.indeterminate` / `escalation.created` / `evidence.created`。D3 的前五类引擎事件以已严格校验的 `engine.v1` 原始事件作为 `payload`；进程级不确定结果使用控制面 `turn.indeterminate`，不会伪造 engine 终态，也不会自动重试。
+
+### 2.9 `POST /turns` / `GET /turns` — D3 本地回合控制面
+
+`POST /turns` 请求（只允许下列三个字段）：
+
+```json
+{ "positionId": "repo-owner", "input": "Summarize the open issues.", "engine": "qoder" }
+```
+
+- `engine` 只允许 `qoder` / `claude-code`；不接受凭据字段，凭据只从控制面进程环境的对应变量传给子进程。
+- 控制面构造 `turn-envelope.v1`，其 `envelopeDigest` 与 digital-employee canonical JSON + SHA-256 算法逐字节一致。
+- 唯一调用形态：`digital-employee turn run <workspace> --position <id> --stdin`；信封从 stdin 输入，凭据和用户输入均不进 argv。
+- stdout 必须是严格、同 runId、以 `run.started` 开始且恰有一个末尾终态的 `engine.v1` NDJSON；未知字段、超界行、多个终态或终态后事件均产生 `indeterminate`。
+- 退出码 1 记录为 `indeterminate`，绝不自动重试。用户显式重试必须创建新的 turnId/attempt。
+- 响应 200 为单个 `turn-record.v1`，包含 `turnId`、`positionId`、`engine`、`status`、`envelopeDigest`、有界事件与可信终态输出/错误。
+
+`GET /turns?positionId=<id>` 响应 200：
+
+```json
+{
+  "schemaVersion": "turn-history.v1",
+  "conversationId": "uuid",
+  "positionId": "repo-owner",
+  "turns": []
+}
+```
+
+本地状态位于 `<workspace>/.digital-employee/workbench/conversations/<positionId>/`：元数据和每回合独立 JSON 均为 0600 原子写，目录为 0700；启动后读到遗留 `running` 回合时恢复为 `indeterminate/turn_interrupted`。内部路径拒绝符号链接，历史记录数、总大小、输入、输出、事件与诊断全部有界。凭据与原始 stderr 不持久化。
+
+本切片只建立 workbench 本地会话/回合连续性与未来 recall 接缝，不声称已经接入 mem recall，也不依赖 Host 原生 resume。
 
 重连补拉：客户端带 `Last-Event-ID: <seq>` 重连，服务端从环形缓冲（≥256 条）回放该版本戳之后的事件；新连接不回放历史。心跳：每 15 秒注释帧 `: ping`。
 
 ## 3. 稳定错误码登记表
 
-控制面自产码（本契约定义）：`unauthorized`、`body_invalid`、`workspace_invalid`、`workspace_not_open`、`manifest_invalid`、`organization_invalid`、`engine_unavailable`（retryable=true）、`engine_capability_missing`、`engine_failed`、`position_missing`、`not_found`、`method_not_allowed`、`internal`；提案预检码：`org_apply_position_exists`、`org_apply_position_missing`、`org_apply_cycle`、`org_apply_owner_delete`、`org_apply_max_depth`、`org_apply_destination_exists`。
+控制面自产码（本契约定义）：`unauthorized`、`body_invalid`、`workspace_invalid`、`workspace_not_open`、`manifest_invalid`、`organization_invalid`、`engine_unavailable`（retryable=true）、`engine_capability_missing`、`engine_failed`、`position_missing`、`turn_request_invalid`、`turn_engine_unsupported`、`turn_position_invalid`、`turn_storage_failed`、`not_found`、`method_not_allowed`、`internal`；turn-record 内的稳定结果码包括 `turn_process_exit_1`、`turn_process_failed`、`turn_engine_unavailable`、`turn_timeout`、`turn_protocol_invalid`、`turn_driver_failure`、`turn_interrupted`；提案预检码：`org_apply_position_exists`、`org_apply_position_missing`、`org_apply_cycle`、`org_apply_owner_delete`、`org_apply_max_depth`、`org_apply_destination_exists`。
 引擎透传码：以 digital-employee 稳定码为准（`workspace_org_*` 等），原样透传，不在本表重定义。
 
 ## 4. 安全基线（随契约冻结）
@@ -210,7 +241,8 @@ data: {"seq":4,"type":"org.updated","at":"...","payload":{...}}
 2. 网络面：仅 127.0.0.1＋每启动随机 token；严格 CSP（`default-src 'self'`），无第三方 CDN，无远程代码加载。
 3. 最小权限：壳只触达工作区目录与本地回环；组织文件权限对齐 #157 纪律（0600）。
 4. 凭据边界：密钥只经 env 注入引擎子进程；boot-token 只经父子进程 stdout 管道，不进文件/日志。
-5. 更新与分发：v1 不做静默自动更新；macOS 公证列 D4 后。
+5. 本地回合：只持久化对话输入、严格校验后的 engine 事件与稳定结果；不持久化凭据或原始 stderr。状态路径拒绝符号链接，文件 0600、目录 0700、原子替换。
+6. 更新与分发：v1 不做静默自动更新；macOS 公证列 D4 后。
 
 ## 5. 与上游契约的映射
 
