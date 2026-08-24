@@ -85,6 +85,19 @@
   font-size: var(--ui-text-sm, 13px);
 }
 
+.owb-workspace-grid {
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(280px, 0.72fr) minmax(420px, 1.28fr);
+  gap: var(--ui-space-3, 12px);
+  align-items: start;
+}
+
+.owb-workspace-grid > .owb-turn-panel {
+  height: calc(100vh - 116px);
+  min-height: 520px;
+}
+
 /* D3 position conversation — a compact, evidence-first operations console. */
 
 .owb-turn-panel {
@@ -465,6 +478,14 @@
 }
 
 @media (max-width: 760px) {
+  .owb-workspace-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .owb-workspace-grid > .owb-turn-panel {
+    height: auto;
+  }
+
   .owb-turn-panel__controls {
     grid-template-columns: 1fr;
   }

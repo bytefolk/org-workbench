@@ -8,6 +8,7 @@ export interface PositionMentionOption {
 }
 
 export interface TurnEngineAvailability {
+  configured: boolean;
   ready: boolean;
   reason?: string;
 }

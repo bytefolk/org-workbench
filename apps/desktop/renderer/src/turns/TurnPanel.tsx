@@ -20,7 +20,7 @@ export interface TurnPanelProps {
   busy?: boolean;
   onSelectPosition: (positionId: string) => void;
   onSelectEngine: (engine: TurnEngine) => void;
-  onCreateTurn: (request: CreateTurnRequest) => void | Promise<void>;
+  onCreateTurn: (request: CreateTurnRequest) => void | boolean | Promise<void | boolean>;
 }
 
 const ENGINE_LABEL: Record<TurnEngine, string> = {
@@ -61,8 +61,8 @@ export function TurnPanel({
     if (!trimmed || disabledReason || !selectedPosition) return;
     setSending(true);
     try {
-      await onCreateTurn({ positionId: selectedPosition.id, engine, input: trimmed });
-      setInput("");
+      const created = await onCreateTurn({ positionId: selectedPosition.id, engine, input: trimmed });
+      if (created !== false) setInput("");
     } finally {
       setSending(false);
     }
@@ -114,7 +114,11 @@ export function TurnPanel({
             {(Object.keys(ENGINE_LABEL) as TurnEngine[]).map((candidate) => (
               <option key={candidate} value={candidate}>
                 {ENGINE_LABEL[candidate]}
-                {engineAvailability[candidate].ready ? " · Ready" : " · Idle"}
+                {engineAvailability[candidate].ready
+                  ? " · Configured"
+                  : engineAvailability[candidate].configured
+                    ? " · Blocked"
+                    : " · Idle"}
               </option>
             ))}
           </select>

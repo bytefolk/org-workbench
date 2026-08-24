@@ -43,11 +43,15 @@
     "available": false,
     "nextStep": "pinned digital-employee CLI not found (command: ...). Install it or set ORG_WORKBENCH_DIGITAL_EMPLOYEE_CLI..."
   },
+  "hosts": {
+    "qoder": { "configured": false, "ready": false, "nextStep": "设置 QODER_PERSONAL_ACCESS_TOKEN 后重启工作台" },
+    "claude-code": { "configured": false, "ready": false, "nextStep": "设置 ANTHROPIC_API_KEY 后重启工作台" }
+  },
   "workspace": { "open": false }
 }
 ```
 
-约束：`engine.available` 为对钉版 `digital-employee CLI` 的 `--version` 探针结果；不可用时必须给出可执行的 `nextStep`（"失败也有路"）。
+约束：`engine.available` 为对钉版 `digital-employee CLI` 的 `--version` 探针结果；不可用时必须给出可执行的 `nextStep`（"失败也有路"）。`hosts.<engine>.configured` 只表示对应凭据环境变量存在且非空，`ready` 是“CLI 可达且凭据已配置”的本地执行前置状态，不代表凭据已被远端接受；响应只含布尔值与非敏感 `nextStep`，绝不返回凭据值。客户端必须以 Host 状态控制 Qoder/Claude Code 选择和发送，不得以 `engine.available` 代替 Host ready。
 
 ### 2.2 `GET /workspace` — 当前工作区信息
 
@@ -228,6 +232,8 @@ data: {"seq":4,"type":"org.updated","at":"...","payload":{...}}
 本地状态位于 `<workspace>/.digital-employee/workbench/conversations/<positionId>/`：元数据和每回合独立 JSON 均为 0600 原子写，目录为 0700；启动后读到不属于当前进程活跃集合的遗留 `running` 回合时恢复为 `indeterminate/turn_interrupted`。岗位 ID 规则逐字镜像引擎组织契约。内部路径拒绝符号链接，历史记录数、总大小、输入、输出、事件与诊断全部有界。凭据与原始 stderr 不持久化。
 
 本切片只建立 workbench 本地会话/回合连续性与未来 recall 接缝，不声称已经接入 mem recall，也不依赖 Host 原生 resume。
+
+Electron renderer 只通过枚举式 `createTurn({positionId,input,engine})` 与 `turnHistory(positionId)` IPC 消费这两个端点；main process 持有 boot token 并代理请求，renderer 不获得 token 或通用 HTTP/IPC 能力。服务端 `turn-record.v1` / `turn-history.v1` 是持久化单一来源，renderer 只做显式展示适配，不建立第二套会话或回合存储语义。
 
 重连补拉：客户端带 `Last-Event-ID: <seq>` 重连，服务端从环形缓冲（≥256 条）回放该版本戳之后的事件；新连接不回放历史。心跳：每 15 秒注释帧 `: ping`。
 

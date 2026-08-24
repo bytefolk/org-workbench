@@ -14,6 +14,7 @@ const { spawn } = require("node:child_process");
 const http = require("node:http");
 const path = require("node:path");
 const { rendererEntryPath } = require("./runtime-paths.cjs");
+const { turnHistoryPath, validateCreateTurnRequest } = require("./turn-ipc.cjs");
 
 const SERVER_ENTRY = path.join(__dirname, "..", "..", "server", "dist", "src", "index.js");
 const READY_TIMEOUT_MS = 15000;
@@ -203,6 +204,20 @@ ipcMain.handle("owb:position:get", async (_event, positionId) => {
     return { status: 400, body: { code: "manifest_invalid", message: "positionId required" } };
   }
   return apiRequest(`/positions/${encodeURIComponent(positionId)}`);
+});
+
+ipcMain.handle("owb:turn:create", async (_event, request) => {
+  const validated = validateCreateTurnRequest(request);
+  if (!validated.ok) return validated.response;
+  return apiRequest("/turns", { method: "POST", body: validated.request });
+});
+
+ipcMain.handle("owb:turn:history", async (_event, positionId) => {
+  const pathname = turnHistoryPath(positionId);
+  if (pathname === null) {
+    return { status: 400, body: { code: "turn_position_invalid", message: "positionId is invalid", retryable: false } };
+  }
+  return apiRequest(pathname);
 });
 
 ipcMain.handle("owb:sse-status:get", async () => currentSseStatus);

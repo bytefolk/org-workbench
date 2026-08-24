@@ -10,8 +10,8 @@ const positions = [
 ];
 
 const availability: TurnPanelProps["engineAvailability"] = {
-  qoder: { ready: true },
-  "claude-code": { ready: true },
+  qoder: { configured: true, ready: true },
+  "claude-code": { configured: true, ready: true },
 };
 
 function ControlledPanel({ onCreateTurn }: { onCreateTurn: (request: CreateTurnRequest) => void }) {
@@ -114,7 +114,7 @@ describe("TurnPanel Issue #5 D3 behavior", () => {
         engine="qoder"
         engineAvailability={{
           ...availability,
-          qoder: { ready: false, reason: "Qoder 凭据未配置" },
+          qoder: { configured: false, ready: false, reason: "Qoder 凭据未配置" },
         }}
         turns={[]}
         onSelectPosition={vi.fn()}
