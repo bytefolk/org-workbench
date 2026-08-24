@@ -34,7 +34,7 @@ function turn(overrides: Partial<TurnRecord>): TurnRecord {
     engine: "qoder",
     status: "completed",
     input: "sensitive raw input",
-    envelopeDigest: "sha256:report",
+    envelopeDigest: `sha256:${"a".repeat(64)}`,
     createdAt: "2026-08-24T06:00:00.000Z",
     updatedAt: "2026-08-24T06:01:00.000Z",
     events: [

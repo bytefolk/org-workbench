@@ -116,6 +116,60 @@ test("session request validation fails before invoking a Host", async () => {
   }
 });
 
+test("session history rejects credential-shaped and invalid persisted event fields without echo", async () => {
+  const server = await startTestServer();
+  const workspace = await copyExampleWorkspace();
+  try {
+    await openWorkspace(server.baseUrl, server.token, workspace);
+    const created = await api(server.baseUrl, "/sessions", {
+      method: "POST",
+      token: server.token,
+      body: { positionId: "repo-owner" },
+    });
+    const session = created.body as WorkbenchSession;
+    const turn = await api(server.baseUrl, `/sessions/${session.sessionId}/turns`, {
+      method: "POST",
+      token: server.token,
+      body: { input: "persist safely", engine: "qoder" },
+    });
+    assert.equal(turn.status, 200);
+    const turnId = String((turn.body as { turnId: string }).turnId);
+    const turnFile = path.join(
+      workspace,
+      ".digital-employee",
+      "workbench",
+      "sessions",
+      "conversations",
+      session.sessionId,
+      "turns",
+      `${turnId}.json`,
+    );
+    const valid = JSON.parse(await fs.readFile(turnFile, "utf8")) as Record<string, unknown>;
+
+    for (const [secret, tampered] of [
+      ["session-top-secret", { ...valid, accessToken: "session-top-secret" }],
+      [
+        "session-event-secret",
+        {
+          ...valid,
+          events: (valid.events as Array<Record<string, unknown>>).map((event, index) =>
+            index === 0 ? { ...event, credential: "session-event-secret" } : event),
+        },
+      ],
+    ] as const) {
+      await fs.writeFile(turnFile, `${JSON.stringify(tampered)}\n`, { mode: 0o600 });
+      const response = await api(server.baseUrl, `/sessions/${session.sessionId}/turns`, {
+        token: server.token,
+      });
+      assert.equal(response.status, 500);
+      assert.equal((response.body as { code: string }).code, "turn_storage_failed");
+      assert.doesNotMatch(JSON.stringify(response.body), new RegExp(secret));
+    }
+  } finally {
+    await server.close();
+  }
+});
+
 test("double rotation creates one durable successor and returns it on retry", async () => {
   const server = await startTestServer();
   const workspace = await copyExampleWorkspace();

@@ -9,6 +9,7 @@ import {
   isPositionId,
 } from "@org-workbench/shared";
 import type { TurnEngine, TurnHistory, TurnRecord } from "@org-workbench/shared";
+import type { EngineEvent, TurnTerminalReason } from "@org-workbench/shared";
 import { assertSessionId } from "../sessions/store.js";
 
 const STATE_ROOT = path.join(".digital-employee", "workbench", "conversations");
@@ -20,6 +21,24 @@ const MAX_TURN_ID_LENGTH = 256;
 const MAX_HISTORY_BYTES = 64 * 1024 * 1024;
 const MAX_TURN_RECORD_BYTES = 20 * 1024 * 1024;
 const MAX_METADATA_BYTES = 16 * 1024;
+const MAX_INPUT_BYTES = 256 * 1024;
+const MAX_EVENTS = 4_096;
+const MAX_MODEL_CHARACTERS = 1_048_576;
+const MAX_DIAGNOSTIC_BYTES = 8 * 1024;
+const MAX_TERMINAL_OUTPUT_BYTES = MAX_MODEL_CHARACTERS * 6 + 2;
+const ENGINE_CODE_PATTERN = /^[a-z0-9][a-z0-9._-]{0,127}$/;
+const ENVELOPE_DIGEST_PATTERN = /^sha256:[a-f0-9]{64}$/;
+const TERMINAL_REASONS = new Set<TurnTerminalReason>([
+  "goal_met",
+  "invalid_output_exhausted",
+  "turn_budget_exceeded",
+  "position_budget_exceeded",
+  "iteration_cap",
+  "doom_loop",
+  "deadline_exceeded",
+  "cancelled",
+  "engine_internal_error",
+]);
 
 interface ConversationMetadata {
   schemaVersion: "conversation.v1";
@@ -68,25 +87,88 @@ function turnRecordFile(workspace: string, positionId: string, turnId: unknown):
   return file;
 }
 
-async function atomicWriteJson(file: string, value: unknown, maxBytes: number): Promise<void> {
+export interface AtomicTurnTemporaryHandle {
+  writeFile(payload: string): Promise<void>;
+  sync(): Promise<void>;
+  close(): Promise<void>;
+}
+
+export interface AtomicTurnDirectoryHandle {
+  sync(): Promise<void>;
+  close(): Promise<void>;
+}
+
+export interface AtomicTurnWriteOperations {
+  openTemporary(file: string): Promise<AtomicTurnTemporaryHandle>;
+  rename(source: string, target: string): Promise<void>;
+  chmod(file: string, mode: number): Promise<void>;
+  openDirectory(directory: string): Promise<AtomicTurnDirectoryHandle>;
+  removeTemporary(file: string): Promise<void>;
+}
+
+export const nodeAtomicTurnWriteOperations: AtomicTurnWriteOperations = {
+  async openTemporary(file) {
+    const handle = await fs.open(file, "wx", 0o600);
+    return {
+      writeFile: (payload) => handle.writeFile(payload, "utf8"),
+      sync: () => handle.sync(),
+      close: () => handle.close(),
+    };
+  },
+  rename: (source, target) => fs.rename(source, target),
+  chmod: (file, mode) => fs.chmod(file, mode),
+  async openDirectory(directory) {
+    const handle = await fs.open(directory, "r");
+    return {
+      sync: () => handle.sync(),
+      close: () => handle.close(),
+    };
+  },
+  removeTemporary: (file) => fs.rm(file, { force: true }),
+};
+
+async function atomicWriteJson(
+  file: string,
+  value: unknown,
+  maxBytes: number,
+  operations: AtomicTurnWriteOperations,
+): Promise<void> {
   const dir = path.dirname(file);
   const payload = `${JSON.stringify(value)}\n`;
   if (Buffer.byteLength(payload, "utf8") > maxBytes) {
     throw storageError("local state record exceeds its bounded size");
   }
   const temporary = path.join(dir, `.${path.basename(file)}.${crypto.randomUUID()}.tmp`);
-  const handle = await fs.open(temporary, "wx", 0o600);
+  let fileHandle: AtomicTurnTemporaryHandle | undefined;
+  let directoryHandle: AtomicTurnDirectoryHandle | undefined;
   try {
-    await handle.writeFile(payload, "utf8");
-    await handle.sync();
-  } finally {
-    await handle.close();
-  }
-  try {
-    await fs.rename(temporary, file);
-    await fs.chmod(file, 0o600);
+    fileHandle = await operations.openTemporary(temporary);
+    await fileHandle.writeFile(payload);
+    await fileHandle.sync();
+    await fileHandle.close();
+    fileHandle = undefined;
+    await operations.rename(temporary, file);
+    await operations.chmod(file, 0o600);
+    directoryHandle = await operations.openDirectory(dir);
+    await directoryHandle.sync();
+    await directoryHandle.close();
+    directoryHandle = undefined;
   } catch (error) {
-    await fs.rm(temporary, { force: true });
+    try {
+      await fileHandle?.close();
+    } catch {
+      // Preserve the first durability failure while still attempting cleanup.
+    }
+    try {
+      await directoryHandle?.close();
+    } catch {
+      // Preserve the first durability failure while still attempting cleanup.
+    }
+    try {
+      await operations.removeTemporary(temporary);
+    } catch {
+      // The original write failure is authoritative and never includes payload data.
+    }
     throw error;
   }
 }
@@ -214,66 +296,209 @@ function isConversationMetadata(value: unknown): value is ConversationMetadata {
 }
 
 export function isTurnRecord(value: unknown): value is TurnRecord {
-  if (value === null || typeof value !== "object" || Array.isArray(value)) return false;
-  const record = value as Partial<TurnRecord>;
-  return (
-    record.schemaVersion === TURN_RECORD_SCHEMA_VERSION &&
-    typeof record.conversationId === "string" &&
-    isBoundedTurnId(record.turnId) &&
-    isPositionId(record.positionId) &&
-    (record.engine === "qoder" || record.engine === "claude-code") &&
-    ["running", "completed", "failed", "indeterminate"].includes(String(record.status)) &&
-    typeof record.input === "string" &&
-    typeof record.envelopeDigest === "string" &&
-    typeof record.createdAt === "string" &&
-    typeof record.updatedAt === "string" &&
-    Array.isArray(record.events)
-  );
-}
-
-function isReportTurnRecord(value: unknown): value is TurnRecord {
-  if (!isTurnRecord(value)) return false;
-  if (value.runId !== undefined && typeof value.runId !== "string") return false;
-  if (value.error !== undefined && (
-    value.error === null ||
-    typeof value.error !== "object" ||
-    typeof value.error.code !== "string" ||
-    typeof value.error.message !== "string" ||
-    typeof value.error.retryable !== "boolean"
+  if (!isObjectRecord(value)) return false;
+  if (!hasExactKeys(
+    value,
+    [
+      "schemaVersion", "conversationId", "turnId", "positionId", "engine", "status",
+      "input", "envelopeDigest", "createdAt", "updatedAt", "events",
+    ],
+    ["runId", "output", "error"],
   )) return false;
-  return value.events.every(isReportEngineEvent);
-}
-
-function isReportEngineEvent(value: unknown): boolean {
-  if (value === null || typeof value !== "object" || Array.isArray(value)) return false;
-  const event = value as Record<string, unknown>;
-  if (typeof event.runId !== "string" || typeof event.timestamp !== "string") return false;
-  switch (event.type) {
-    case "run.started":
-      return true;
-    case "model.delta":
-      return typeof event.text === "string";
-    case "usage":
-      return [event.inputTokens, event.outputTokens, event.totalTokens].every((amount) =>
-        amount === undefined || (Number.isSafeInteger(amount) && (amount as number) >= 0));
-    case "run.completed":
-      return event.terminalReason === "goal_met";
-    case "run.failed": {
-      const error = event.error;
-      return error !== null && typeof error === "object" && !Array.isArray(error) &&
-        typeof (error as Record<string, unknown>).code === "string" &&
-        typeof (error as Record<string, unknown>).message === "string" &&
-        typeof (error as Record<string, unknown>).retryable === "boolean" &&
-        typeof (error as Record<string, unknown>).terminalReason === "string";
-    }
+  if (
+    value.schemaVersion !== TURN_RECORD_SCHEMA_VERSION ||
+    !isBoundedIdentifier(value.conversationId) ||
+    !isBoundedTurnId(value.turnId) ||
+    value.turnId.includes("/") || value.turnId.includes("\\") || value.turnId.includes("\0") ||
+    !isPositionId(value.positionId) ||
+    (value.engine !== "qoder" && value.engine !== "claude-code") ||
+    !["running", "completed", "failed", "indeterminate"].includes(String(value.status)) ||
+    typeof value.input !== "string" || Buffer.byteLength(value.input, "utf8") > MAX_INPUT_BYTES ||
+    typeof value.envelopeDigest !== "string" ||
+    !ENVELOPE_DIGEST_PATTERN.test(value.envelopeDigest) ||
+    !isTimestamp(value.createdAt) || !isTimestamp(value.updatedAt) ||
+    value.updatedAt < value.createdAt ||
+    !Array.isArray(value.events) || value.events.length > MAX_EVENTS
+  ) return false;
+  const events: EngineEvent[] = [];
+  for (const event of value.events) {
+    const validated = validateEngineEvent(event);
+    if (validated === null) return false;
+    events.push(validated);
+  }
+  if (!isValidEventSequence(events)) return false;
+  const hasRunId = Object.hasOwn(value, "runId");
+  const hasOutput = Object.hasOwn(value, "output");
+  const hasError = Object.hasOwn(value, "error");
+  if (hasRunId && !isBoundedIdentifier(value.runId)) return false;
+  if (events.length > 0 && value.runId !== events[0]!.runId) return false;
+  if (events.length === 0 && hasRunId) return false;
+  const recordError = hasError ? validateRecordError(value.error) : null;
+  if (hasError && recordError === null) return false;
+  const terminal = events.at(-1);
+  switch (value.status) {
+    case "running":
+      return events.length === 0 && !hasRunId && !hasOutput && !hasError;
+    case "completed":
+      return terminal?.type === "run.completed" && hasRunId && hasOutput && !hasError &&
+        isBoundedJson(value.output, MAX_TERMINAL_OUTPUT_BYTES) &&
+        JSON.stringify(value.output) === JSON.stringify(terminal.output);
+    case "failed":
+      return terminal?.type === "run.failed" && hasRunId && !hasOutput && recordError !== null &&
+        recordError.code === terminal.error.code &&
+        recordError.message === terminal.error.message &&
+        recordError.retryable === terminal.error.retryable;
+    case "indeterminate":
+      return !hasOutput && recordError !== null;
     default:
       return false;
   }
 }
 
+function isObjectRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+function hasExactKeys(
+  value: Record<string, unknown>,
+  required: string[],
+  optional: string[] = [],
+): boolean {
+  const allowed = new Set([...required, ...optional]);
+  return required.every((key) => Object.hasOwn(value, key)) &&
+    Object.keys(value).every((key) => allowed.has(key));
+}
+
+function isBoundedIdentifier(value: unknown): value is string {
+  return typeof value === "string" && value.length > 0 && value.length <= 256;
+}
+
+function isTimestamp(value: unknown): value is string {
+  return typeof value === "string" && value.length <= 64 && !Number.isNaN(Date.parse(value));
+}
+
+function isBoundedCodePoints(value: string, limit: number): boolean {
+  let count = 0;
+  for (const _character of value) {
+    count += 1;
+    if (count > limit) return false;
+  }
+  return true;
+}
+
+function isBoundedJson(value: unknown, limit: number): boolean {
+  try {
+    const encoded = JSON.stringify(value);
+    return encoded !== undefined && Buffer.byteLength(encoded, "utf8") <= limit;
+  } catch {
+    return false;
+  }
+}
+
+function validateRecordError(
+  value: unknown,
+): { code: string; message: string; retryable: boolean } | null {
+  if (!isObjectRecord(value) || !hasExactKeys(value, ["code", "message", "retryable"])) {
+    return null;
+  }
+  if (
+    typeof value.code !== "string" || !ENGINE_CODE_PATTERN.test(value.code) ||
+    typeof value.message !== "string" ||
+    Buffer.byteLength(value.message, "utf8") > MAX_DIAGNOSTIC_BYTES ||
+    typeof value.retryable !== "boolean"
+  ) return null;
+  return { code: value.code, message: value.message, retryable: value.retryable };
+}
+
+function validateEngineEvent(value: unknown): EngineEvent | null {
+  if (!isObjectRecord(value) || !isBoundedIdentifier(value.runId) || !isTimestamp(value.timestamp)) {
+    return null;
+  }
+  const base = { runId: value.runId, timestamp: value.timestamp };
+  switch (value.type) {
+    case "run.started":
+      return hasExactKeys(value, ["type", "runId", "timestamp"])
+        ? { ...base, type: "run.started" }
+        : null;
+    case "model.delta":
+      return hasExactKeys(value, ["type", "runId", "timestamp", "text"]) &&
+        typeof value.text === "string" && isBoundedCodePoints(value.text, MAX_MODEL_CHARACTERS)
+        ? { ...base, type: "model.delta", text: value.text }
+        : null;
+    case "usage": {
+      if (!hasExactKeys(
+        value,
+        ["type", "runId", "timestamp"],
+        ["inputTokens", "outputTokens", "totalTokens"],
+      )) return null;
+      for (const key of ["inputTokens", "outputTokens", "totalTokens"] as const) {
+        if (value[key] !== undefined &&
+          (!Number.isSafeInteger(value[key]) || (value[key] as number) < 0)) return null;
+      }
+      return {
+        ...base,
+        type: "usage",
+        ...(value.inputTokens !== undefined ? { inputTokens: value.inputTokens as number } : {}),
+        ...(value.outputTokens !== undefined ? { outputTokens: value.outputTokens as number } : {}),
+        ...(value.totalTokens !== undefined ? { totalTokens: value.totalTokens as number } : {}),
+      };
+    }
+    case "run.completed":
+      return hasExactKeys(value, ["type", "runId", "timestamp", "output", "terminalReason"]) &&
+        value.terminalReason === "goal_met" &&
+        isBoundedJson(value.output, MAX_TERMINAL_OUTPUT_BYTES)
+        ? { ...base, type: "run.completed", output: value.output, terminalReason: "goal_met" }
+        : null;
+    case "run.failed": {
+      if (!hasExactKeys(value, ["type", "runId", "timestamp", "error"]) ||
+        !isObjectRecord(value.error) ||
+        !hasExactKeys(value.error, ["code", "message", "retryable", "terminalReason"]) ||
+        typeof value.error.code !== "string" || !ENGINE_CODE_PATTERN.test(value.error.code) ||
+        typeof value.error.message !== "string" ||
+        Buffer.byteLength(value.error.message, "utf8") > MAX_DIAGNOSTIC_BYTES ||
+        typeof value.error.retryable !== "boolean" ||
+        !TERMINAL_REASONS.has(value.error.terminalReason as TurnTerminalReason)) return null;
+      return {
+        ...base,
+        type: "run.failed",
+        error: {
+          code: value.error.code,
+          message: value.error.message,
+          retryable: value.error.retryable,
+          terminalReason: value.error.terminalReason as TurnTerminalReason,
+        },
+      };
+    }
+    default:
+      return null;
+  }
+}
+
+function isValidEventSequence(events: EngineEvent[]): boolean {
+  if (events.length === 0) return true;
+  if (events[0]!.type !== "run.started") return false;
+  const runId = events[0]!.runId;
+  let terminal = false;
+  for (let index = 0; index < events.length; index += 1) {
+    const event = events[index]!;
+    if (event.runId !== runId || (index > 0 && event.type === "run.started") || terminal) return false;
+    if (event.type === "run.completed" || event.type === "run.failed") {
+      terminal = true;
+      if (index !== events.length - 1) return false;
+    }
+  }
+  return true;
+}
+
 export class TurnStore {
   private metadataLocks = new Map<string, Promise<ConversationMetadata>>();
   private activeTurns = new Set<string>();
+
+  constructor(
+    private readonly options: {
+      atomicWriteOperations?: AtomicTurnWriteOperations;
+    } = {},
+  ) {}
 
   async begin(input: {
     workspace: string;
@@ -573,7 +798,7 @@ export class TurnStore {
         }
         const raw = await readJson(file, MAX_TURN_RECORD_BYTES);
         if (
-          !isReportTurnRecord(raw) ||
+          !isTurnRecord(raw) ||
           raw.positionId !== positionId ||
           raw.conversationId !== metadata.conversationId ||
           turnRecordFile(workspace, raw.positionId, raw.turnId) !== path.resolve(file)
@@ -668,7 +893,12 @@ export class TurnStore {
       createdAt: now,
     };
     try {
-      await atomicWriteJson(file, metadata, MAX_METADATA_BYTES);
+      await atomicWriteJson(
+        file,
+        metadata,
+        MAX_METADATA_BYTES,
+        this.options.atomicWriteOperations ?? nodeAtomicTurnWriteOperations,
+      );
       return metadata;
     } catch {
       throw storageError("local session conversation metadata could not be persisted");
@@ -702,7 +932,12 @@ export class TurnStore {
       createdAt: now,
     };
     try {
-      await atomicWriteJson(file, metadata, MAX_METADATA_BYTES);
+      await atomicWriteJson(
+        file,
+        metadata,
+        MAX_METADATA_BYTES,
+        this.options.atomicWriteOperations ?? nodeAtomicTurnWriteOperations,
+      );
       return metadata;
     } catch {
       throw storageError("local conversation metadata could not be persisted");
@@ -712,7 +947,12 @@ export class TurnStore {
   private async writeTurn(workspace: string, record: TurnRecord): Promise<void> {
     const file = turnRecordFile(workspace, record.positionId, record.turnId);
     try {
-      await atomicWriteJson(file, record, MAX_TURN_RECORD_BYTES);
+      await atomicWriteJson(
+        file,
+        record,
+        MAX_TURN_RECORD_BYTES,
+        this.options.atomicWriteOperations ?? nodeAtomicTurnWriteOperations,
+      );
     } catch {
       throw storageError("local turn record could not be persisted atomically");
     }
@@ -725,7 +965,12 @@ export class TurnStore {
   ): Promise<void> {
     const file = sessionTurnRecordFile(workspace, sessionId, record.turnId);
     try {
-      await atomicWriteJson(file, record, MAX_TURN_RECORD_BYTES);
+      await atomicWriteJson(
+        file,
+        record,
+        MAX_TURN_RECORD_BYTES,
+        this.options.atomicWriteOperations ?? nodeAtomicTurnWriteOperations,
+      );
     } catch {
       throw storageError("local session turn record could not be persisted atomically");
     }
