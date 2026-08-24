@@ -191,6 +191,7 @@ describe("App runtime bridge", () => {
     await selectRepoOwner();
     expect(await screen.findByText("历史结果")).toBeInTheDocument();
 
+    fireEvent.change(screen.getByRole("combobox", { name: "选择 Agent Host" }), { target: { value: "qoder" } });
     fireEvent.change(screen.getByLabelText("交办任务"), { target: { value: "检查下一版发布" } });
     fireEvent.click(screen.getByRole("button", { name: "发送任务" }));
 
@@ -227,6 +228,7 @@ describe("App runtime bridge", () => {
 
     render(<App />);
     await selectRepoOwner();
+    fireEvent.change(screen.getByRole("combobox", { name: "选择 Agent Host" }), { target: { value: "qoder" } });
     expect(screen.getByText("Qoder 凭据未配置")).toBeInTheDocument();
     expect(screen.getByLabelText("交办任务")).toBeDisabled();
   });
@@ -243,6 +245,7 @@ describe("App runtime bridge", () => {
 
     render(<App />);
     await selectRepoOwner();
+    fireEvent.change(screen.getByRole("combobox", { name: "选择 Agent Host" }), { target: { value: "qoder" } });
     const input = screen.getByLabelText("交办任务");
     fireEvent.change(input, { target: { value: "不要丢失这条任务" } });
     fireEvent.click(screen.getByRole("button", { name: "发送任务" }));
@@ -279,6 +282,7 @@ describe("App runtime bridge", () => {
 
     render(<App />);
     await selectRepoOwner();
+    fireEvent.change(screen.getByRole("combobox", { name: "选择 Agent Host" }), { target: { value: "qoder" } });
     expect(await screen.findByText("请先新建或选择一个会话")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "新建会话" }));
     await waitFor(() => expect(createSession).toHaveBeenCalledWith({ positionId: "repo-owner" }));

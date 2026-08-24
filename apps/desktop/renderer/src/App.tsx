@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Alert, Button as AntButton } from "antd";
 import {
   AppShell,
-  Button,
   ModuleRail,
   Sidebar,
   Skeleton,
@@ -24,7 +24,7 @@ import type {
   WorkbenchSessionList,
   WorkspaceInfoResponse,
 } from "@org-workbench/shared";
-import { FileChartColumn, FolderTree, History, Network, TriangleAlert } from "lucide-react";
+import { FileChartColumn, FolderTree, History, Network } from "lucide-react";
 import type { CSSProperties } from "react";
 import { TurnPanel, adaptTurnHistory, adaptTurnRecord } from "./turns";
 import type {
@@ -64,8 +64,10 @@ export function App() {
   });
   const [positionNames, setPositionNames] = useState<Record<string, string>>({});
   const positionNamesRef = useRef<Record<string, string>>({});
-  const [turnEngine, setTurnEngine] = useState<TurnEngine>("qoder");
+  const [turnEngine, setTurnEngine] = useState<TurnEngine>("local-mock");
   const [turns, setTurns] = useState<TurnRecord[]>([]);
+  const [mockTurns, setMockTurns] = useState<TurnRecord[]>([]);
+  const mockSeqRef = useRef(0);
   const [turnBusy, setTurnBusy] = useState(false);
   const [turnError, setTurnError] = useState<string | null>(null);
   const [sessions, setSessions] = useState<WorkbenchSession[]>([]);
@@ -336,6 +338,25 @@ export function App() {
   }, [loadSessions]);
 
   const createTurn = useCallback(async (request: CreateTurnRequest) => {
+    if (request.engine === "local-mock") {
+      mockSeqRef.current += 1;
+      const now = new Date().toISOString();
+      const record: TurnRecord = {
+        id: `mock-${String(mockSeqRef.current).padStart(3, "0")}`,
+        positionId: request.positionId,
+        positionName: positionNamesRef.current[request.positionId] ?? request.positionId,
+        engine: "local-mock",
+        input: request.input,
+        status: "completed",
+        createdAt: now,
+        completedAt: now,
+        output:
+          `【mock 回复 · 非真实执行】已收到交办：「${request.input}」。\n` +
+          `原型演示由本地 mock host 合成回复；真实执行需配置 Qoder / Claude Code host 并经引擎预算闸门。`,
+      };
+      setMockTurns((current) => [...current, record]);
+      return true;
+    }
     const sessionId = selectedSessionIdRef.current;
     if (sessionId === null) {
       setTurnError("请先新建或选择当前会话");
@@ -469,11 +490,22 @@ export function App() {
       ready: health?.hosts?.["claude-code"].ready === true,
       reason: health?.hosts?.["claude-code"].nextStep ?? "Claude Code Host 配置状态不可用",
     },
+    "local-mock": {
+      configured: true,
+      ready: true,
+      reason: "本地 mock host：仅原型演示，非真实执行",
+    },
   }), [health]);
+
+  const displayTurns = useMemo(() => {
+    const overlay = selectedId === null ? [] : mockTurns.filter((turn) => turn.positionId === selectedId);
+    if (overlay.length === 0) return turns;
+    return [...turns, ...overlay].sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+  }, [mockTurns, selectedId, turns]);
 
   return (
     <AppShell
-      style={{ "--ui-sidebar-width": "var(--ui-sidebar-wide)" } as CSSProperties}
+      style={{ "--ui-sidebar-width": "18rem" } as CSSProperties}
       moduleRail={
         <ModuleRail
           label="模块"
@@ -492,9 +524,9 @@ export function App() {
           header={<div className="owb-sidebar-title"><span className="owb-sidebar-header">组织</span>{workspaceInfo?.open === true ? <HirePositionDialog positions={positions} defaultManager={selectedId ?? snapshot?.owner ?? null} busy={orgBusy} onHire={hirePosition} /> : null}</div>}
           footer={
             workspaceInfo?.open === true ? <BackupTray backups={backups} busy={orgBusy} onRestore={restorePosition} /> : (
-              <Button size="sm" onClick={() => void openWorkspace()}>
+              <AntButton type="primary" block onClick={() => void openWorkspace()}>
                 打开工作区…
-              </Button>
+              </AntButton>
             )
           }
         >
@@ -545,24 +577,18 @@ export function App() {
     >
       <div className="owb-main">
         {sseState === "connecting" ? (
-          <div className="owb-banner owb-banner--info" role="status">
-            事件流重连中…
-          </div>
+          <Alert type="info" showIcon role="status" title="事件流重连中…" />
         ) : null}
         {health && !engineOk ? (
-          <div className="owb-banner owb-banner--warn" role="status">
-            <TriangleAlert aria-hidden="true" size={14} />
-            <span>{health.engine?.nextStep ?? "引擎不可用"}</span>
-          </div>
+          <Alert type="warning" showIcon role="status" title={health.engine?.nextStep ?? "引擎不可用"} />
         ) : null}
         {turnError ? (
-          <div className="owb-banner owb-banner--warn" role="alert">
-            <TriangleAlert aria-hidden="true" size={14} />
-            <span>{turnError}</span>
-          </div>
+          <Alert type="warning" showIcon role="alert" title={turnError} />
         ) : null}
-        {orgFeedback ? <div className={`owb-banner owb-banner--${orgFeedback.tone}`} role={orgFeedback.tone === "warn" ? "alert" : "status"}>{orgFeedback.tone === "warn" ? <TriangleAlert aria-hidden="true" size={14} /> : null}<span>{orgFeedback.text}</span></div> : null}
-        {reportsError ? <div className="owb-banner owb-banner--warn" role="alert"><TriangleAlert aria-hidden="true" size={14} /><span>{reportsError}</span></div> : null}
+        {orgFeedback ? (
+          <Alert type={orgFeedback.tone === "warn" ? "warning" : "info"} showIcon role={orgFeedback.tone === "warn" ? "alert" : "status"} title={orgFeedback.text} />
+        ) : null}
+        {reportsError ? <Alert type="warning" showIcon role="alert" title={reportsError} /> : null}
         {activeModule === "reports" ? <ReportsCenter reports={reports} loading={reportsLoading} /> : <div className="owb-workspace-grid">
           <div className="owb-position-column">
             <PositionCard
@@ -579,7 +605,7 @@ export function App() {
             selectedPositionId={selectedId}
             engine={turnEngine}
             engineAvailability={engineAvailability}
-            turns={turns}
+            turns={displayTurns}
             busy={turnBusy}
             sessions={sessions}
             selectedSessionId={selectedSessionId}

@@ -1,0 +1,76 @@
+/* antd-skin.css — org-workbench consumer skin over @fullstack-ai-infra/ui.
+ *
+ * ADR-0002: Ant Design is the shared design language. Token values below are
+ * the antd official light palette (v6 default theme); semantic roles from the
+ * design system (AI affordance, health states) survive as antd palette hues.
+ * The layout/pattern layer stays custom (DL5: 布局不是 antd 的强项，不换);
+ * theming happens here via --ui-* variables, never ad-hoc in components.
+ */
+
+:root,
+[data-theme="light"] {
+  color-scheme: light;
+
+  /* Neutral / layout surfaces (antd neutral color map) */
+  --ui-canvas: #f5f5f5;
+  --ui-canvas-subtle: #fafafa;
+  --ui-navigation: #ffffff;
+  --ui-surface: #ffffff;
+  --ui-surface-raised: #ffffff;
+  --ui-surface-inset: #fafafa;
+  --ui-foreground: rgba(0, 0, 0, 0.88);
+  --ui-foreground-muted: rgba(0, 0, 0, 0.65);
+  --ui-foreground-subtle: rgba(0, 0, 0, 0.45);
+  --ui-border: #d9d9d9;
+  --ui-border-strong: #bfbfbf;
+
+  /* Primary (antd blue-6) */
+  --ui-primary: #1677ff;
+  --ui-primary-hover: #4096ff;
+  --ui-primary-foreground: #ffffff;
+  --ui-primary-soft: #e6f4ff;
+
+  /* AI affordance (antd purple-6; semantic role preserved) */
+  --ui-ai: #722ed1;
+  --ui-ai-strong: #531dab;
+  --ui-ai-hover: #9254de;
+  --ui-ai-foreground: #ffffff;
+  --ui-ai-soft: #f9f0ff;
+
+  /* Health states (antd official semantic colors) */
+  --ui-info: #1677ff;
+  --ui-info-soft: #e6f4ff;
+  --ui-success: #52c41a;
+  --ui-success-strong: #389e0d;
+  --ui-success-soft: #f6ffed;
+  --ui-warning: #faad14;
+  --ui-warning-strong: #d48806;
+  --ui-warning-soft: #fffbe6;
+  --ui-danger: #ff4d4f;
+  --ui-danger-soft: #fff2f0;
+
+  /* Interaction feedback */
+  --ui-overlay: rgba(0, 0, 0, 0.45);
+  --ui-focus: #1677ff;
+  --ui-selection: #e6f4ff;
+
+  /* Radii aligned with antd borderRadius tokens (4 / 6 / 8 / 12) */
+  --ui-radius-sm: 4px;
+  --ui-radius-md: 6px;
+  --ui-radius-lg: 8px;
+  --ui-radius-xl: 12px;
+
+  /* Shadows: antd boxShadow / boxShadowSecondary */
+  --ui-shadow-sm:
+    0 1px 2px 0 rgba(0, 0, 0, 0.03),
+    0 1px 6px -1px rgba(0, 0, 0, 0.02),
+    0 2px 4px 0 rgba(0, 0, 0, 0.02);
+  --ui-shadow-md:
+    0 6px 16px 0 rgba(0, 0, 0, 0.08),
+    0 3px 6px -4px rgba(0, 0, 0, 0.12),
+    0 9px 28px 8px rgba(0, 0, 0, 0.05);
+  --ui-shadow-lg:
+    0 12px 32px 0 rgba(0, 0, 0, 0.1),
+    0 6px 12px -6px rgba(0, 0, 0, 0.14),
+    0 16px 44px 12px rgba(0, 0, 0, 0.06);
+}

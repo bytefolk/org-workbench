@@ -321,35 +321,18 @@
   margin: 0;
 }
 
-.ui-org-position-card__refresh {
+.ui-org-position-card__title {
   display: inline-flex;
   align-items: center;
   gap: var(--ui-space-2, 8px);
-  margin-top: var(--ui-space-3, 12px);
-  border: none;
-  background: var(--ui-primary-soft);
-  color: var(--ui-foreground);
-  border-radius: var(--ui-radius-md, 10px);
-  padding: var(--ui-space-1, 4px) var(--ui-space-3, 12px);
-  font-size: var(--ui-text-sm, 13px);
-  cursor: pointer;
 }
 
-.ui-org-position-card__refresh:hover {
-  background: var(--ui-surface-inset);
-}
-
-.ui-org-position-card__refresh:focus-visible {
-  outline: 2px solid var(--ui-focus, Highlight);
-  outline-offset: -2px;
+.ui-org-position-card__notice-icon {
+  color: var(--ui-foreground-muted);
 }
 
 .ui-org-position-card__skeleton-title {
   width: 40%;
   height: 20px;
-}
-
-.ui-org-position-card__skeleton-line {
-  height: 12px;
-  margin-top: var(--ui-space-2, 8px);
+  margin-bottom: var(--ui-space-3, 12px);
 }

@@ -1,4 +1,5 @@
 import { useMemo, useState, type FormEvent } from "react";
+import { Button as AntButton, Input, Tag } from "antd";
 import { ArrowUp, Database, GitBranch, MessagesSquare, Plus, RefreshCw } from "lucide-react";
 import type { WorkbenchSession } from "@org-workbench/shared";
 import { PositionMention } from "./PositionMention";
@@ -33,7 +34,12 @@ export interface TurnPanelProps {
 const ENGINE_LABEL: Record<TurnEngine, string> = {
   qoder: "Qoder",
   "claude-code": "Claude Code",
+  "local-mock": "Mock · 本地演示",
 };
+
+export function engineLabel(engine: TurnEngine): string {
+  return ENGINE_LABEL[engine];
+}
 
 export function TurnPanel({
   workspaceOpen,
@@ -64,10 +70,12 @@ export function TurnPanel({
     if (!workspaceOpen) return "打开工作区后才能开始对话";
     if (positions.length === 0) return "组织中暂无可对话岗位";
     if (!selectedPosition) return "先从组织树或 @ 选择器选择岗位";
-    if (sessionMode && !selectedSession) return "请先新建或选择一个会话";
-    if (sessionMode && selectedSession?.status !== "active") return "历史会话只读；请选择当前会话";
-    if (!engineAvailability[engine].ready) {
-      return engineAvailability[engine].reason ?? `${ENGINE_LABEL[engine]} 尚未就绪`;
+    if (engine !== "local-mock") {
+      if (sessionMode && !selectedSession) return "请先新建或选择一个会话";
+      if (sessionMode && selectedSession?.status !== "active") return "历史会话只读；请选择当前会话";
+      if (!engineAvailability[engine].ready) {
+        return engineAvailability[engine].reason ?? `${ENGINE_LABEL[engine]} 尚未就绪`;
+      }
     }
     if (busy || sending || sessionBusy) return "会话或回合正在更新";
     return null;
@@ -111,7 +119,7 @@ export function TurnPanel({
             {selectedPosition ? `@${selectedPosition.name}` : "@岗位对话"}
           </h2>
         </div>
-        <span className="owb-turn-panel__history-kind">本地历史</span>
+        <Tag className="owb-turn-panel__history-kind" bordered>本地历史</Tag>
       </header>
 
       <div className="owb-turn-panel__controls">
@@ -162,36 +170,32 @@ export function TurnPanel({
             </select>
           </label>
           {activeSession ? (
-            <button
-              type="button"
+            <AntButton
               disabled={sessionBusy || busy}
               onClick={() => void onRotateSession?.(activeSession.sessionId)}
+              icon={<RefreshCw aria-hidden="true" size={13} />}
             >
-              <RefreshCw aria-hidden="true" size={13} />
               轮换当前会话
-            </button>
+            </AntButton>
           ) : (
-            <button
-              type="button"
+            <AntButton
               disabled={!workspaceOpen || !selectedPosition || sessionBusy}
               onClick={() => void onCreateSession?.()}
+              icon={<Plus aria-hidden="true" size={13} />}
             >
-              <Plus aria-hidden="true" size={13} />
               新建会话
-            </button>
+            </AntButton>
           )}
         </div>
       ) : null}
 
       <div className="owb-turn-panel__boundaries" aria-label="能力边界">
-        <span>
-          <GitBranch aria-hidden="true" size={13} />
+        <Tag icon={<GitBranch aria-hidden="true" size={13} />} bordered>
           委派链 <strong>Planned</strong>
-        </span>
-        <span>
-          <Database aria-hidden="true" size={13} />
+        </Tag>
+        <Tag icon={<Database aria-hidden="true" size={13} />} bordered>
           长期 Context <strong>Planned</strong>
-        </span>
+        </Tag>
       </div>
 
       <TurnThread
@@ -204,7 +208,7 @@ export function TurnPanel({
       <form className="owb-turn-composer" onSubmit={(event) => void submit(event)}>
         <label htmlFor="owb-turn-input">交办任务</label>
         <div className="owb-turn-composer__surface">
-          <textarea
+          <Input.TextArea
             id="owb-turn-input"
             value={input}
             rows={3}
@@ -212,9 +216,13 @@ export function TurnPanel({
             disabled={disabledReason !== null}
             onChange={(event) => setInput(event.target.value)}
           />
-          <button type="submit" disabled={disabledReason !== null || input.trim().length === 0} aria-label="发送任务">
-            <ArrowUp aria-hidden="true" size={15} />
-          </button>
+          <AntButton
+            type="primary"
+            htmlType="submit"
+            disabled={disabledReason !== null || input.trim().length === 0}
+            aria-label="发送任务"
+            icon={<ArrowUp aria-hidden="true" size={15} />}
+          />
         </div>
         <p className="owb-turn-composer__hint" role="status">
           {disabledReason ?? `将通过 ${ENGINE_LABEL[engine]} 创建一个新回合`}
