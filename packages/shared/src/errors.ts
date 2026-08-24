@@ -29,6 +29,14 @@ export const errorCodes = {
   engine_failed: "engine_failed",
   /** A position id referenced by the route does not exist. */
   position_missing: "position_missing",
+  /** POST /turns shape or input is invalid. */
+  turn_request_invalid: "turn_request_invalid",
+  /** The selected Host is outside the D3 qoder/claude-code allowlist. */
+  turn_engine_unsupported: "turn_engine_unsupported",
+  /** The position id is malformed and cannot be used as local state path. */
+  turn_position_invalid: "turn_position_invalid",
+  /** Local conversation state could not be read or atomically persisted. */
+  turn_storage_failed: "turn_storage_failed",
   /** Route not found. */
   not_found: "not_found",
   /** Method not allowed on a known route. */

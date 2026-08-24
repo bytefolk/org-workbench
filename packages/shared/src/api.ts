@@ -19,20 +19,24 @@ export const routes = {
   orgApply: "/org/apply",
   positions: "/positions",
   reports: "/reports",
+  turns: "/turns",
   events: "/events",
 } as const;
 
 export type RoutePath = (typeof routes)[keyof typeof routes];
 
 /**
- * SSE event vocabulary. D0 emits `org.updated` only; `turn.*`,
- * `escalation.created`, and `evidence.created` are reserved shapes wired in
- * D3/D4 against the engine S1 turn contract (#165).
+ * SSE event vocabulary. D3 wires `turn.*` against the engine S1 turn
+ * contract (#165); escalation/evidence remain reserved for D4.
  */
 export const sseEventTypes = [
   "org.updated",
   "turn.started",
+  "turn.model.delta",
+  "turn.usage",
   "turn.completed",
+  "turn.failed",
+  "turn.indeterminate",
   "escalation.created",
   "evidence.created",
 ] as const;

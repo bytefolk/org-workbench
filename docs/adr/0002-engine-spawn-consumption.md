@@ -4,7 +4,7 @@
 
 ## 决策
 
-控制面消费 digital-employee 引擎的唯一形态是 spawn 子进程：每次组织生效运行一次钉版 `digital-employee org apply <staging> --json`（D3 起加回合执行），stdout 输出结构化结果，凭据仅经 env 注入。
+控制面消费 digital-employee 引擎的唯一形态是 spawn 子进程：组织生效运行钉版 `digital-employee org apply <workspace> --json`；D3 回合执行运行 `digital-employee turn run <workspace> --position <id> --stdin`，stdin 为密封 `turn-envelope.v1`，stdout 为严格 `engine.v1` NDJSON。凭据仅经最小环境白名单注入，输入与凭据均不进 argv。
 
 ## 备选与否决理由
 
@@ -21,4 +21,6 @@ spawn+stdout 结构化事件与 agent-host.v1 进程模型/NDJSON 事件流同�
 
 ## 后果
 
-- 引擎 `org apply` 子命令（#157 切片 V2）落地前，驱动层如实返回 `engine_capability_missing`（503）；staging/发布/回滚链路以 FakeDriver 测试保障，V2 落地后换钉版 CLI 复测。
+- CLI 缺少 `org apply` 时驱动层如实返回 `engine_capability_missing`（503）；可用时严格按 JSON `status` 判断，不以退出码 0 冒充 applied。
+- D3 只接受 `qoder` / `claude-code`。退出码 1 是不确定结果，不自动重试；引擎事件、输入、输出与诊断全部有界，原始 stderr 不进入本地持久化。
+- 会话/回合是 workbench 工作区本地状态，不复用 Host 原生 resume；当前只保留 digital-employee #158 的 recall 接缝，不声称 mem recall 已完成。

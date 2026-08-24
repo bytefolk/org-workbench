@@ -3,11 +3,17 @@ import http from "node:http";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import type { OrgApplyDriver } from "@org-workbench/shared";
+import type {
+  OrgApplyDriver,
+  TurnRunDriver,
+  TurnRunRequest,
+  TurnRunResult,
+} from "@org-workbench/shared";
 import { EventBus } from "../src/bus.js";
 import type { ControlPlaneContext } from "../src/context.js";
 import { createControlPlane } from "../src/server.js";
 import { WorkspaceState } from "../src/workspace-state.js";
+import { TurnStore } from "../src/turns/store.js";
 
 export const TEST_TOKEN = "test-boot-token-0123456789abcdef";
 
@@ -20,11 +26,34 @@ export type FakeOutcome = Awaited<ReturnType<OrgApplyDriver["apply"]>>;
 export class FakeDriver implements OrgApplyDriver {
   calls: string[] = [];
 
-  constructor(public outcome: FakeOutcome = { status: "applied" }) {}
+  constructor(
+    public outcome: FakeOutcome = { status: "applied" },
+    private readonly beforeReturn?: (workspaceDir: string) => Promise<void>,
+  ) {}
 
-  async apply(stagingDir: string): Promise<FakeOutcome> {
-    this.calls.push(stagingDir);
+  async apply(workspaceDir: string): Promise<FakeOutcome> {
+    this.calls.push(workspaceDir);
+    await this.beforeReturn?.(workspaceDir);
     return this.outcome;
+  }
+}
+
+export class DefaultFakeTurnDriver implements TurnRunDriver {
+  async turnRun(request: TurnRunRequest): Promise<TurnRunResult> {
+    const runId = "fake-run";
+    const timestamp = new Date().toISOString();
+    const events: TurnRunResult["events"] = [
+      { type: "run.started", runId, timestamp },
+      {
+        type: "run.completed",
+        runId,
+        timestamp,
+        output: "fake turn output",
+        terminalReason: "goal_met",
+      },
+    ];
+    for (const event of events) request.onEvent?.(event);
+    return { status: "trusted", events, diagnostic: "" };
   }
 }
 
@@ -38,7 +67,10 @@ export interface TestServer {
   close(): Promise<void>;
 }
 
-export async function startTestServer(driver?: FakeDriver): Promise<TestServer> {
+export async function startTestServer(
+  driver?: FakeDriver,
+  turnDriver: TurnRunDriver = new DefaultFakeTurnDriver(),
+): Promise<TestServer> {
   const ctx: ControlPlaneContext = {
     config: {
       host: "127.0.0.1",
@@ -50,6 +82,8 @@ export async function startTestServer(driver?: FakeDriver): Promise<TestServer> 
     workspace: new WorkspaceState(),
     bus: new EventBus(),
     driver: driver ?? new FakeDriver(),
+    turnDriver,
+    turnStore: new TurnStore(),
   };
   const server = createControlPlane(ctx);
   await new Promise<void>((resolve) => {

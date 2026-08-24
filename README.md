@@ -2,16 +2,19 @@
 
 **文件树即组织架构。** 加目录 = 招聘（必配预算），移动目录 = 改汇报线，删除 = 裁撤（留痕归档）。
 
-org-workbench 是 [digital-employee](https://github.com/fullstack-ai-infra/digital-employee) 工作区的组织工作台：Electron 桌面壳 + 本地控制面服务，围绕组织树提供只读视图、结构变更（经引擎校验的 staging + 原子发布）与上报中心。macOS 首版聚焦组织树完整闭环；web/移动端未来同仓复用同一控制面与契约。
+org-workbench 是 [digital-employee](https://github.com/fullstack-ai-infra/digital-employee) 工作区的组织工作台：Electron 桌面壳 + 本地控制面服务，围绕组织树提供只读视图、目录提案、引擎校验与上报中心。macOS 首版聚焦组织树完整闭环；web/移动端未来同仓复用同一控制面与契约。
 
-## 当前状态：D0 骨架 + D1 组织树只读（实现中）
+## 当前状态：D1 组织树 + D2 服务侧 apply + D3 本地对话闭环（开发预览）
 
 - 壳-服务分离：Electron main 拉起 `apps/server`（Node，仅 127.0.0.1，每启动随机 boot-token）；控制面可脱离壳独立运行。
-- 引擎消费：spawn 钉版 `digital-employee` CLI（ADR-0002）；`/health` 报告引擎可用性与下一步。
-- `org apply`：staging 暂存 → 引擎校验 → rename 原子发布；失败留档 `rejected/`，裁撤归档 `archive/`，全程不硬删除（ADR-0003）。**OQ-2 裁决后 D2 将翻转为"positions/ 树=提案面"模型，本机制随 D2 改造。**
-- API 契约 v0 已冻结：见 [`docs/api-contract-v0.md`](docs/api-contract-v0.md)（8 端点全量；新增走增量，破坏性变更升 v1）。
+- 引擎消费：spawn 钉版 `digital-employee` CLI（ADR-0002）；`/health` 分开报告 CLI 可用性与 Qoder/Claude Code 的非敏感本地预检状态，不把 CLI 可达冒充 Host 已配置。
+- `org apply`：客户端直接物化 `positions/` 提案树，再运行 `digital-employee org apply <workspace> --json`；成功后重载引擎应用态，失败保留提案供修正。裁撤目录移至树外 `.digital-employee/backup/`，应用态由引擎原子维护（ADR-0005）。
+- `/reports` 审计流读取引擎 `.digital-employee/org-audit.jsonl`；旧 staging、`apply-log.ndjson`、`archive/` 发布链路已退役。
+- API 契约 v0 已冻结并以加法扩展：见 [`docs/api-contract-v0.md`](docs/api-contract-v0.md)（D0 端点 + D3 `/turns`；破坏性变更升 v1）。
 - D1（组织树只读）：`packages/ui` 四组件（OrgTree/OrgTreeNode/PositionCard/BudgetBar，消费 design-system 语义 token）+ React/Vite 渲染层（AppShell 四区、Sidebar 288px、键盘树导航、SSE 驱动刷新）。
-- 里程碑：D0 骨架 → D1 组织树只读 → D2 拖拽/预算闭环 → D3 @岗位对话 → D4 上报中心。
+- D3 本地对话闭环：Bearer 保护的 `POST /turns` 与 `GET /turns?positionId=...`，只允许 Qoder/Claude Code；工作台可从组织树或 `@岗位` 选择器加载本地历史、发送并 readback，展示密封信封 digest 与可信终态。退出码 1 不自动重试；委派链、长期 Context 与 live Host 验证仍明确标为未完成。
+- 里程碑：D0 骨架 → D1 组织树只读 → D2 拖拽/预算闭环（服务侧已接约，UI 待完成）→ D3 @岗位对话 → D4 上报中心。
+- 当前仓库尚无 tag、Release 或签名安装包；快速开始面向源码开发者，不代表已发布客户端。
 
 ## 快速开始
 
@@ -33,6 +36,15 @@ curl -s -H "Authorization: Bearer <token>" http://127.0.0.1:N/workspace
 curl -s -X POST -H "Authorization: Bearer <token>" -H "Content-Type: application/json" \
      -d '{"path":"examples/oss-maintainer"}' http://127.0.0.1:N/workspace/open
 curl -s -H "Authorization: Bearer <token>" http://127.0.0.1:N/org/tree
+
+# D3：启动服务/桌面壳前按 Host 设置一个凭据；请求体不接受 token/key
+# export QODER_PERSONAL_ACCESS_TOKEN='<redacted>'
+# export ANTHROPIC_API_KEY='<redacted>'
+curl -s -X POST -H "Authorization: Bearer <token>" -H "Content-Type: application/json" \
+     -d '{"positionId":"repo-owner","input":"Summarize the open issues.","engine":"qoder"}' \
+     http://127.0.0.1:N/turns
+curl -s -H "Authorization: Bearer <token>" \
+     'http://127.0.0.1:N/turns?positionId=repo-owner'
 ```
 
 **桌面壳**（需 `npm install` 安装 Electron 后）：`npm run dev:desktop`（自动构建 renderer 再启动）。
@@ -40,14 +52,14 @@ curl -s -H "Authorization: Bearer <token>" http://127.0.0.1:N/org/tree
 **design-system 依赖说明**：`@fullstack-ai-infra/ui` 目前以开发期 `file:` 链接指向同级 `design-system` 克隆（骨架定稿方案 A：开发期 file: 链接，CI/正式包只认钉版）。链接要求该克隆已 `npm run build:package`（产出 dist，含 `--ui-sidebar-wide` 等 tokens）；设计系统发布 npm 后改钉版依赖。
 
 **引擎指针**：开发期以 `ORG_WORKBENCH_DIGITAL_EMPLOYEE_CLI` 指向钉版入口，例如
-`node <repo>/digital-employee/dist/apps/cli/bin.js`；引擎 `org apply`（#157 切片 V2）落地前，`/org/apply` 如实返回 `engine_capability_missing`（503）。
+`node <repo>/digital-employee/dist/apps/cli/bin.js`。`digital-employee` 当前 main 已提供 `org apply`，但尚未进入公开 v0.4.0 制品；控制面会按实际 CLI 能力返回成功或 `engine_capability_missing`（503），不会把 main 预览冒充已发布能力。
 
 ## 仓库结构
 
 ```
 apps/desktop/        Electron 壳：main + preload 白名单桥 + renderer（D0 零依赖渲染）
 apps/server/         本地控制面服务（零第三方运行时依赖，纯 node: 内建）
-packages/shared/     契约类型镜像：org-tree.v1 / change-manifest.v1 / 错误码 / SSE 事件
+packages/shared/     契约类型镜像：org-tree.v1 / turn-envelope.v1 / turn-record.v1 / 错误码 / SSE 事件
 packages/ui/         组织树组件族（D1 起消费 design-system；React）
 docs/                API 契约 v0（冻结）+ ADR
 examples/            oss-maintainer 示例工作区（1 owner + 3 岗位，含预算声明）
@@ -56,7 +68,7 @@ examples/            oss-maintainer 示例工作区（1 owner + 3 岗位，含�
 ## 安全基线（随契约冻结）
 
 - 控制面仅绑 127.0.0.1 + 每启动随机 token；除 `/health` 外无 token 一律 401。
-- renderer：contextIsolation 开、nodeIntegration 关、sandbox 开；preload 白名单枚举 6 个方法，无通用通道；CSP 全 `'self'`，无第三方 CDN、无远程代码。
+- renderer：contextIsolation 开、nodeIntegration 关、sandbox 开；preload 仅暴露枚举式工作区/组织/岗位/回合方法与事件订阅，无通用请求通道；CSP 全 `'self'`，无第三方 CDN、无远程代码。
 - 凭据边界：密钥只经 env 注入引擎子进程；boot-token 只经父子进程 stdout 管道，不进文件/日志。
 
 ## 契约镜像纪律

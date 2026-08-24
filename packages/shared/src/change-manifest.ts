@@ -11,8 +11,6 @@ import type { PositionBudget, PositionMode } from "./org-tree.js";
 
 export const CHANGE_MANIFEST_SCHEMA_VERSION = "change-manifest.v1" as const;
 
-export const POSITION_ID_PATTERN = /^[a-z][a-z0-9-]{0,63}$/;
-
 export interface AddPositionChange {
   op: "add";
   position: {
@@ -33,7 +31,8 @@ export interface AddPositionChange {
 export interface MovePositionChange {
   op: "move";
   id: string;
-  reportTo: string;
+  /** null moves the position directly under positions/. */
+  reportTo: string | null;
 }
 
 export interface DeletePositionChange {
@@ -45,7 +44,7 @@ export type OrgChange = AddPositionChange | MovePositionChange | DeletePositionC
 
 export interface ChangeManifest {
   schemaVersion: typeof CHANGE_MANIFEST_SCHEMA_VERSION;
-  /** Applied in order against a staging copy; engine validation is authoritative. */
+  /** Applied in order to the positions/ proposal tree; engine validation is authoritative. */
   changes: OrgChange[];
 }
 
@@ -62,16 +61,31 @@ export interface OrgApplyFailure {
   code: string;
   message: string;
   retryable: boolean;
-  /** Where the rejected staging copy is preserved for audit. */
-  rejectedStaging: string;
 }
 
 export type OrgApplyResult = OrgApplySuccess | OrgApplyFailure;
 
-/** Driver contract for the engine-side apply step (spawn, pinned version). */
+export interface EngineOrgApplySuccess {
+  status: "applied";
+  business: string;
+  owner: string;
+  bootstrapped: boolean;
+  positions: number;
+  changes: {
+    hired: string[];
+    moved: Array<{ id: string; from: string | null; to: string | null }>;
+    dismissed: string[];
+    budgetUpdated: string[];
+  };
+  organization: string;
+  audit: string;
+  permissions: string;
+}
+
+/** Driver contract for `digital-employee org apply <workspace> --json`. */
 export interface OrgApplyDriver {
-  apply(stagingDir: string): Promise<
-    | { status: "applied" }
+  apply(workspaceDir: string): Promise<
+    | { status: "applied"; result?: EngineOrgApplySuccess }
     | { status: "failed"; code: string; message: string; retryable: boolean }
     | { status: "engine_unavailable"; message: string }
     | { status: "engine_capability_missing"; message: string }
