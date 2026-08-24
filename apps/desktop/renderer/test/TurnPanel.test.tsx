@@ -12,6 +12,7 @@ const positions = [
 const availability: TurnPanelProps["engineAvailability"] = {
   qoder: { configured: true, ready: true },
   "claude-code": { configured: true, ready: true },
+  "local-mock": { configured: true, ready: true, reason: "本地 mock host：仅原型演示，非真实执行" },
 };
 
 function ControlledPanel({ onCreateTurn }: { onCreateTurn: (request: CreateTurnRequest) => void }) {
@@ -56,7 +57,7 @@ describe("TurnPanel Issue #5 D3 behavior", () => {
     expect(screen.getByRole("heading", { name: "@发布负责人" })).toBeInTheDocument();
 
     const hostSelect = screen.getByRole("combobox", { name: "选择 Agent Host" });
-    expect(within(hostSelect).getAllByRole("option")).toHaveLength(2);
+    expect(within(hostSelect).getAllByRole("option")).toHaveLength(3);
     fireEvent.change(hostSelect, { target: { value: "claude-code" } });
 
     fireEvent.change(screen.getByLabelText("交办任务"), { target: { value: "准备发布说明" } });

@@ -1,4 +1,6 @@
-import { AlertTriangle, Check, Clock3, RotateCcw, ShieldQuestion, Sparkles } from "lucide-react";
+import { Empty } from "antd";
+import { AlertTriangle, Check, Clock3, RotateCcw, ShieldQuestion } from "lucide-react";
+import { engineLabel } from "./TurnPanel";
 import type { TurnRecord, TurnStatus } from "./types";
 
 export interface TurnThreadProps {
@@ -32,9 +34,15 @@ export function TurnThread({ turns, retrying = false, canRetry, onRetry }: TurnT
   if (turns.length === 0) {
     return (
       <div className="owb-turn-thread owb-turn-thread--empty">
-        <Sparkles aria-hidden="true" size={18} />
-        <strong>从一个明确任务开始</strong>
-        <p>消息会发送给当前选择的岗位；这里仅展示本地保存的回合。</p>
+        <Empty
+          image={Empty.PRESENTED_IMAGE_SIMPLE}
+          description={
+            <>
+              <strong>从一个明确任务开始</strong>
+              <p>消息会发送给当前选择的岗位；这里仅展示本地保存的回合。</p>
+            </>
+          }
+        />
       </div>
     );
   }
@@ -48,7 +56,7 @@ export function TurnThread({ turns, retrying = false, canRetry, onRetry }: TurnT
             <article className="owb-turn__request">
               <header>
                 <span className="owb-turn__mention">@{turn.positionName}</span>
-                <span className="owb-turn__engine">{turn.engine === "qoder" ? "Qoder" : "Claude Code"}</span>
+                <span className="owb-turn__engine">{engineLabel(turn.engine)}</span>
                 <time dateTime={turn.createdAt}>{new Date(turn.createdAt).toLocaleString()}</time>
               </header>
               <p>{turn.input}</p>
@@ -60,7 +68,7 @@ export function TurnThread({ turns, retrying = false, canRetry, onRetry }: TurnT
                   <StatusIcon status={turn.status} />
                   {STATUS_COPY[turn.status]}
                 </span>
-                <code>{turn.id}</code>
+                <code title={turn.id}>{turn.id}</code>
               </header>
               {turn.output ? <p className="owb-turn__output">{turn.output}</p> : null}
               {turn.status === "running" && !turn.output ? (

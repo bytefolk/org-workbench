@@ -9,3 +9,6 @@ dist/
 .digital-employee/rejected/
 .digital-employee/applied/
 .digital-employee/archive/
+
+# Local state generated when the desktop app auto-opens the example workspace
+examples/*/.digital-employee/

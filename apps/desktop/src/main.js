@@ -11,7 +11,9 @@
 
 const { app, BrowserWindow, dialog, ipcMain } = require("electron");
 const { spawn } = require("node:child_process");
+const fs = require("node:fs");
 const http = require("node:http");
+const os = require("node:os");
 const path = require("node:path");
 const { rendererEntryPath } = require("./runtime-paths.cjs");
 const { validateRestoreRequest } = require("./org-ipc.cjs");
@@ -107,6 +109,44 @@ function apiRequest(pathname, { method = "GET", withAuth = true, body = null } =
     if (payload !== null) req.write(payload);
     req.end();
   });
+}
+
+function copyExampleWorkspace(source, dest) {
+  fs.mkdirSync(dest, { recursive: true });
+  for (const entry of fs.readdirSync(source, { withFileTypes: true })) {
+    if (entry.name === ".digital-employee") continue;
+    const from = path.join(source, entry.name);
+    const to = path.join(dest, entry.name);
+    if (entry.isDirectory()) copyExampleWorkspace(from, to);
+    else if (entry.isFile()) fs.copyFileSync(from, to);
+  }
+}
+
+function defaultWorkspaceDir() {
+  if (process.env.ORG_WORKBENCH_DEFAULT_WORKSPACE) {
+    return process.env.ORG_WORKBENCH_DEFAULT_WORKSPACE;
+  }
+  const source = path.resolve(__dirname, "..", "..", "..", "examples", "oss-maintainer");
+  // The example is a source-controlled fixture; the server writes runtime
+  // state into the opened workspace, so auto-open uses a copy outside the repo.
+  const runtime = path.join(os.homedir(), ".org-workbench", "demo-workspace");
+  if (fs.existsSync(path.join(source, "workspace.json"))) {
+    if (!fs.existsSync(path.join(runtime, "workspace.json"))) {
+      copyExampleWorkspace(source, runtime);
+    }
+    return runtime;
+  }
+  return source;
+}
+
+async function openDefaultWorkspace() {
+  const dir = defaultWorkspaceDir();
+  if (!fs.existsSync(path.join(dir, "workspace.json"))) return;
+  try {
+    await apiRequest("/workspace/open", { method: "POST", body: { path: dir } });
+  } catch {
+    // Auto-open is best-effort; the empty state with the open button remains the fallback.
+  }
 }
 
 function startEventStream() {
@@ -311,6 +351,7 @@ app.whenReady().then(async () => {
   try {
     controlPlane = await startControlPlane();
     startEventStream();
+    await openDefaultWorkspace();
   } catch (err) {
     controlPlaneError = err;
   }
