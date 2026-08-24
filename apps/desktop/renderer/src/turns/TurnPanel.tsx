@@ -1,5 +1,6 @@
 import { useMemo, useState, type FormEvent } from "react";
-import { ArrowUp, Database, GitBranch, MessagesSquare } from "lucide-react";
+import { ArrowUp, Database, GitBranch, MessagesSquare, Plus, RefreshCw } from "lucide-react";
+import type { WorkbenchSession } from "@org-workbench/shared";
 import { PositionMention } from "./PositionMention";
 import { TurnThread } from "./TurnThread";
 import type {
@@ -18,9 +19,15 @@ export interface TurnPanelProps {
   engineAvailability: Record<TurnEngine, TurnEngineAvailability>;
   turns: TurnRecord[];
   busy?: boolean;
+  sessions?: WorkbenchSession[];
+  selectedSessionId?: string | null;
+  sessionBusy?: boolean;
   onSelectPosition: (positionId: string) => void;
   onSelectEngine: (engine: TurnEngine) => void;
   onCreateTurn: (request: CreateTurnRequest) => void | boolean | Promise<void | boolean>;
+  onSelectSession?: (sessionId: string) => void;
+  onCreateSession?: () => void | Promise<void>;
+  onRotateSession?: (sessionId: string) => void | Promise<void>;
 }
 
 const ENGINE_LABEL: Record<TurnEngine, string> = {
@@ -36,24 +43,35 @@ export function TurnPanel({
   engineAvailability,
   turns,
   busy = false,
+  sessions,
+  selectedSessionId = null,
+  sessionBusy = false,
   onSelectPosition,
   onSelectEngine,
   onCreateTurn,
+  onSelectSession,
+  onCreateSession,
+  onRotateSession,
 }: TurnPanelProps) {
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
   const selectedPosition = positions.find((position) => position.id === selectedPositionId) ?? null;
+  const sessionMode = sessions !== undefined;
+  const selectedSession = sessions?.find((session) => session.sessionId === selectedSessionId) ?? null;
+  const activeSession = sessions?.find((session) => session.status === "active") ?? null;
 
   const disabledReason = useMemo(() => {
     if (!workspaceOpen) return "打开工作区后才能开始对话";
     if (positions.length === 0) return "组织中暂无可对话岗位";
     if (!selectedPosition) return "先从组织树或 @ 选择器选择岗位";
+    if (sessionMode && !selectedSession) return "请先新建或选择一个会话";
+    if (sessionMode && selectedSession?.status !== "active") return "历史会话只读；请选择当前会话";
     if (!engineAvailability[engine].ready) {
       return engineAvailability[engine].reason ?? `${ENGINE_LABEL[engine]} 尚未就绪`;
     }
-    if (busy || sending) return "正在创建回合";
+    if (busy || sending || sessionBusy) return "会话或回合正在更新";
     return null;
-  }, [busy, engine, engineAvailability, positions.length, selectedPosition, sending, workspaceOpen]);
+  }, [busy, engine, engineAvailability, positions.length, selectedPosition, selectedSession, sending, sessionBusy, sessionMode, workspaceOpen]);
 
   const submit = async (event: FormEvent) => {
     event.preventDefault();
@@ -125,6 +143,46 @@ export function TurnPanel({
         </label>
       </div>
 
+      {sessionMode ? (
+        <div className="owb-session-controls" aria-label="岗位会话">
+          <label>
+            <span className="owb-turn-control__label">本地会话</span>
+            <select
+              aria-label="选择本地会话"
+              value={selectedSessionId ?? ""}
+              disabled={!workspaceOpen || !selectedPosition || sessionBusy || sessions.length === 0}
+              onChange={(event) => onSelectSession?.(event.target.value)}
+            >
+              {sessions.length === 0 ? <option value="">尚未创建会话</option> : null}
+              {sessions.map((session, index) => (
+                <option key={session.sessionId} value={session.sessionId}>
+                  {session.status === "active" ? "当前" : "只读"} · 会话 {sessions.length - index} · {session.sessionId.slice(0, 8)}
+                </option>
+              ))}
+            </select>
+          </label>
+          {activeSession ? (
+            <button
+              type="button"
+              disabled={sessionBusy || busy}
+              onClick={() => void onRotateSession?.(activeSession.sessionId)}
+            >
+              <RefreshCw aria-hidden="true" size={13} />
+              轮换当前会话
+            </button>
+          ) : (
+            <button
+              type="button"
+              disabled={!workspaceOpen || !selectedPosition || sessionBusy}
+              onClick={() => void onCreateSession?.()}
+            >
+              <Plus aria-hidden="true" size={13} />
+              新建会话
+            </button>
+          )}
+        </div>
+      ) : null}
+
       <div className="owb-turn-panel__boundaries" aria-label="能力边界">
         <span>
           <GitBranch aria-hidden="true" size={13} />
@@ -139,7 +197,7 @@ export function TurnPanel({
       <TurnThread
         turns={turns}
         retrying={busy || sending}
-        canRetry={(turn) => workspaceOpen && engineAvailability[turn.engine].ready}
+        canRetry={(turn) => workspaceOpen && engineAvailability[turn.engine].ready && (!sessionMode || selectedSession?.status === "active")}
         onRetry={(turn) => void retry(turn)}
       />
 

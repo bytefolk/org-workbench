@@ -3,6 +3,7 @@ import type { EventBus } from "./bus.js";
 import type { WorkspaceState } from "./workspace-state.js";
 import type { ServerConfig } from "./config.js";
 import type { TurnStore } from "./turns/store.js";
+import type { SessionStore } from "./sessions/store.js";
 
 export interface ControlPlaneContext {
   config: ServerConfig;
@@ -14,4 +15,6 @@ export interface ControlPlaneContext {
   turnDriver: TurnRunDriver;
   /** Workspace-local conversation/turn persistence. */
   turnStore: TurnStore;
+  /** Explicit workspace-local session lifecycle; never a Host auth session. */
+  sessionStore: SessionStore;
 }

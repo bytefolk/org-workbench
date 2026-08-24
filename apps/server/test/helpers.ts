@@ -14,6 +14,7 @@ import type { ControlPlaneContext } from "../src/context.js";
 import { createControlPlane } from "../src/server.js";
 import { WorkspaceState } from "../src/workspace-state.js";
 import { TurnStore } from "../src/turns/store.js";
+import { SessionStore } from "../src/sessions/store.js";
 
 export const TEST_TOKEN = "test-boot-token-0123456789abcdef";
 
@@ -84,6 +85,7 @@ export async function startTestServer(
     driver: driver ?? new FakeDriver(),
     turnDriver,
     turnStore: new TurnStore(),
+    sessionStore: new SessionStore(),
   };
   const server = createControlPlane(ctx);
   await new Promise<void>((resolve) => {

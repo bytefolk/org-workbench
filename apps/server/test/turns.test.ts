@@ -10,7 +10,13 @@ import type {
 } from "@org-workbench/shared";
 import { POSITION_ID_PATTERN } from "@org-workbench/shared";
 import { api, connectSse, copyExampleWorkspace, startTestServer } from "./helpers.js";
-import { TurnStore, assertPositionId } from "../src/turns/store.js";
+import {
+  TurnStore,
+  assertPositionId,
+  isTurnRecord,
+  nodeAtomicTurnWriteOperations,
+} from "../src/turns/store.js";
+import type { AtomicTurnWriteOperations } from "../src/turns/store.js";
 import { createTurnEnvelope } from "../src/turns/envelope.js";
 
 test("turn envelope digest is byte-compatible with digital-employee 0c4cd54", () => {
@@ -237,6 +243,130 @@ test("GET /turns requires a bounded positionId and never crosses workspace state
   }
 });
 
+test("legacy history rejects credential-shaped and invalid persisted event fields without echo", async () => {
+  const server = await startTestServer(undefined, new FakeTurnDriver());
+  const workspace = await copyExampleWorkspace();
+  try {
+    await openWorkspace(server.baseUrl, server.token, workspace);
+    const created = await api(server.baseUrl, "/turns", {
+      method: "POST",
+      token: server.token,
+      body: { positionId: "repo-owner", input: "persist safely", engine: "qoder" },
+    });
+    assert.equal(created.status, 200);
+    const turnId = String((created.body as { turnId: string }).turnId);
+    const turnFile = path.join(
+      workspace,
+      ".digital-employee",
+      "workbench",
+      "conversations",
+      "repo-owner",
+      "turns",
+      `${turnId}.json`,
+    );
+    const valid = JSON.parse(await fs.readFile(turnFile, "utf8")) as Record<string, unknown>;
+
+    for (const [secret, tampered] of [
+      ["legacy-top-secret", { ...valid, token: "legacy-top-secret" }],
+      [
+        "legacy-event-secret",
+        {
+          ...valid,
+          events: (valid.events as Array<Record<string, unknown>>).map((event, index) =>
+            index === 0 ? { ...event, apiToken: "legacy-event-secret" } : event),
+        },
+      ],
+    ] as const) {
+      await fs.writeFile(turnFile, `${JSON.stringify(tampered)}\n`, { mode: 0o600 });
+      const response = await api(server.baseUrl, "/turns?positionId=repo-owner", {
+        token: server.token,
+      });
+      assert.equal(response.status, 500);
+      assert.equal((response.body as { code: string }).code, "turn_storage_failed");
+      assert.doesNotMatch(JSON.stringify(response.body), new RegExp(secret));
+    }
+  } finally {
+    await server.close();
+  }
+});
+
+test("legacy history rejects date-only and non-canonical persisted record timestamps", async () => {
+  const server = await startTestServer(undefined, new FakeTurnDriver());
+  const workspace = await copyExampleWorkspace();
+  try {
+    await openWorkspace(server.baseUrl, server.token, workspace);
+    const created = await api(server.baseUrl, "/turns", {
+      method: "POST",
+      token: server.token,
+      body: { positionId: "repo-owner", input: "preserve chronology", engine: "qoder" },
+    });
+    assert.equal(created.status, 200);
+    const valid = created.body as Record<string, unknown>;
+    const turnFile = path.join(
+      workspace,
+      ".digital-employee",
+      "workbench",
+      "conversations",
+      "repo-owner",
+      "turns",
+      `${String(valid.turnId)}.json`,
+    );
+    for (const tampered of [
+      { ...valid, createdAt: "2026-08-24", updatedAt: "2026-08-24T01:00:00.000Z" },
+      {
+        ...valid,
+        createdAt: "2026-08-24T00:00:00.000Z",
+        updatedAt: "2026-08-24t01:00:00.000z",
+      },
+      {
+        ...valid,
+        createdAt: "2026-08-24T00:00:00.000000002Z",
+        updatedAt: "2026-08-24T00:00:00.000000001Z",
+      },
+    ]) {
+      await fs.writeFile(turnFile, `${JSON.stringify(tampered)}\n`, { mode: 0o600 });
+      const response = await api(server.baseUrl, "/turns?positionId=repo-owner", {
+        token: server.token,
+      });
+      assert.equal(response.status, 500);
+      assert.equal((response.body as { code: string }).code, "turn_storage_failed");
+    }
+  } finally {
+    await server.close();
+  }
+});
+
+test("persisted timestamp validation accepts legal nanoseconds and equivalent offsets", () => {
+  assert.equal(isTurnRecord({
+    schemaVersion: "turn-record.v1",
+    conversationId: "equivalent-offset-conversation",
+    turnId: "equivalent-offset-turn",
+    positionId: "repo-owner",
+    engine: "qoder",
+    status: "completed",
+    input: "valid chronology",
+    envelopeDigest: `sha256:${"a".repeat(64)}`,
+    createdAt: "2026-08-24T08:00:00.1+08:00",
+    updatedAt: "2026-08-24T00:00:00.100000000Z",
+    runId: "equivalent-offset-run",
+    output: "done",
+    events: [
+      {
+        type: "run.started",
+        runId: "equivalent-offset-run",
+        timestamp: "2026-08-24T08:00:00.000000001+08:00",
+      },
+      {
+        type: "run.completed",
+        runId: "equivalent-offset-run",
+        timestamp: "2026-08-24T00:00:00.000000001Z",
+        output: "done",
+        terminalReason: "goal_met",
+      },
+    ],
+  }), true);
+});
+
 test("turn position ids mirror the digital-employee organization contract", () => {
   for (const valid of ["7x", "1st-responder", "repo-owner"]) {
     assert.equal(POSITION_ID_PATTERN.test(valid), true);
@@ -268,6 +398,76 @@ test("history leaves a turn owned by the active store in running state", async (
   );
   assert.equal(history.turns[0]?.status, "running");
   assert.equal(history.turns[0]?.error, undefined);
+});
+
+test("atomic turn writes clean temporary files across write, fsync, rename, and directory-fsync faults", async () => {
+  const stages = ["write", "file-sync", "rename", "directory-sync"] as const;
+  for (const stage of stages) {
+    const workspace = await copyExampleWorkspace();
+    const normal = new TurnStore();
+    await normal.history(workspace, "repo-owner", "2026-08-24T01:00:00.000Z");
+    const base = nodeAtomicTurnWriteOperations;
+    const operations: AtomicTurnWriteOperations = {
+      ...base,
+      openTemporary: async (file) => {
+        const handle = await base.openTemporary(file);
+        return {
+          writeFile: async (payload) => {
+            if (stage === "write") throw new Error("injected write fault");
+            await handle.writeFile(payload);
+          },
+          sync: async () => {
+            if (stage === "file-sync") throw new Error("injected file fsync fault");
+            await handle.sync();
+          },
+          close: () => handle.close(),
+        };
+      },
+      rename: async (source, target) => {
+        if (stage === "rename") throw new Error("injected rename fault");
+        await base.rename(source, target);
+      },
+      openDirectory: async (directory) => {
+        const handle = await base.openDirectory(directory);
+        return {
+          sync: async () => {
+            if (stage === "directory-sync") throw new Error("injected directory fsync fault");
+            await handle.sync();
+          },
+          close: () => handle.close(),
+        };
+      },
+    };
+    const faulting = new TurnStore({ atomicWriteOperations: operations });
+    await assert.rejects(
+      faulting.begin({
+        workspace,
+        positionId: "repo-owner",
+        turnId: `fault-${stage}`,
+        engine: "qoder",
+        message: "must fail atomically",
+        envelopeDigest: `sha256:${"a".repeat(64)}`,
+        now: "2026-08-24T01:00:01.000Z",
+      }),
+      (error: unknown) =>
+        error instanceof Error &&
+        "code" in error &&
+        (error as { code: string }).code === "turn_storage_failed",
+    );
+    const turnsDir = path.join(
+      workspace,
+      ".digital-employee",
+      "workbench",
+      "conversations",
+      "repo-owner",
+      "turns",
+    );
+    assert.deepEqual(
+      (await fs.readdir(turnsDir)).filter((name) => name.endsWith(".tmp")),
+      [],
+      `${stage} must not leave temporary debris`,
+    );
+  }
 });
 
 test("turn store persists the upstream one-megachar output boundary", async () => {

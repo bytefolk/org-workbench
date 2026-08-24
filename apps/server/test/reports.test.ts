@@ -34,7 +34,7 @@ function turn(overrides: Partial<TurnRecord>): TurnRecord {
     engine: "qoder",
     status: "completed",
     input: "sensitive raw input",
-    envelopeDigest: "sha256:report",
+    envelopeDigest: `sha256:${"a".repeat(64)}`,
     createdAt: "2026-08-24T06:00:00.000Z",
     updatedAt: "2026-08-24T06:01:00.000Z",
     events: [
@@ -159,6 +159,66 @@ test("reports: malformed persisted turn events fail closed instead of becoming i
     assert.equal(response.status, 500);
     assert.equal((response.body as { code: string }).code, "reports_data_invalid");
     assert.equal(JSON.stringify(response.body).includes("sensitive raw input"), false);
+  } finally {
+    await server.close();
+  }
+});
+
+test("reports: reversed persisted event timestamps fail closed instead of creating false chronology", async () => {
+  const server = await startTestServer();
+  const dir = await copyExampleWorkspace();
+  try {
+    const reversed = turn({
+      turnId: "turn-reversed-time",
+      events: [
+        { type: "run.started", runId: "run-report", timestamp: "2026-08-24T06:00:00.000Z" },
+        {
+          type: "run.completed",
+          runId: "run-report",
+          timestamp: "2026-08-24T05:59:59.999Z",
+          output: "sensitive raw output",
+          terminalReason: "goal_met",
+        },
+      ],
+    });
+    await writeTurn(dir, reversed);
+    await open(server, dir);
+    const response = await api(server.baseUrl, "/reports", { token: server.token });
+    assert.equal(response.status, 500);
+    assert.equal((response.body as { code: string }).code, "reports_data_invalid");
+    assert.equal(JSON.stringify(response.body).includes("sensitive raw output"), false);
+  } finally {
+    await server.close();
+  }
+});
+
+test("reports: nanosecond-reversed persisted events fail closed without truncation", async () => {
+  const server = await startTestServer();
+  const dir = await copyExampleWorkspace();
+  try {
+    const reversed = turn({
+      turnId: "turn-reversed-nanoseconds",
+      events: [
+        {
+          type: "run.started",
+          runId: "run-report",
+          timestamp: "2026-08-24T06:00:00.000000002Z",
+        },
+        {
+          type: "run.completed",
+          runId: "run-report",
+          timestamp: "2026-08-24T06:00:00.000000001Z",
+          output: "sensitive raw output",
+          terminalReason: "goal_met",
+        },
+      ],
+    });
+    await writeTurn(dir, reversed);
+    await open(server, dir);
+    const response = await api(server.baseUrl, "/reports", { token: server.token });
+    assert.equal(response.status, 500);
+    assert.equal((response.body as { code: string }).code, "reports_data_invalid");
+    assert.equal(JSON.stringify(response.body).includes("sensitive raw output"), false);
   } finally {
     await server.close();
   }

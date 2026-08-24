@@ -8,6 +8,14 @@ import { handleHealth } from "./routes/health.js";
 import { handleOrgApply, handleOrgBackups, handleOrgRestore, handleOrgTree } from "./routes/org.js";
 import { handlePositionGet } from "./routes/positions.js";
 import { handleReports } from "./routes/reports.js";
+import {
+  handleSessionCreate,
+  handleSessionGet,
+  handleSessionList,
+  handleSessionRotate,
+  handleSessionTurnHistory,
+  handleSessionTurnPost,
+} from "./routes/sessions.js";
 import { handleTurnHistory, handleTurnPost } from "./routes/turns.js";
 import { handleWorkspaceGet, handleWorkspaceOpen } from "./routes/workspace.js";
 
@@ -70,6 +78,46 @@ async function dispatch(
     }
     if (pathname === routes.reports && method === "GET") {
       await handleReports(ctx, res);
+      return;
+    }
+    if (pathname === routes.sessions && method === "POST") {
+      await handleSessionCreate(ctx, req, res);
+      return;
+    }
+    if (pathname === routes.sessions && method === "GET") {
+      await handleSessionList(ctx, res, url);
+      return;
+    }
+    const sessionMatch = pathname.match(/^\/sessions\/([^/]+)(?:\/(rotate|turns))?$/);
+    if (sessionMatch) {
+      let sessionId: string;
+      try {
+        sessionId = decodeURIComponent(sessionMatch[1]!);
+      } catch {
+        throw new OrgApiError(errorCodes.session_request_invalid, 400, "malformed session id");
+      }
+      const operation = sessionMatch[2];
+      if (operation === undefined && method === "GET") {
+        await handleSessionGet(ctx, res, sessionId);
+        return;
+      }
+      if (operation === "rotate" && method === "POST") {
+        await handleSessionRotate(ctx, req, res, sessionId);
+        return;
+      }
+      if (operation === "turns" && method === "POST") {
+        await handleSessionTurnPost(ctx, req, res, sessionId);
+        return;
+      }
+      if (operation === "turns" && method === "GET") {
+        await handleSessionTurnHistory(ctx, res, sessionId);
+        return;
+      }
+      sendJson(
+        res,
+        405,
+        new OrgApiError(errorCodes.method_not_allowed, 405, `method ${method} not allowed`).toBody(),
+      );
       return;
     }
     if (pathname === routes.turns && method === "POST") {

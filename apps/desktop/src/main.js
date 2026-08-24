@@ -16,6 +16,13 @@ const path = require("node:path");
 const { rendererEntryPath } = require("./runtime-paths.cjs");
 const { validateRestoreRequest } = require("./org-ipc.cjs");
 const { turnHistoryPath, validateCreateTurnRequest } = require("./turn-ipc.cjs");
+const {
+  sessionListPath,
+  sessionPath,
+  validateSessionCreateRequest,
+  validateSessionId,
+  validateSessionTurnRequest,
+} = require("./session-ipc.cjs");
 
 const SERVER_ENTRY = path.join(__dirname, "..", "..", "server", "dist", "src", "index.js");
 const READY_TIMEOUT_MS = 15000;
@@ -232,6 +239,49 @@ ipcMain.handle("owb:turn:history", async (_event, positionId) => {
     return { status: 400, body: { code: "turn_position_invalid", message: "positionId is invalid", retryable: false } };
   }
   return apiRequest(pathname);
+});
+
+ipcMain.handle("owb:session:create", async (_event, request) => {
+  const validated = validateSessionCreateRequest(request);
+  if (!validated.ok) return validated.response;
+  return apiRequest("/sessions", { method: "POST", body: validated.request });
+});
+
+ipcMain.handle("owb:session:list", async (_event, positionId) => {
+  const pathname = sessionListPath(positionId);
+  if (pathname === null) {
+    return { status: 400, body: { code: "session_request_invalid", message: "positionId is invalid", retryable: false } };
+  }
+  return apiRequest(pathname);
+});
+
+ipcMain.handle("owb:session:get", async (_event, sessionId) => {
+  const pathname = sessionPath(sessionId);
+  if (pathname === null) {
+    return { status: 400, body: { code: "session_request_invalid", message: "sessionId is invalid", retryable: false } };
+  }
+  return apiRequest(pathname);
+});
+
+ipcMain.handle("owb:session:rotate", async (_event, sessionId) => {
+  const pathname = sessionPath(sessionId, "/rotate");
+  if (pathname === null) {
+    return { status: 400, body: { code: "session_request_invalid", message: "sessionId is invalid", retryable: false } };
+  }
+  return apiRequest(pathname, { method: "POST", body: {} });
+});
+
+ipcMain.handle("owb:session:turn:create", async (_event, request) => {
+  const validated = validateSessionTurnRequest(request);
+  if (!validated.ok) return validated.response;
+  return apiRequest(`/sessions/${validated.sessionId}/turns`, { method: "POST", body: validated.request });
+});
+
+ipcMain.handle("owb:session:turn:history", async (_event, sessionId) => {
+  if (!validateSessionId(sessionId)) {
+    return { status: 400, body: { code: "session_request_invalid", message: "sessionId is invalid", retryable: false } };
+  }
+  return apiRequest(`/sessions/${sessionId}/turns`);
 });
 
 ipcMain.handle("owb:sse-status:get", async () => currentSseStatus);
