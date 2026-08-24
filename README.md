@@ -4,7 +4,7 @@
 
 org-workbench 是 [digital-employee](https://github.com/fullstack-ai-infra/digital-employee) 工作区的组织工作台：Electron 桌面壳 + 本地控制面服务，围绕组织树提供只读视图、结构变更（经引擎校验的 staging + 原子发布）与上报中心。macOS 首版聚焦组织树完整闭环；web/移动端未来同仓复用同一控制面与契约。
 
-## 当前状态：D0 骨架 + D1 组织树只读（实现中）
+## 当前状态：D0 骨架 + D1 组织树只读（开发预览）
 
 - 壳-服务分离：Electron main 拉起 `apps/server`（Node，仅 127.0.0.1，每启动随机 boot-token）；控制面可脱离壳独立运行。
 - 引擎消费：spawn 钉版 `digital-employee` CLI（ADR-0002）；`/health` 报告引擎可用性与下一步。
@@ -12,6 +12,7 @@ org-workbench 是 [digital-employee](https://github.com/fullstack-ai-infra/digit
 - API 契约 v0 已冻结：见 [`docs/api-contract-v0.md`](docs/api-contract-v0.md)（8 端点全量；新增走增量，破坏性变更升 v1）。
 - D1（组织树只读）：`packages/ui` 四组件（OrgTree/OrgTreeNode/PositionCard/BudgetBar，消费 design-system 语义 token）+ React/Vite 渲染层（AppShell 四区、Sidebar 288px、键盘树导航、SSE 驱动刷新）。
 - 里程碑：D0 骨架 → D1 组织树只读 → D2 拖拽/预算闭环 → D3 @岗位对话 → D4 上报中心。
+- 当前仓库尚无 tag、Release 或签名安装包；快速开始面向源码开发者，不代表已发布客户端。
 
 ## 快速开始
 
@@ -40,7 +41,7 @@ curl -s -H "Authorization: Bearer <token>" http://127.0.0.1:N/org/tree
 **design-system 依赖说明**：`@fullstack-ai-infra/ui` 目前以开发期 `file:` 链接指向同级 `design-system` 克隆（骨架定稿方案 A：开发期 file: 链接，CI/正式包只认钉版）。链接要求该克隆已 `npm run build:package`（产出 dist，含 `--ui-sidebar-wide` 等 tokens）；设计系统发布 npm 后改钉版依赖。
 
 **引擎指针**：开发期以 `ORG_WORKBENCH_DIGITAL_EMPLOYEE_CLI` 指向钉版入口，例如
-`node <repo>/digital-employee/dist/apps/cli/bin.js`；引擎 `org apply`（#157 切片 V2）落地前，`/org/apply` 如实返回 `engine_capability_missing`（503）。
+`node <repo>/digital-employee/dist/apps/cli/bin.js`。`digital-employee` 当前 main 已提供 `org apply`，但尚未进入公开 v0.4.0 制品；控制面会按实际 CLI 能力返回成功或 `engine_capability_missing`（503），不会把 main 预览冒充已发布能力。
 
 ## 仓库结构
 

@@ -7,6 +7,7 @@ contextBridge.exposeInMainWorld("owb", {
   workspace: () => ipcRenderer.invoke("owb:workspace:get"),
   orgTree: () => ipcRenderer.invoke("owb:org:tree"),
   position: (positionId) => ipcRenderer.invoke("owb:position:get", positionId),
+  sseStatus: () => ipcRenderer.invoke("owb:sse-status:get"),
   onEvent: (callback) => {
     const listener = (_event, payload) => callback(payload);
     ipcRenderer.on("owb:event", listener);

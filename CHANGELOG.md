@@ -26,17 +26,15 @@
 
 ### Fixed
 
+- 桌面壳从 Vite 的实际输出目录加载 renderer，干净构建不再依赖被忽略的旧产物。
+- renderer 按 IPC 的真实响应结构读取引擎健康状态，不再把可用引擎恒显为离线。
+- renderer 可读取当前 SSE 连接状态，避免窗口加载晚于连接事件时一直显示“事件流重连中”。
+- Electron 从 33 升级到 43.4.1，清除当前依赖审计中的高危漏洞；新增 Linux/macOS 双平台源码门禁。
 - oss-maintainer 示例工作区：四个岗位的 `localReference` 从不存在的 `/home/huyz/data/...` 前缀改为本机实际路径 `/Users/huyz/Documents/data/...`，示例工作区在 macOS 上可正常解析（PR #7）。
-
-### Known Issues（D0 验收遗留，见 issue #1 评论 5387072310）
-
-- DEF-1：`main.js` loadFile 指向 `../../dist/renderer`，与 vite outDir（`apps/desktop/dist/renderer`）不一致，构建产物开箱加载失败。
-- DEF-2：App.tsx 以 `statusRes.body` 取 health，与 IPC 实际返回形状（`{running, port, health}`）不符，顶栏恒显"引擎离线"。
-- DEF-3：SSE 状态横幅停留在"连接中"，sse-status IPC 未被广播。
 
 ### Verification
 
-- `npm run check` 全绿（ui 14/14、server 8/8）。
+- `npm run check` 全绿（ui 14/14、server 8/8、renderer 1/1、desktop-main 1/1，依赖审计 0 漏洞）。
 - macOS 桌面壳实测：组织树渲染、岗位卡片、SSE 刷新、关窗进程退出全部通过（issue #4 验收，证据见 issue #1/#2 评论）。
 
 ## [D0] — 骨架

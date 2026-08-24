@@ -50,7 +50,7 @@ export function App() {
       window.owb.status(),
       window.owb.workspace(),
     ]);
-    setHealth(statusRes.body as HealthResponse | null);
+    setHealth(statusRes.health ?? null);
     const ws = workspaceRes.body as WorkspaceInfoResponse | null;
     setWorkspaceInfo(ws);
     if (ws?.open === true) {
@@ -71,6 +71,7 @@ export function App() {
       if (envelope?.type === "org.updated") void refresh();
     });
     const offSse = window.owb.onSseStatus((state) => setSseState(state));
+    void window.owb.sseStatus().then((state) => setSseState(state));
     return () => {
       offEvent();
       offSse();

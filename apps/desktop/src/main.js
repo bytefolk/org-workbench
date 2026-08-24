@@ -13,6 +13,7 @@ const { app, BrowserWindow, dialog, ipcMain } = require("electron");
 const { spawn } = require("node:child_process");
 const http = require("node:http");
 const path = require("node:path");
+const { rendererEntryPath } = require("./runtime-paths.cjs");
 
 const SERVER_ENTRY = path.join(__dirname, "..", "..", "server", "dist", "src", "index.js");
 const READY_TIMEOUT_MS = 15000;
@@ -22,6 +23,7 @@ let controlPlane = null; // { child, port, token }
 let controlPlaneError = null;
 let mainWindow = null;
 let eventStreamRequest = null;
+let currentSseStatus = "connecting";
 
 function startControlPlane() {
   return new Promise((resolve, reject) => {
@@ -151,6 +153,7 @@ function startEventStream() {
 }
 
 function broadcastSseStatus(state) {
+  currentSseStatus = state;
   if (mainWindow && !mainWindow.isDestroyed()) {
     mainWindow.webContents.send("owb:sse-status", state);
   }
@@ -202,6 +205,8 @@ ipcMain.handle("owb:position:get", async (_event, positionId) => {
   return apiRequest(`/positions/${encodeURIComponent(positionId)}`);
 });
 
+ipcMain.handle("owb:sse-status:get", async () => currentSseStatus);
+
 function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1240,
@@ -215,7 +220,7 @@ function createWindow() {
     },
   });
   mainWindow.setMenuBarVisibility(false);
-  void mainWindow.loadFile(path.join(__dirname, "..", "..", "dist", "renderer", "index.html"));
+  void mainWindow.loadFile(rendererEntryPath(__dirname));
   mainWindow.on("closed", () => {
     mainWindow = null;
   });
