@@ -1,5 +1,5 @@
 import { Building2, ChevronRight, Folder, FolderOpen } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import { cn } from "@fullstack-ai-infra/ui";
 import { BudgetBar } from "./budget-bar";
 import type { OrgTreeNodeV1, OrgTreeSnapshot } from "./types";
@@ -47,7 +47,7 @@ export function OrgTreeNode({
       aria-expanded={hasChildren ? expanded : undefined}
       tabIndex={tabIndex}
       className={cn("ui-org-tree__row", selected && "is-selected")}
-      style={{ paddingLeft: `calc(${depth} * var(--ui-space-4, 16px) + var(--ui-space-2, 8px))` }}
+      style={{ paddingLeft: "var(--ui-space-2, 8px)" }}
       onClick={(event) => {
         if ((event.target as HTMLElement).closest("[data-ui-org-toggle]")) {
           onToggle();
@@ -91,6 +91,17 @@ export function OrgTreeNode({
 
 const ENTERPRISE_ID = "__enterprise__";
 
+/** Render-tree node: nested children carry the reporting connection lines. */
+interface RenderNode {
+  id: string;
+  kind: "enterprise" | "position";
+  node: OrgTreeNodeV1 | null;
+  name: string;
+  depth: number;
+  expanded: boolean;
+  children: RenderNode[];
+}
+
 interface FlatNode {
   id: string;
   kind: "enterprise" | "position";
@@ -102,18 +113,21 @@ interface FlatNode {
 }
 
 /**
- * OrgTree — accessible org directory tree (D1 spec §2, frozen org-tree.v1).
+ * OrgTree — accessible org directory tree (D1 spec §2).
  *
  * Root = the enterprise (snapshot.business, Brand icon); the engine's nested
  * tree[] (reportTo-null owner as first level, children by reporting line)
- * renders beneath it. Labels are position ids — the frozen org-tree.v1 node
- * deliberately carries only id/reportTo/budget/children; display names and
- * modes are served via /positions/:id (position card).
+ * renders beneath it. Children are wrapped in nested containers with a
+ * visible reporting connection line (border-left, --ui-border-strong) so the
+ * tree reads as an org chart, not a flat list (qa-8, 胡总强调项).
+ * Labels are position ids — the frozen org-tree.v1 node carries only
+ * id/reportTo/budget/children (+ optional name/mode post-#171); display
+ * names/modes arrive via /positions/:id.
  *
- * Accessibility: role=tree/treeitem, roving tabindex; ArrowUp/Down/Home/End
- * move, ArrowRight/Left expand/collapse or move to child/parent, Enter
- * toggles (ModuleRail arrow pattern). Version-stamp (updatedAt) driven
- * updates with a 180ms fade; the UI never polls.
+ * Accessibility: role=tree / treeitem (+ group for nested containers),
+ * roving tabindex; ArrowUp/Down/Home/End move, ArrowRight/Left expand/
+ * collapse or move to child/parent, Enter toggles. Version-stamp (updatedAt)
+ * driven updates with a 180ms fade; the UI never polls.
  */
 export function OrgTree({
   snapshot,
@@ -128,6 +142,56 @@ export function OrgTree({
   const useEnterpriseRoot = enterpriseName.length > 0 && snapshot.tree.length > 0;
   const topLevel = snapshot.tree;
 
+  const [expanded, setExpanded] = useState<Set<string>>(() => new Set());
+  const [focusedId, setFocusedId] = useState<string | null>(selectedId ?? null);
+  const containerRef = useRef<HTMLDivElement | null>(null);
+
+  const renderTree = useMemo<RenderNode[]>(() => {
+    const mkPosition = (node: OrgTreeNodeV1, depth: number): RenderNode => ({
+      id: node.id,
+      kind: "position",
+      node,
+      name: node.id,
+      depth,
+      expanded: expanded.has(node.id) && node.children.length > 0,
+      children: node.children.map((child) => mkPosition(child, depth + 1)),
+    });
+    if (useEnterpriseRoot) {
+      return [
+        {
+          id: ENTERPRISE_ID,
+          kind: "enterprise",
+          node: null,
+          name: enterpriseName,
+          depth: 0,
+          expanded: expanded.has(ENTERPRISE_ID) && topLevel.length > 0,
+          children: topLevel.map((node) => mkPosition(node, 1)),
+        },
+      ];
+    }
+    return topLevel.map((node) => mkPosition(node, 0));
+  }, [topLevel, expanded, useEnterpriseRoot, enterpriseName]);
+
+  const flatNodes = useMemo<FlatNode[]>(() => {
+    const result: FlatNode[] = [];
+    const visit = (node: RenderNode): void => {
+      result.push({
+        id: node.id,
+        kind: node.kind,
+        node: node.node,
+        name: node.name,
+        depth: node.depth,
+        hasChildren: node.children.length > 0,
+        expanded: node.expanded,
+      });
+      if (node.expanded) {
+        for (const child of node.children) visit(child);
+      }
+    };
+    for (const node of renderTree) visit(node);
+    return result;
+  }, [renderTree]);
+
   const allParentIds = useMemo(() => {
     const ids = new Set<string>();
     if (useEnterpriseRoot && topLevel.length > 0) ids.add(ENTERPRISE_ID);
@@ -139,10 +203,6 @@ export function OrgTree({
     return ids;
   }, [topLevel, useEnterpriseRoot]);
 
-  const [expanded, setExpanded] = useState<Set<string>>(() => new Set(allParentIds));
-  const [focusedId, setFocusedId] = useState<string | null>(selectedId ?? null);
-  const containerRef = useRef<HTMLDivElement | null>(null);
-
   useEffect(() => {
     setExpanded((current) => {
       const next = new Set(current);
@@ -150,29 +210,6 @@ export function OrgTree({
       return next;
     });
   }, [allParentIds]);
-
-  const flatNodes = useMemo<FlatNode[]>(() => {
-    const result: FlatNode[] = [];
-    const pushNode = (node: OrgTreeNodeV1, depth: number): void => {
-      const hasChildren = node.children.length > 0;
-      const isExpanded = hasChildren && expanded.has(node.id);
-      result.push({ id: node.id, kind: "position", node, name: node.id, depth, hasChildren, expanded: isExpanded });
-      if (isExpanded) {
-        for (const child of node.children) pushNode(child, depth + 1);
-      }
-    };
-    if (useEnterpriseRoot) {
-      const hasChildren = topLevel.length > 0;
-      const isExpanded = hasChildren && expanded.has(ENTERPRISE_ID);
-      result.push({ id: ENTERPRISE_ID, kind: "enterprise", node: null, name: enterpriseName, depth: 0, hasChildren, expanded: isExpanded });
-      if (isExpanded) {
-        for (const node of topLevel) pushNode(node, 1);
-      }
-    } else {
-      for (const node of topLevel) pushNode(node, 0);
-    }
-    return result;
-  }, [topLevel, expanded, useEnterpriseRoot, enterpriseName]);
 
   const focusedIndex = flatNodes.findIndex((entry) => entry.id === focusedId);
 
@@ -278,19 +315,11 @@ export function OrgTree({
     );
   }
 
-  return (
-    <div
-      role="tree"
-      aria-label={ariaLabel}
-      tabIndex={0}
-      ref={containerRef}
-      className={cn("ui-org-tree", refreshed && "is-refreshed", className)}
-      onKeyDown={handleKeyDown}
-    >
-      {flatNodes.map((entry) =>
-        entry.kind === "enterprise" ? (
+  const renderRows = (nodes: RenderNode[]): ReactNode =>
+    nodes.map((entry) => (
+      <Fragment key={entry.id}>
+        {entry.kind === "enterprise" ? (
           <div
-            key={entry.id}
             role="treeitem"
             data-org-node-id={entry.id}
             aria-level={1}
@@ -299,7 +328,7 @@ export function OrgTree({
             className={cn("ui-org-tree__row", "ui-org-tree__row--enterprise")}
             style={{ paddingLeft: "var(--ui-space-2, 8px)" }}
             onClick={() => {
-              if (entry.hasChildren) toggleNode(entry.id);
+              if (entry.children.length > 0) toggleNode(entry.id);
             }}
             onFocus={() => setFocusedId(entry.id)}
           >
@@ -324,19 +353,35 @@ export function OrgTree({
           </div>
         ) : (
           <OrgTreeNode
-            key={entry.id}
             node={entry.node as OrgTreeNodeV1}
             depth={entry.depth}
             selected={selectedId === entry.id}
             expanded={entry.expanded}
-            hasChildren={entry.hasChildren}
+            hasChildren={entry.children.length > 0}
             tabIndex={focusedId === entry.id ? 0 : -1}
             onSelect={() => onSelect?.(entry.id)}
             onToggle={() => toggleNode(entry.id)}
             onFocus={() => setFocusedId(entry.id)}
           />
-        ),
-      )}
+        )}
+        {entry.expanded && entry.children.length > 0 ? (
+          <div className="ui-org-tree__children" role="group">
+            {renderRows(entry.children)}
+          </div>
+        ) : null}
+      </Fragment>
+    ));
+
+  return (
+    <div
+      role="tree"
+      aria-label={ariaLabel}
+      tabIndex={0}
+      ref={containerRef}
+      className={cn("ui-org-tree", refreshed && "is-refreshed", className)}
+      onKeyDown={handleKeyDown}
+    >
+      {renderRows(renderTree)}
     </div>
   );
 }
