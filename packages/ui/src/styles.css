@@ -117,7 +117,7 @@
   background: none;
   color: var(--ui-foreground-muted);
   border-radius: var(--ui-radius-md, 10px);
-  padding: 6px 14px;
+  padding: var(--ui-space-1, 4px) var(--ui-space-3, 12px);
   font-size: var(--ui-text-sm, 13px);
   cursor: not-allowed;
 }
@@ -144,7 +144,7 @@
   color: var(--ui-warning);
   background: var(--ui-warning-soft);
   border-radius: var(--ui-radius-full, 9999px);
-  padding: 1px 8px;
+  padding: var(--ui-space-1, 4px) var(--ui-space-2, 8px);
   white-space: nowrap;
 }
 
@@ -304,7 +304,7 @@
   background: var(--ui-primary-soft);
   color: var(--ui-foreground);
   border-radius: var(--ui-radius-md, 10px);
-  padding: 6px 12px;
+  padding: var(--ui-space-1, 4px) var(--ui-space-3, 12px);
   font-size: var(--ui-text-sm, 13px);
   cursor: pointer;
 }
