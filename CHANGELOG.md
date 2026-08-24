@@ -5,7 +5,7 @@
 
 ## [Unreleased] — D1 组织树只读
 
-PR #3（feat(d1): 组织树只读），合并提交 e27a45a。
+含 PR #3（feat(d1): 组织树只读）与 PR #7（fix(examples)）。
 
 ### Added
 
@@ -23,6 +23,10 @@ PR #3（feat(d1): 组织树只读），合并提交 e27a45a。
 ### Removed
 
 - 旧原生 renderer（app.js / index.html / style.css）。
+
+### Fixed
+
+- oss-maintainer 示例工作区：四个岗位的 `localReference` 从不存在的 `/home/huyz/data/...` 前缀改为本机实际路径 `/Users/huyz/Documents/data/...`，示例工作区在 macOS 上可正常解析（PR #7）。
 
 ### Known Issues（D0 验收遗留，见 issue #1 评论 5387072310）
 
