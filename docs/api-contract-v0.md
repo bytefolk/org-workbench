@@ -27,7 +27,7 @@
 - 状态码政策：400 形状级拒绝（请求体/清单形状不合法）；401 鉴权；404 路由/岗位缺失；405 方法不允许；422 语义级拒绝（工作区不合法、未开工作区、org apply 被拒）；503 引擎不可用/能力缺失；500 内部错误。
 - 凭据边界：模型密钥等凭据只经 env 注入引擎子进程，不进 argv、日志、renderer、IPC。
 
-## 2. 端点定义（8 个，全量冻结）
+## 2. 端点定义（v0 路径冻结、后续能力只做加法）
 
 ### 2.1 `GET /health` — 存活探针（唯一免鉴权端点）
 
@@ -145,7 +145,19 @@
 
 错误码透传纪律：引擎稳定错误码（如 `workspace_org_budget_missing` / `workspace_org_budget_not_allocated` / `workspace_org_budget_invalid`）原样透传，客户端不重命名、不吞并。
 
-### 2.6 `GET /positions/:id` — 岗位卡片（只读）
+### 2.6 `GET /org/backups` / `POST /org/restore` — 裁撤恢复区
+
+`GET /org/backups` 返回树外 `.digital-employee/backup` 中、可由 `org-audit.v1` 裁撤记录追溯的岗位包：
+
+```json
+{ "schemaVersion": "org-backups.v1", "backups": [
+  { "backupId": "community-operator-1756000000000-abcdef", "positionId": "community-operator", "dismissedAt": "...", "reportTo": "repo-owner", "name": "Community Operator" }
+] }
+```
+
+`POST /org/restore` 仅接受 `{ "backupId": "..." }`。控制面将备份恢复到原汇报位置形成目录提案，再调用同一个 `digital-employee org apply <workspace> --json` 边界；renderer 不直接移动文件。成功响应中的 `restored:false` 表示重复请求发现该岗位已经应用，因而幂等返回。目标岗位/原上级冲突返回 409 `restore_conflict`；无效或损坏备份返回 `restore_invalid` 并 fail closed。恢复必须由用户显式触发，不自动恢复。
+
+### 2.7 `GET /positions/:id` — 岗位卡片（只读）
 
 响应 200：
 
@@ -165,7 +177,7 @@
 
 未找到 → 404 `position_missing`。
 
-### 2.7 `GET /reports` — 上报中心数据（只读，分页）
+### 2.8 `GET /reports` — 上报中心数据（只读，分页）
 
 响应 200：
 
@@ -182,15 +194,26 @@
       "changes": { "hired": [], "moved": [], "dismissed": [], "budgetUpdated": [] },
       "positionCount": 4
     } ],
-    "evidence": []
+    "evidence": [ {
+      "schemaVersion": "turn-evidence.v1", "positionId": "repo-owner",
+      "turnId": "...", "conversationId": "...", "engine": "qoder",
+      "status": "completed", "createdAt": "...", "updatedAt": "...",
+      "envelopeDigest": "sha256:...",
+      "usage": { "inputTokens": 100, "outputTokens": 50, "totalTokens": 150 }
+    } ]
   },
+  "budgets": [ {
+    "positionId": "repo-owner", "declared": { "perTask": { "tokens": 40000 }, "perDay": { "iterations": 96 } },
+    "recorded": { "inputTokens": 100, "outputTokens": 50, "totalTokens": 150 },
+    "latestTurn": { "inputTokens": 100, "outputTokens": 50, "totalTokens": 150 }, "state": "within"
+  } ],
   "page": { "cursor": null, "hasMore": false }
 }
 ```
 
-D2 阶段：`audits` 读取引擎 `.digital-employee/org-audit.jsonl`（org-audit.v1，最新在前，最多 200 条）；`escalations` 与 `evidence` 仍为空数组占位。
+D4 首版：`audits` 以 no-follow、有界读取引擎 `.digital-employee/org-audit.jsonl`（最新在前，最多 200 条），并逐字段投影 allowlist，源文件额外字段不进入响应；`evidence` 从已持久化 `turn-record.v1` 只摘录标识、状态、digest、稳定错误码和精确 usage，不返回 input/output/message；`escalations` 仅映射真实 failed/indeterminate 回合和当前应用态可验证的汇报链；`budgets` 比较最近回合的 token usage 与声明的 per-task token 上限，不预测未来用量。当前没有 per-day 时间桶事实，客户端单日 lane 明确显示用量不可用，不复用 per-task 比例。任何损坏审计/回合数据使整个端点以 500 `reports_data_invalid` fail closed。
 
-### 2.8 `GET /events` — SSE 事件流
+### 2.9 `GET /events` — SSE 事件流
 
 响应 200，`Content-Type: text/event-stream`。帧格式：
 
@@ -202,7 +225,7 @@ data: {"seq":4,"type":"org.updated","at":"...","payload":{...}}
 
 事件词汇（v0 冻结 + D3 加法）：`org.updated` / `turn.started` / `turn.model.delta` / `turn.usage` / `turn.completed` / `turn.failed` / `turn.indeterminate` / `escalation.created` / `evidence.created`。D3 的前五类引擎事件以已严格校验的 `engine.v1` 原始事件作为 `payload`；进程级不确定结果使用控制面 `turn.indeterminate`，不会伪造 engine 终态，也不会自动重试。
 
-### 2.9 `POST /turns` / `GET /turns` — D3 本地回合控制面
+### 2.10 `POST /turns` / `GET /turns` — D3 本地回合控制面
 
 `POST /turns` 请求（只允许下列三个字段）：
 
@@ -239,7 +262,7 @@ Electron renderer 只通过枚举式 `createTurn({positionId,input,engine})` 与
 
 ## 3. 稳定错误码登记表
 
-控制面自产码（本契约定义）：`unauthorized`、`body_invalid`、`workspace_invalid`、`workspace_not_open`、`manifest_invalid`、`organization_invalid`、`engine_unavailable`（retryable=true）、`engine_capability_missing`、`engine_failed`、`position_missing`、`turn_request_invalid`、`turn_engine_unsupported`、`turn_position_invalid`、`turn_storage_failed`、`not_found`、`method_not_allowed`、`internal`；turn-record 内的稳定结果码包括 `turn_process_exit_1`、`turn_process_failed`、`turn_engine_unavailable`、`turn_timeout`、`turn_protocol_invalid`、`turn_driver_failure`、`turn_interrupted`；提案预检码：`org_apply_position_exists`、`org_apply_position_missing`、`org_apply_cycle`、`org_apply_owner_delete`、`org_apply_max_depth`、`org_apply_destination_exists`。
+控制面自产码（本契约定义）：`unauthorized`、`body_invalid`、`workspace_invalid`、`workspace_not_open`、`manifest_invalid`、`organization_invalid`、`engine_unavailable`（retryable=true）、`engine_capability_missing`、`engine_failed`、`position_missing`、`restore_invalid`、`restore_conflict`、`reports_data_invalid`、`turn_request_invalid`、`turn_engine_unsupported`、`turn_position_invalid`、`turn_storage_failed`、`not_found`、`method_not_allowed`、`internal`；turn-record 内的稳定结果码包括 `turn_process_exit_1`、`turn_process_failed`、`turn_engine_unavailable`、`turn_timeout`、`turn_protocol_invalid`、`turn_driver_failure`、`turn_interrupted`；提案预检码：`org_apply_position_exists`、`org_apply_position_missing`、`org_apply_cycle`、`org_apply_owner_delete`、`org_apply_max_depth`、`org_apply_destination_exists`。
 引擎透传码：以 digital-employee 稳定码为准（`workspace_org_*` 等），原样透传，不在本表重定义。
 
 ## 4. 安全基线（随契约冻结）

@@ -65,6 +65,34 @@ export interface OrgApplyFailure {
 
 export type OrgApplyResult = OrgApplySuccess | OrgApplyFailure;
 
+export interface OrgBackupEntry {
+  backupId: string;
+  positionId: string;
+  dismissedAt: string;
+  reportTo: string | null;
+  name: string;
+}
+
+export interface OrgBackupsResponse {
+  schemaVersion: "org-backups.v1";
+  backups: OrgBackupEntry[];
+}
+
+export interface OrgRestoreRequest {
+  backupId: string;
+}
+
+export interface OrgRestoreSuccess {
+  status: "applied";
+  backupId: string;
+  positionId: string;
+  /** false means a repeated request found the same position already applied. */
+  restored: boolean;
+  version: { seq: number; updatedAt: string };
+}
+
+export type OrgRestoreResult = OrgRestoreSuccess | OrgApplyFailure;
+
 export interface EngineOrgApplySuccess {
   status: "applied";
   business: string;

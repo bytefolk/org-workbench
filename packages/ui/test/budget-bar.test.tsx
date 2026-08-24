@@ -26,16 +26,16 @@ describe("BudgetBar (D1 spec §4 dual-phase contract)", () => {
 
   it("consumption phase tiers: ok <80%, warning 80–100%, over >100%", () => {
     const { rerender } = render(
-      <BudgetBar declared={DECLARED} consumption={0.5} format="full" />,
+      <BudgetBar declared={DECLARED} consumption={0.5} dailyConsumption={0.5} format="full" />,
     );
     expect(screen.getByRole("meter", { name: "单任务消耗" })).toHaveClass("is-ok");
     expect(screen.getAllByText("50%")).toHaveLength(2);
 
-    rerender(<BudgetBar declared={DECLARED} consumption={0.9} format="full" />);
+    rerender(<BudgetBar declared={DECLARED} consumption={0.9} dailyConsumption={0.9} format="full" />);
     expect(screen.getByRole("meter", { name: "单任务消耗" })).toHaveClass("is-warning");
     expect(screen.getAllByText("90%")).toHaveLength(2);
 
-    rerender(<BudgetBar declared={DECLARED} consumption={1.2} format="full" />);
+    rerender(<BudgetBar declared={DECLARED} consumption={1.2} dailyConsumption={1.2} format="full" />);
     expect(screen.getByRole("meter", { name: "单任务消耗" })).toHaveClass("is-over");
     expect(screen.getAllByText("120%")).toHaveLength(2);
   });

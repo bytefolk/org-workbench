@@ -17,6 +17,8 @@ export const routes = {
   workspaceOpen: "/workspace/open",
   orgTree: "/org/tree",
   orgApply: "/org/apply",
+  orgBackups: "/org/backups",
+  orgRestore: "/org/restore",
   positions: "/positions",
   reports: "/reports",
   turns: "/turns",
@@ -27,7 +29,8 @@ export type RoutePath = (typeof routes)[keyof typeof routes];
 
 /**
  * SSE event vocabulary. D3 wires `turn.*` against the engine S1 turn
- * contract (#165); escalation/evidence remain reserved for D4.
+ * contract (#165); D4 derives local read-only escalation/evidence views from
+ * persisted turn records and does not synthesize new engine events.
  */
 export const sseEventTypes = [
   "org.updated",

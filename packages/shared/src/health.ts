@@ -52,11 +52,53 @@ import type { OrgRole } from "./org-tree.js";
 export interface ReportsResponse {
   schemaVersion: "reports.v1";
   streams: {
-    escalations: unknown[];
+    escalations: EscalationEntry[];
     audits: AuditEntry[];
-    evidence: unknown[];
+    evidence: EvidenceEntry[];
   };
+  budgets: BudgetReport[];
   page: { cursor: string | null; hasMore: boolean };
+}
+
+export interface ReportUsage {
+  inputTokens: number;
+  outputTokens: number;
+  totalTokens: number;
+}
+
+export interface EvidenceEntry {
+  schemaVersion: "turn-evidence.v1";
+  positionId: string;
+  turnId: string;
+  conversationId: string;
+  engine: TurnEngine;
+  status: "running" | "completed" | "failed" | "indeterminate";
+  createdAt: string;
+  updatedAt: string;
+  envelopeDigest: string;
+  runId?: string;
+  usage: ReportUsage;
+  errorCode?: string;
+}
+
+export interface EscalationEntry {
+  schemaVersion: "turn-escalation.v1";
+  positionId: string;
+  turnId: string;
+  at: string;
+  status: "failed" | "indeterminate";
+  code: string;
+  reportingChain: string[];
+  budgetRelated: boolean;
+}
+
+export interface BudgetReport {
+  positionId: string;
+  declared: OrgRole["budget"];
+  recorded: ReportUsage;
+  latestTurn: ReportUsage | null;
+  /** Exact, non-predictive state: no record, within the declared cap, or exceeded. */
+  state: "unobserved" | "within" | "exceeded";
 }
 
 export interface AuditEntry {

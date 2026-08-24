@@ -2,7 +2,7 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { App } from "../src/App";
 import type { OwbBridge } from "../src/owb";
-import type { TurnHistory, TurnRecord } from "@org-workbench/shared";
+import type { ReportsResponse, TurnHistory, TurnRecord } from "@org-workbench/shared";
 
 function installBridge(overrides: Partial<OwbBridge> = {}): OwbBridge {
   const bridge: OwbBridge = {
@@ -24,6 +24,10 @@ function installBridge(overrides: Partial<OwbBridge> = {}): OwbBridge {
     openWorkspace: vi.fn().mockResolvedValue({ canceled: true }),
     workspace: vi.fn().mockResolvedValue({ status: 200, body: { open: false } }),
     orgTree: vi.fn().mockResolvedValue({ status: 200, body: null }),
+    orgApply: vi.fn().mockResolvedValue({ status: 500, body: { code: "internal" } }),
+    orgBackups: vi.fn().mockResolvedValue({ status: 200, body: { schemaVersion: "org-backups.v1", backups: [] } }),
+    orgRestore: vi.fn().mockResolvedValue({ status: 404, body: { code: "restore_invalid" } }),
+    reports: vi.fn().mockResolvedValue({ status: 200, body: emptyReports() }),
     position: vi.fn().mockResolvedValue({ status: 404, body: { code: "position_missing" } }),
     createTurn: vi.fn().mockResolvedValue({ status: 500, body: { code: "internal", message: "unexpected" } }),
     turnHistory: vi.fn().mockResolvedValue({
@@ -117,6 +121,10 @@ function openedBridge(overrides: Partial<OwbBridge> = {}): OwbBridge {
     position: vi.fn().mockResolvedValue({ status: 200, body: { position } }),
     ...overrides,
   });
+}
+
+function emptyReports(): ReportsResponse {
+  return { schemaVersion: "reports.v1", streams: { escalations: [], audits: [], evidence: [] }, budgets: [], page: { cursor: null, hasMore: false } };
 }
 
 async function selectRepoOwner(): Promise<void> {
@@ -217,5 +225,112 @@ describe("App runtime bridge", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent("turn_engine_unavailable: Qoder Host 暂不可用");
     expect(input).toHaveValue("不要丢失这条任务");
     expect(createTurn).toHaveBeenCalledTimes(1);
+  });
+
+  it("submits a drag move proposal and rejects a self-drop before IPC", async () => {
+    const tree = {
+      ...snapshot,
+      positionCount: 3,
+      depth: 2,
+      tree: [{ ...snapshot.tree[0]!, children: [
+        { id: "docs-writer", reportTo: "repo-owner", budget: snapshot.tree[0]!.budget, children: [] },
+        { id: "release-engineer", reportTo: "repo-owner", budget: snapshot.tree[0]!.budget, children: [] },
+      ] }],
+    };
+    const orgApply = vi.fn().mockResolvedValue({ status: 200, body: { status: "applied" } });
+    openedBridge({
+      orgTree: vi.fn().mockResolvedValue({ status: 200, body: tree }),
+      position: vi.fn().mockImplementation(async (id: string) => ({ status: 200, body: { position: { ...position, id, name: id, reportTo: id === "repo-owner" ? null : "repo-owner" } } })),
+      orgApply,
+      turnHistory: vi.fn().mockResolvedValue({ status: 200, body: history([]) }),
+    });
+    render(<App />);
+    const source = await screen.findByText("docs-writer", { selector: ".ui-org-tree__label" });
+    const target = screen.getByText("release-engineer", { selector: ".ui-org-tree__label" });
+    const data = new Map<string, string>();
+    const dataTransfer = { effectAllowed: "move", dropEffect: "move", setData: (type: string, value: string) => data.set(type, value), getData: (type: string) => data.get(type) ?? "" };
+    fireEvent.dragStart(source.closest('[role="treeitem"]')!, { dataTransfer });
+    fireEvent.drop(target.closest('[role="treeitem"]')!, { dataTransfer });
+    await waitFor(() => expect(orgApply).toHaveBeenCalledWith({ schemaVersion: "change-manifest.v1", changes: [{ op: "move", id: "docs-writer", reportTo: "release-engineer" }] }));
+
+    fireEvent.dragStart(source.closest('[role="treeitem"]')!, { dataTransfer });
+    fireEvent.drop(source.closest('[role="treeitem"]')!, { dataTransfer });
+    expect(await screen.findByRole("alert")).toHaveTextContent("非法投放");
+    expect(orgApply).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps hire disabled until token budgets are complete, then applies one add manifest", async () => {
+    const orgApply = vi.fn().mockResolvedValue({ status: 200, body: { status: "applied" } });
+    openedBridge({ orgApply, turnHistory: vi.fn().mockResolvedValue({ status: 200, body: history([]) }) });
+    render(<App />);
+    fireEvent.click(await screen.findByRole("button", { name: "招聘岗位" }));
+    expect(screen.getByRole("button", { name: "确认招聘" })).toBeDisabled();
+    fireEvent.change(screen.getByLabelText("岗位 ID"), { target: { value: "docs-writer" } });
+    fireEvent.change(screen.getByLabelText("岗位名称"), { target: { value: "文档负责人" } });
+    fireEvent.change(screen.getByLabelText("职责描述"), { target: { value: "维护文档" } });
+    fireEvent.change(screen.getByLabelText("单任务 tokens"), { target: { value: "20000" } });
+    fireEvent.change(screen.getByLabelText("单日 tokens"), { target: { value: "200000" } });
+    expect(screen.getByRole("button", { name: "确认招聘" })).toBeEnabled();
+    fireEvent.click(screen.getByRole("button", { name: "确认招聘" }));
+    await waitFor(() => expect(orgApply).toHaveBeenCalledWith(expect.objectContaining({
+      schemaVersion: "change-manifest.v1",
+      changes: [expect.objectContaining({ op: "add", position: expect.objectContaining({ id: "docs-writer", budget: { perTask: { tokens: 20000 }, perDay: { tokens: 200000 } } }) })],
+    })));
+  });
+
+  it("requires dismissal confirmation and invokes one-click restore through typed IPC", async () => {
+    const childSnapshot = { ...snapshot, positionCount: 2, depth: 2, tree: [{ ...snapshot.tree[0]!, children: [{ id: "docs-writer", reportTo: "repo-owner", budget: snapshot.tree[0]!.budget, children: [] }] }] };
+    const orgApply = vi.fn().mockResolvedValue({ status: 200, body: { status: "applied" } });
+    const orgRestore = vi.fn().mockResolvedValue({ status: 200, body: { status: "applied", positionId: "old-writer", restored: true } });
+    openedBridge({
+      orgTree: vi.fn().mockResolvedValue({ status: 200, body: childSnapshot }),
+      position: vi.fn().mockImplementation(async (id: string) => ({ status: 200, body: { position: { ...position, id, name: id, reportTo: id === "repo-owner" ? null : "repo-owner" } } })),
+      orgApply,
+      orgBackups: vi.fn().mockResolvedValue({ status: 200, body: { schemaVersion: "org-backups.v1", backups: [{ backupId: "old-writer-1756000000000-abcdef", positionId: "old-writer", dismissedAt: "2026-08-24T06:00:00Z", reportTo: "repo-owner", name: "旧文档负责人" }] } }),
+      orgRestore,
+      turnHistory: vi.fn().mockResolvedValue({ status: 200, body: history([]) }),
+    });
+    render(<App />);
+    fireEvent.click(await screen.findByText("docs-writer", { selector: ".ui-org-tree__label" }));
+    fireEvent.click(await screen.findByRole("button", { name: "裁撤" }));
+    fireEvent.click(screen.getByRole("button", { name: "取消" }));
+    expect(orgApply).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "裁撤" }));
+    fireEvent.click(screen.getByRole("button", { name: "确认裁撤并留痕" }));
+    await waitFor(() => expect(orgApply).toHaveBeenCalledWith({ schemaVersion: "change-manifest.v1", changes: [{ op: "delete", id: "docs-writer" }] }));
+
+    fireEvent.click(screen.getByRole("button", { name: "一键恢复" }));
+    await waitFor(() => expect(orgRestore).toHaveBeenCalledWith("old-writer-1756000000000-abcdef"));
+  });
+
+  it("renders D4 tabs from sanitized report facts and never displays raw turn content", async () => {
+    const reports: ReportsResponse = {
+      schemaVersion: "reports.v1",
+      streams: {
+        escalations: [{ schemaVersion: "turn-escalation.v1", positionId: "repo-owner", turnId: "turn-1", at: "2026-08-24T06:00:00Z", status: "failed", code: "position_budget_exceeded", reportingChain: ["repo-owner"], budgetRelated: true }],
+        audits: [],
+        evidence: [{ schemaVersion: "turn-evidence.v1", positionId: "repo-owner", turnId: "turn-1", conversationId: "conversation-1", engine: "qoder", status: "failed", createdAt: "2026-08-24T05:59:00Z", updatedAt: "2026-08-24T06:00:00Z", envelopeDigest: "sha256:evidence", usage: { inputTokens: 10, outputTokens: 20, totalTokens: 30 }, errorCode: "position_budget_exceeded" }],
+      },
+      budgets: [{
+        positionId: "repo-owner",
+        declared: { perTask: { tokens: 100 }, perDay: { tokens: 1000 } },
+        recorded: { inputTokens: 20, outputTokens: 30, totalTokens: 50 },
+        latestTurn: { inputTokens: 20, outputTokens: 30, totalTokens: 50 },
+        state: "within",
+      }],
+      page: { cursor: null, hasMore: false },
+    };
+    openedBridge({ reports: vi.fn().mockResolvedValue({ status: 200, body: reports }), turnHistory: vi.fn().mockResolvedValue({ status: 200, body: history([]) }) });
+    render(<App />);
+    fireEvent.click(await screen.findByRole("button", { name: "上报" }));
+    expect(await screen.findByRole("heading", { name: "上报中心" })).toBeInTheDocument();
+    expect(screen.getByText("position_budget_exceeded")).toBeInTheDocument();
+    expect(screen.getByRole("meter", { name: "单任务消耗" })).toHaveAttribute("aria-valuenow", "50");
+    expect(screen.getByRole("meter", { name: "单日用量不可用" })).not.toHaveAttribute("aria-valuenow");
+    expect(screen.getAllByText("50%")).toHaveLength(1);
+    fireEvent.click(screen.getByRole("button", { name: /回合证据/ }));
+    expect(screen.getByText("sha256:evidence")).toBeInTheDocument();
+    expect(screen.queryByText("sensitive raw input")).not.toBeInTheDocument();
+    expect(screen.queryByText("sensitive raw output")).not.toBeInTheDocument();
   });
 });

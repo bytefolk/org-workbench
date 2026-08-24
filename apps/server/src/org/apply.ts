@@ -36,7 +36,7 @@ interface ApplyOutcome {
   body: OrgApplyResult;
 }
 
-interface ProposalPosition {
+export interface ProposalPosition {
   id: string;
   directory: string;
   reportTo: string | null;
@@ -51,7 +51,33 @@ interface ProposalPosition {
  * sole organization validator and owns every applied-state write. A rejected
  * apply intentionally leaves the proposal tree available for correction.
  */
+const mutationTails = new Map<string, Promise<void>>();
+
+export async function withOrgMutationLock<T>(workspaceDir: string, action: () => Promise<T>): Promise<T> {
+  const key = path.resolve(workspaceDir);
+  const previous = mutationTails.get(key) ?? Promise.resolve();
+  let release = (): void => undefined;
+  const tail = new Promise<void>((resolve) => { release = resolve; });
+  const chained = previous.then(() => tail);
+  mutationTails.set(key, chained);
+  await previous;
+  try {
+    return await action();
+  } finally {
+    release();
+    if (mutationTails.get(key) === chained) mutationTails.delete(key);
+  }
+}
+
 export async function applyChangeManifest(
+  ctx: ControlPlaneContext,
+  rawBody: unknown,
+): Promise<ApplyOutcome> {
+  const ws = ctx.workspace.requireOpen();
+  return withOrgMutationLock(ws.dir, () => applyChangeManifestUnlocked(ctx, rawBody));
+}
+
+async function applyChangeManifestUnlocked(
   ctx: ControlPlaneContext,
   rawBody: unknown,
 ): Promise<ApplyOutcome> {
@@ -97,7 +123,7 @@ function failure(
   return { status, body };
 }
 
-async function scanProposalTree(workspaceDir: string): Promise<ProposalPosition[]> {
+export async function scanProposalTree(workspaceDir: string): Promise<ProposalPosition[]> {
   const root = path.join(workspaceDir, POSITIONS_DIR);
   const positions: ProposalPosition[] = [];
   const seen = new Set<string>();

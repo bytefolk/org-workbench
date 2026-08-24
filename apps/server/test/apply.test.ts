@@ -76,6 +76,7 @@ async function seedAppliedState(dir: string): Promise<void> {
  * tree and writes only the applied model/audit artifacts the server reloads. */
 async function emulateEngineApply(dir: string): Promise<void> {
   const model = await readApplied(dir);
+  const declared = await readJson<OrganizationFile>(path.join(dir, "organization.v1alpha1.json"));
   const root = path.join(dir, "positions", "repo-owner");
   const docsPath = path.join(root, "docs-writer");
   const docs = model.roles.find((role) => role.id === "docs-writer");
@@ -124,6 +125,14 @@ async function emulateEngineApply(dir: string): Promise<void> {
   if (!(await exists(path.join(root, "community-operator")))) {
     const index = model.roles.findIndex((role) => role.id === "community-operator");
     if (index >= 0) dismissed.push(...model.roles.splice(index, 1));
+  } else if (!model.roles.some((role) => role.id === "community-operator")) {
+    const restored = declared.roles.find((role) => role.id === "community-operator");
+    if (restored) {
+      const hydrated = structuredClone(restored);
+      hydrated.package.localReference = path.join(root, "community-operator");
+      model.roles.push(hydrated);
+      hired.push(hydrated);
+    }
   }
   model.updatedAt = new Date(Date.now() + 1000).toISOString();
   const runtime = path.join(dir, ".digital-employee");
@@ -226,6 +235,110 @@ test("org apply: hire/move/dismiss materialize the proposal, reload applied org,
     const audits = (reports.body as { streams: { audits: Array<{ schemaVersion: string }> } }).streams.audits;
     assert.equal(audits[0]?.schemaVersion, "org-audit.v1");
     assert.equal(audits.length, 4);
+  } finally {
+    await server.close();
+  }
+});
+
+test("org restore: lists auditable backups, restores once, and makes a repeated request idempotent", async () => {
+  const driver = new FakeDriver({ status: "applied" }, emulateEngineApply);
+  const server = await startTestServer(driver);
+  const dir = await copyExampleWorkspace();
+  try {
+    await seedAppliedState(dir);
+    await api(server.baseUrl, "/workspace/open", { method: "POST", token: server.token, body: { path: dir } });
+    const disband = await api(server.baseUrl, "/org/apply", {
+      method: "POST", token: server.token,
+      body: { schemaVersion: "change-manifest.v1", changes: [{ op: "delete", id: "community-operator" }] },
+    });
+    assert.equal(disband.status, 200);
+
+    const listed = await api(server.baseUrl, "/org/backups", { token: server.token });
+    assert.equal(listed.status, 200);
+    const backups = (listed.body as { backups: Array<{ backupId: string; positionId: string; reportTo: string | null }> }).backups;
+    assert.equal(backups.length, 1);
+    assert.equal(backups[0]?.positionId, "community-operator");
+    assert.equal(backups[0]?.reportTo, "repo-owner");
+
+    const first = await api(server.baseUrl, "/org/restore", {
+      method: "POST", token: server.token, body: { backupId: backups[0]!.backupId },
+    });
+    assert.equal(first.status, 200);
+    assert.equal((first.body as { restored: boolean }).restored, true);
+    assert.ok((await readApplied(dir)).roles.some((role) => role.id === "community-operator"));
+
+    const repeated = await api(server.baseUrl, "/org/restore", {
+      method: "POST", token: server.token, body: { backupId: backups[0]!.backupId },
+    });
+    assert.equal(repeated.status, 200);
+    assert.equal((repeated.body as { restored: boolean }).restored, false);
+    assert.equal(driver.calls.length, 2, "repeat does not call the engine after readback proves the position applied");
+  } finally {
+    await server.close();
+  }
+});
+
+test("org restore: rejects a conflicting proposal and preserves the backup", async () => {
+  const driver = new FakeDriver({ status: "applied" }, emulateEngineApply);
+  const server = await startTestServer(driver);
+  const dir = await copyExampleWorkspace();
+  try {
+    await seedAppliedState(dir);
+    await api(server.baseUrl, "/workspace/open", { method: "POST", token: server.token, body: { path: dir } });
+    await api(server.baseUrl, "/org/apply", {
+      method: "POST", token: server.token,
+      body: { schemaVersion: "change-manifest.v1", changes: [{ op: "delete", id: "community-operator" }] },
+    });
+    const listed = await api(server.baseUrl, "/org/backups", { token: server.token });
+    const backupId = (listed.body as { backups: Array<{ backupId: string }> }).backups[0]!.backupId;
+    const conflicting = path.join(dir, "positions", "repo-owner", "community-operator");
+    await fs.cp(path.join(dir, ".digital-employee", "backup", backupId), conflicting, { recursive: true });
+
+    const restored = await api(server.baseUrl, "/org/restore", {
+      method: "POST", token: server.token, body: { backupId },
+    });
+    assert.equal(restored.status, 409);
+    assert.equal((restored.body as { code: string }).code, "restore_conflict");
+    assert.ok(await exists(path.join(dir, ".digital-employee", "backup", backupId)));
+    assert.equal(driver.calls.length, 1);
+  } finally {
+    await server.close();
+  }
+});
+
+test("org restore: engine refusal preserves applied bytes and the restored proposal for explicit retry", async () => {
+  let refuse = false;
+  const driver = new FakeDriver({ status: "applied" }, async (dir) => {
+    if (!refuse) await emulateEngineApply(dir);
+  });
+  const server = await startTestServer(driver);
+  const dir = await copyExampleWorkspace();
+  try {
+    await seedAppliedState(dir);
+    await api(server.baseUrl, "/workspace/open", { method: "POST", token: server.token, body: { path: dir } });
+    await api(server.baseUrl, "/org/apply", {
+      method: "POST", token: server.token,
+      body: { schemaVersion: "change-manifest.v1", changes: [{ op: "delete", id: "community-operator" }] },
+    });
+    const listed = await api(server.baseUrl, "/org/backups", { token: server.token });
+    const backupId = (listed.body as { backups: Array<{ backupId: string }> }).backups[0]!.backupId;
+    const before = await appliedBytes(dir);
+    refuse = true;
+    driver.outcome = {
+      status: "failed",
+      code: "workspace_org_budget_not_allocated",
+      message: "restored position budget is not allocated",
+      retryable: false,
+    };
+
+    const restored = await api(server.baseUrl, "/org/restore", {
+      method: "POST", token: server.token, body: { backupId },
+    });
+    assert.equal(restored.status, 422);
+    assert.equal((restored.body as { code: string }).code, "workspace_org_budget_not_allocated");
+    await assertAppliedBytes(dir, before);
+    assert.ok(await exists(path.join(dir, "positions", "repo-owner", "community-operator")), "restore proposal remains available for correction/retry");
+    assert.equal(await exists(path.join(dir, ".digital-employee", "backup", backupId)), false);
   } finally {
     await server.close();
   }

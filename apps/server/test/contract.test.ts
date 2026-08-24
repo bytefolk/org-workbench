@@ -25,6 +25,8 @@ test("contract v0: every frozen endpoint exists with the contracted auth behavio
       { path: routes.workspaceOpen, method: "POST" },
       { path: routes.orgTree, method: "GET" },
       { path: routes.orgApply, method: "POST" },
+      { path: routes.orgBackups, method: "GET" },
+      { path: routes.orgRestore, method: "POST" },
       { path: `${routes.positions}/repo-owner`, method: "GET" },
       { path: routes.reports, method: "GET" },
       { path: `${routes.turns}?positionId=repo-owner`, method: "GET" },
@@ -70,6 +72,7 @@ function minimalBody(path: string): unknown {
   if (path === routes.turns) {
     return { positionId: "repo-owner", input: "hello", engine: "qoder" };
   }
+  if (path === routes.orgRestore) return { backupId: "repo-owner-1700000000000-abcdef" };
   return { schemaVersion: "change-manifest.v1", changes: [] };
 }
 

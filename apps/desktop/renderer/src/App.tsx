@@ -11,13 +11,18 @@ import {
 import { BudgetBar, OrgTree, PositionCard } from "@org-workbench/ui";
 import type { PositionCardData } from "@org-workbench/ui";
 import type {
+  AddPositionChange,
+  ChangeManifest,
   HealthResponse,
+  OrgBackupEntry,
+  OrgBackupsResponse,
   OrgTreeNodeV1,
   OrgTreeSnapshot,
+  ReportsResponse,
   TurnHistory,
   WorkspaceInfoResponse,
 } from "@org-workbench/shared";
-import { FolderTree, History, Network, TriangleAlert } from "lucide-react";
+import { FileChartColumn, FolderTree, History, Network, TriangleAlert } from "lucide-react";
 import type { CSSProperties } from "react";
 import { TurnPanel, adaptTurnHistory, adaptTurnRecord } from "./turns";
 import type {
@@ -26,6 +31,8 @@ import type {
   TurnEngine,
   TurnRecord,
 } from "./turns";
+import { BackupTray, DismissPositionDialog, HirePositionDialog } from "./org/OrgControls";
+import { ReportsCenter } from "./reports/ReportsCenter";
 
 interface PositionCardState {
   loading: boolean;
@@ -41,6 +48,7 @@ interface PositionCardState {
  * (org.updated drives refresh; the UI never polls).
  */
 export function App() {
+  const [activeModule, setActiveModule] = useState<"org" | "reports">("org");
   const [health, setHealth] = useState<HealthResponse | null>(null);
   const [workspaceInfo, setWorkspaceInfo] = useState<WorkspaceInfoResponse | null>(null);
   const [snapshot, setSnapshot] = useState<OrgTreeSnapshot | null>(null);
@@ -59,10 +67,41 @@ export function App() {
   const [turnBusy, setTurnBusy] = useState(false);
   const [turnError, setTurnError] = useState<string | null>(null);
   const [sseState, setSseState] = useState<"connecting" | "connected">("connecting");
+  const [backups, setBackups] = useState<OrgBackupEntry[]>([]);
+  const [reports, setReports] = useState<ReportsResponse | null>(null);
+  const [reportsLoading, setReportsLoading] = useState(false);
+  const [reportsError, setReportsError] = useState<string | null>(null);
+  const [orgBusy, setOrgBusy] = useState(false);
+  const [orgFeedback, setOrgFeedback] = useState<{ tone: "info" | "warn"; text: string } | null>(null);
 
   useEffect(() => {
     selectedIdRef.current = selectedId;
   }, [selectedId]);
+
+  const loadBackups = useCallback(async () => {
+    const response = await window.owb.orgBackups();
+    if (response.status === 200) setBackups((response.body as OrgBackupsResponse).backups);
+    else setBackups([]);
+  }, []);
+
+  const loadReports = useCallback(async () => {
+    setReportsLoading(true);
+    try {
+      const response = await window.owb.reports();
+      if (response.status !== 200) {
+        setReports(null);
+        setReportsError(apiErrorMessage(response.body, "上报数据读取失败"));
+        return;
+      }
+      setReports(response.body as ReportsResponse);
+      setReportsError(null);
+    } catch {
+      setReports(null);
+      setReportsError("上报数据读取失败：控制面不可达");
+    } finally {
+      setReportsLoading(false);
+    }
+  }, []);
 
   const refresh = useCallback(async () => {
     const [statusRes, workspaceRes] = await Promise.all([
@@ -87,6 +126,7 @@ export function App() {
         const names = Object.fromEntries(nameEntries);
         positionNamesRef.current = names;
         setPositionNames(names);
+        await Promise.all([loadBackups(), loadReports()]);
       } else {
         setSnapshot(null);
         positionNamesRef.current = {};
@@ -100,9 +140,12 @@ export function App() {
       setCard({ loading: false, data: null, notFound: false });
       setTurns([]);
       setTurnError(null);
+      setBackups([]);
+      setReports(null);
+      setReportsError(null);
     }
     setTreeLoading(false);
-  }, []);
+  }, [loadBackups, loadReports]);
 
   const loadPosition = useCallback(async (id: string) => {
     setCard({ loading: true, data: null, notFound: false });
@@ -157,6 +200,7 @@ export function App() {
         return;
       }
       if (["turn.completed", "turn.failed", "turn.indeterminate"].includes(envelope?.type ?? "")) {
+        void loadReports();
         const id = selectedIdRef.current;
         if (id !== null) {
           if (refreshTimer !== null) clearTimeout(refreshTimer);
@@ -174,7 +218,7 @@ export function App() {
       offEvent();
       offSse();
     };
-  }, [loadTurnHistory, refresh]);
+  }, [loadReports, loadTurnHistory, refresh]);
 
   const selectPosition = useCallback((id: string) => {
     selectedIdRef.current = id;
@@ -217,6 +261,75 @@ export function App() {
     await refresh();
   }, [refresh]);
 
+  const applyOrg = useCallback(async (manifest: ChangeManifest, successMessage: string) => {
+    setOrgBusy(true);
+    setOrgFeedback(null);
+    try {
+      const response = await window.owb.orgApply(manifest);
+      if (response.status !== 200) {
+        setOrgFeedback({ tone: "warn", text: apiErrorMessage(response.body, "组织变更被拒绝；应用态未更新，提案保留可修正") });
+        return false;
+      }
+      setOrgFeedback({ tone: "info", text: successMessage });
+      await refresh();
+      return true;
+    } catch {
+      setOrgFeedback({ tone: "warn", text: "组织变更状态不确定：控制面不可达；不会自动重试" });
+      return false;
+    } finally {
+      setOrgBusy(false);
+    }
+  }, [refresh]);
+
+  const movePosition = useCallback(async (id: string, reportTo: string | null) => {
+    if (!snapshot) return false;
+    if (id === snapshot.owner) {
+      setOrgFeedback({ tone: "warn", text: "企业负责人不能通过拖拽调岗" });
+      return false;
+    }
+    const source = findNodeById(snapshot.tree, id);
+    if (!source) {
+      setOrgFeedback({ tone: "warn", text: `岗位 ${id} 已不在当前应用态，请刷新后重试` });
+      return false;
+    }
+    if (source.reportTo === reportTo) {
+      setOrgFeedback({ tone: "info", text: "汇报线没有变化，无需应用" });
+      return false;
+    }
+    if (reportTo === id || (reportTo !== null && containsNode(source, reportTo))) {
+      setOrgFeedback({ tone: "warn", text: "非法投放：岗位不能汇报给自己或自己的下属" });
+      return false;
+    }
+    return applyOrg({ schemaVersion: "change-manifest.v1", changes: [{ op: "move", id, reportTo }] }, `已将 ${id} 调整到 ${reportTo ?? "企业根"}`);
+  }, [applyOrg, snapshot]);
+
+  const hirePosition = useCallback(async (position: AddPositionChange["position"]) =>
+    applyOrg({ schemaVersion: "change-manifest.v1", changes: [{ op: "add", position }] }, `已招聘 ${position.name}`), [applyOrg]);
+
+  const dismissPosition = useCallback(async (id: string) =>
+    applyOrg({ schemaVersion: "change-manifest.v1", changes: [{ op: "delete", id }] }, `已裁撤 ${id}；目录保留在恢复区`), [applyOrg]);
+
+  const restorePosition = useCallback(async (backupId: string) => {
+    setOrgBusy(true);
+    setOrgFeedback(null);
+    try {
+      const response = await window.owb.orgRestore(backupId);
+      if (response.status !== 200) {
+        setOrgFeedback({ tone: "warn", text: apiErrorMessage(response.body, "恢复被拒绝") });
+        return false;
+      }
+      const body = response.body as { positionId: string; restored: boolean };
+      setOrgFeedback({ tone: "info", text: body.restored ? `已恢复 ${body.positionId}` : `${body.positionId} 已在应用态，无需重复恢复` });
+      await refresh();
+      return true;
+    } catch {
+      setOrgFeedback({ tone: "warn", text: "恢复状态不确定：控制面不可达；不会自动重试" });
+      return false;
+    } finally {
+      setOrgBusy(false);
+    }
+  }, [refresh]);
+
   const engineOk = health?.engine?.available === true;
   /** The frozen org-tree.v1 carries ids/budgets only; display names and modes
    * arrive via the selected position card (/positions/:id). */
@@ -225,6 +338,11 @@ export function App() {
     if (!snapshot) return [];
     return flattenPositionIds(snapshot.tree).map((id) => ({ id, name: positionNames[id] ?? id }));
   }, [positionNames, snapshot]);
+  const selectedNode = selectedId && snapshot ? findNodeById(snapshot.tree, selectedId) : null;
+  const selectedBudgetReport = selectedId ? reports?.budgets.find((budget) => budget.positionId === selectedId) : null;
+  const selectedBudgetRatio = selectedBudgetReport?.latestTurn && selectedBudgetReport.declared.perTask.tokens
+    ? selectedBudgetReport.latestTurn.totalTokens / selectedBudgetReport.declared.perTask.tokens
+    : null;
   const engineAvailability = useMemo(() => ({
     qoder: {
       configured: health?.hosts?.qoder.configured === true,
@@ -246,7 +364,8 @@ export function App() {
           label="模块"
           brand={<span className="owb-rail-brand">owb</span>}
           items={[
-            { id: "org", label: "组织", icon: <Network aria-hidden="true" size={16} />, active: true },
+            { id: "org", label: "组织", icon: <Network aria-hidden="true" size={16} />, active: activeModule === "org", onSelect: () => setActiveModule("org") },
+            { id: "reports", label: "上报", icon: <FileChartColumn aria-hidden="true" size={16} />, active: activeModule === "reports", onSelect: () => { setActiveModule("reports"); void loadReports(); } },
             { id: "memory", label: "记忆", icon: <History aria-hidden="true" size={16} /> },
             { id: "docs", label: "文档", icon: <FolderTree aria-hidden="true" size={16} /> },
           ]}
@@ -255,9 +374,9 @@ export function App() {
       sidebar={
         <Sidebar
           label="组织目录树"
-          header={<span className="owb-sidebar-header">组织</span>}
+          header={<div className="owb-sidebar-title"><span className="owb-sidebar-header">组织</span>{workspaceInfo?.open === true ? <HirePositionDialog positions={positions} defaultManager={selectedId ?? snapshot?.owner ?? null} busy={orgBusy} onHire={hirePosition} /> : null}</div>}
           footer={
-            workspaceInfo?.open === true ? undefined : (
+            workspaceInfo?.open === true ? <BackupTray backups={backups} busy={orgBusy} onRestore={restorePosition} /> : (
               <Button size="sm" onClick={() => void openWorkspace()}>
                 打开工作区…
               </Button>
@@ -273,6 +392,8 @@ export function App() {
                 versionStamp={snapshot.updatedAt}
                 selectedId={selectedId}
                 onSelect={selectPosition}
+                onMove={(id, reportTo) => void movePosition(id, reportTo)}
+                moveDisabled={orgBusy}
               />
             ) : (
               <p className="owb-muted">组织数据不可用</p>
@@ -295,6 +416,7 @@ export function App() {
                     dailyLimit: selectedPosition.budget.perDay,
                   }}
                   label={selectedPosition.name}
+                  consumption={selectedBudgetRatio}
                 />
               ) : null}
               <SourceStatus
@@ -324,13 +446,18 @@ export function App() {
             <span>{turnError}</span>
           </div>
         ) : null}
-        <div className="owb-workspace-grid">
-          <PositionCard
-            position={card.data}
-            loading={card.loading}
-            notFound={card.notFound}
-            onRefresh={() => void refresh()}
-          />
+        {orgFeedback ? <div className={`owb-banner owb-banner--${orgFeedback.tone}`} role={orgFeedback.tone === "warn" ? "alert" : "status"}>{orgFeedback.tone === "warn" ? <TriangleAlert aria-hidden="true" size={14} /> : null}<span>{orgFeedback.text}</span></div> : null}
+        {reportsError ? <div className="owb-banner owb-banner--warn" role="alert"><TriangleAlert aria-hidden="true" size={14} /><span>{reportsError}</span></div> : null}
+        {activeModule === "reports" ? <ReportsCenter reports={reports} loading={reportsLoading} /> : <div className="owb-workspace-grid">
+          <div className="owb-position-column">
+            <PositionCard
+              position={card.data}
+              loading={card.loading}
+              notFound={card.notFound}
+              onRefresh={() => void refresh()}
+            />
+            {selectedPosition && selectedId && selectedId !== snapshot?.owner ? <div className="owb-position-actions"><DismissPositionDialog positionName={selectedPosition.name} positionId={selectedId} descendantCount={selectedNode ? countDescendants(selectedNode) : 0} busy={orgBusy} onDismiss={() => dismissPosition(selectedId)} /></div> : null}
+          </div>
           <TurnPanel
             workspaceOpen={workspaceInfo?.open === true}
             positions={positions}
@@ -343,10 +470,18 @@ export function App() {
             onSelectEngine={setTurnEngine}
             onCreateTurn={createTurn}
           />
-        </div>
+        </div>}
       </div>
     </AppShell>
   );
+}
+
+function containsNode(node: OrgTreeNodeV1, id: string): boolean {
+  return node.children.some((child) => child.id === id || containsNode(child, id));
+}
+
+function countDescendants(node: OrgTreeNodeV1): number {
+  return node.children.reduce((count, child) => count + 1 + countDescendants(child), 0);
 }
 
 function flattenPositionIds(nodes: OrgTreeNodeV1[]): string[] {

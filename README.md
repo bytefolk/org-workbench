@@ -4,16 +4,17 @@
 
 org-workbench 是 [digital-employee](https://github.com/fullstack-ai-infra/digital-employee) 工作区的组织工作台：Electron 桌面壳 + 本地控制面服务，围绕组织树提供只读视图、目录提案、引擎校验与上报中心。macOS 首版聚焦组织树完整闭环；web/移动端未来同仓复用同一控制面与契约。
 
-## 当前状态：D1 组织树 + D2 服务侧 apply + D3 本地对话闭环（开发预览）
+## 当前状态：D2 组织操作 + D3 本地对话 + D4 本地上报（开发预览）
 
 - 壳-服务分离：Electron main 拉起 `apps/server`（Node，仅 127.0.0.1，每启动随机 boot-token）；控制面可脱离壳独立运行。
 - 引擎消费：spawn 钉版 `digital-employee` CLI（ADR-0002）；`/health` 分开报告 CLI 可用性与 Qoder/Claude Code 的非敏感本地预检状态，不把 CLI 可达冒充 Host 已配置。
 - `org apply`：客户端直接物化 `positions/` 提案树，再运行 `digital-employee org apply <workspace> --json`；成功后重载引擎应用态，失败保留提案供修正。裁撤目录移至树外 `.digital-employee/backup/`，应用态由引擎原子维护（ADR-0005）。
-- `/reports` 审计流读取引擎 `.digital-employee/org-audit.jsonl`；旧 staging、`apply-log.ndjson`、`archive/` 发布链路已退役。
+- D2 工作台：拖拽岗位生成可审计 move 提案；招聘弹窗要求明确的 per-task/per-day token 预算；裁撤必须二次确认并移入 `.digital-employee/backup/`；恢复区支持显式、幂等的一键恢复与冲突提示。所有变更仍走枚举 IPC → 本地控制面 → `org apply`，renderer 不写工作区文件。
+- D4 上报中心：只读聚合引擎 `.digital-employee/org-audit.jsonl` 与工作台本地 `turn-record.v1`，展示组织审计、脱敏回合证据、失败/不确定升级链和已记录预算用量；不推断不存在的委派、长期记忆或指标，原始输入/输出默认不进入报告响应。
 - API 契约 v0 已冻结并以加法扩展：见 [`docs/api-contract-v0.md`](docs/api-contract-v0.md)（D0 端点 + D3 `/turns`；破坏性变更升 v1）。
-- D1（组织树只读）：`packages/ui` 四组件（OrgTree/OrgTreeNode/PositionCard/BudgetBar，消费 design-system 语义 token）+ React/Vite 渲染层（AppShell 四区、Sidebar 288px、键盘树导航、SSE 驱动刷新）。
+- D1/D2 组织树：`packages/ui` 四组件（OrgTree/OrgTreeNode/PositionCard/BudgetBar，消费 design-system 语义 token）+ React/Vite 渲染层（AppShell 四区、键盘树导航、拖拽提案、SSE 驱动刷新）。
 - D3 本地对话闭环：Bearer 保护的 `POST /turns` 与 `GET /turns?positionId=...`，只允许 Qoder/Claude Code；工作台可从组织树或 `@岗位` 选择器加载本地历史、发送并 readback，展示密封信封 digest 与可信终态。退出码 1 不自动重试；委派链、长期 Context 与 live Host 验证仍明确标为未完成。
-- 里程碑：D0 骨架 → D1 组织树只读 → D2 拖拽/预算闭环（服务侧已接约，UI 待完成）→ D3 @岗位对话 → D4 上报中心。
+- 里程碑：D0 骨架 → D1 组织树只读 → D2 拖拽/预算/裁撤恢复闭环 → D3 @岗位对话 → D4 本地上报中心。委派链、长期 Context 与 Qoder/Claude Code live E4 仍不在“已验证”范围。
 - 当前仓库尚无 tag、Release 或签名安装包；快速开始面向源码开发者，不代表已发布客户端。
 
 ## 快速开始
@@ -36,6 +37,8 @@ curl -s -H "Authorization: Bearer <token>" http://127.0.0.1:N/workspace
 curl -s -X POST -H "Authorization: Bearer <token>" -H "Content-Type: application/json" \
      -d '{"path":"examples/oss-maintainer"}' http://127.0.0.1:N/workspace/open
 curl -s -H "Authorization: Bearer <token>" http://127.0.0.1:N/org/tree
+curl -s -H "Authorization: Bearer <token>" http://127.0.0.1:N/org/backups
+curl -s -H "Authorization: Bearer <token>" http://127.0.0.1:N/reports
 
 # D3：启动服务/桌面壳前按 Host 设置一个凭据；请求体不接受 token/key
 # export QODER_PERSONAL_ACCESS_TOKEN='<redacted>'
@@ -47,7 +50,7 @@ curl -s -H "Authorization: Bearer <token>" \
      'http://127.0.0.1:N/turns?positionId=repo-owner'
 ```
 
-**桌面壳**（需 `npm install` 安装 Electron 后）：`npm run dev:desktop`（自动构建 renderer 再启动）。
+**桌面壳**（需 `npm install` 安装 Electron 后）：`npm run dev:desktop`（自动构建 renderer 再启动）。打开工作区后，可在左侧组织树拖拽调岗、从“招聘岗位”声明预算并新增岗位、在岗位详情确认裁撤、从恢复区显式恢复；切换顶部“上报中心”查看本地证据。恢复不会自动发生，冲突或引擎拒绝会保留当前提案/backup 供人工处理。
 
 **design-system 依赖说明**：`@fullstack-ai-infra/ui` 目前以开发期 `file:` 链接指向同级 `design-system` 克隆（骨架定稿方案 A：开发期 file: 链接，CI/正式包只认钉版）。链接要求该克隆已 `npm run build:package`（产出 dist，含 `--ui-sidebar-wide` 等 tokens）；设计系统发布 npm 后改钉版依赖。
 
@@ -59,7 +62,7 @@ curl -s -H "Authorization: Bearer <token>" \
 ```
 apps/desktop/        Electron 壳：main + preload 白名单桥 + renderer（D0 零依赖渲染）
 apps/server/         本地控制面服务（零第三方运行时依赖，纯 node: 内建）
-packages/shared/     契约类型镜像：org-tree.v1 / turn-envelope.v1 / turn-record.v1 / 错误码 / SSE 事件
+packages/shared/     契约类型镜像：org-tree.v1 / reports.v1 / turn-envelope.v1 / turn-record.v1 / 错误码 / SSE 事件
 packages/ui/         组织树组件族（D1 起消费 design-system；React）
 docs/                API 契约 v0（冻结）+ ADR
 examples/            oss-maintainer 示例工作区（1 owner + 3 岗位，含预算声明）

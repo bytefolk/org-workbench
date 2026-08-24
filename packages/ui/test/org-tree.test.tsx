@@ -85,4 +85,29 @@ describe("OrgTree (D1 spec §2, frozen org-tree.v1)", () => {
     expect(screen.getByText("尚无岗位，点击招聘")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "招聘岗位" })).toBeDisabled();
   });
+
+  it("emits a move proposal when a movable position is dropped on a manager or enterprise root", () => {
+    const onMove = vi.fn();
+    render(<OrgTree snapshot={SNAPSHOT} onMove={onMove} />);
+    const source = screen.getByText("issue-researcher").closest('[role="treeitem"]')!;
+    const manager = screen.getByText("release-engineer").closest('[role="treeitem"]')!;
+    const enterprise = screen.getByText("oss-maintainer").closest('[role="treeitem"]')!;
+    const data = new Map<string, string>();
+    const dataTransfer = {
+      effectAllowed: "move",
+      dropEffect: "move",
+      setData: (type: string, value: string) => data.set(type, value),
+      getData: (type: string) => data.get(type) ?? "",
+    };
+
+    fireEvent.dragStart(source, { dataTransfer });
+    fireEvent.dragOver(manager, { dataTransfer });
+    fireEvent.drop(manager, { dataTransfer });
+    expect(onMove).toHaveBeenCalledWith("issue-researcher", "release-engineer");
+
+    fireEvent.dragStart(source, { dataTransfer });
+    fireEvent.drop(enterprise, { dataTransfer });
+    expect(onMove).toHaveBeenCalledWith("issue-researcher", null);
+    expect(screen.getByText("repo-owner").closest('[role="treeitem"]')).toHaveAttribute("draggable", "false");
+  });
 });

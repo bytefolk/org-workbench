@@ -19,6 +19,10 @@ export const errorCodes = {
   workspace_not_open: "workspace_not_open",
   /** Change manifest violates change-manifest.v1 shape. */
   manifest_invalid: "manifest_invalid",
+  /** A requested organization backup cannot be restored safely. */
+  restore_invalid: "restore_invalid",
+  /** A restore target conflicts with an active/proposed position. */
+  restore_conflict: "restore_conflict",
   /** Organization file failed structural checks (contract violation upstream). */
   organization_invalid: "organization_invalid",
   /** The pinned digital-employee CLI is not reachable (spawn ENOENT / timeout). */
@@ -37,6 +41,8 @@ export const errorCodes = {
   turn_position_invalid: "turn_position_invalid",
   /** Local conversation state could not be read or atomically persisted. */
   turn_storage_failed: "turn_storage_failed",
+  /** A local reports source is malformed or crosses a safe path boundary. */
+  reports_data_invalid: "reports_data_invalid",
   /** Route not found. */
   not_found: "not_found",
   /** Method not allowed on a known route. */
