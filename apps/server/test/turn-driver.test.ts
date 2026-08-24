@@ -23,6 +23,19 @@ async function fixtureCli(source: string): Promise<string> {
   return `${process.execPath} ${file}`;
 }
 
+async function waitForFixtureReady(file: string, timeoutMs: number): Promise<string> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    try {
+      return await fs.readFile(file, "utf8");
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+      await delay(10);
+    }
+  }
+  throw new Error(`fixture did not become ready within ${timeoutMs}ms`);
+}
+
 test("turn driver uses stdin, exact turn argv, and the selected engine environment", async () => {
   const command = await fixtureCli(`
     let input = "";
@@ -164,28 +177,29 @@ test("turn timeout freezes events and reaps a child that ignores SIGTERM", async
   const pidFile = path.join(stateDir, "pid");
   const command = await fixtureCli(`
     import fs from "node:fs";
-    fs.writeFileSync(${JSON.stringify(pidFile)}, String(process.pid));
     process.on("SIGTERM", () => {});
+    fs.writeFileSync(${JSON.stringify(pidFile)}, String(process.pid));
     const base = { runId: "run-late", timestamp: "2026-08-24T00:00:00.000Z" };
     setTimeout(() => {
       console.log(JSON.stringify({ ...base, type: "run.started" }));
       console.log(JSON.stringify({ ...base, type: "run.completed", output: "late", terminalReason: "goal_met" }));
-    }, 1_400);
-    setTimeout(() => process.exit(0), 2_000);
+    }, 3_600);
+    setTimeout(() => process.exit(0), 4_200);
   `);
   const published: string[] = [];
-  const driver = new DigitalEmployeeCliDriver(command, 800);
-  const result = await driver.turnRun({
+  const driver = new DigitalEmployeeCliDriver(command, 3_000);
+  const resultPromise = driver.turnRun({
     workspace: "/workspace",
     positionId: "repo-owner",
     engine: "qoder",
     envelope: ENVELOPE,
     onEvent: (event) => published.push(event.type),
   });
+  const pid = Number(await waitForFixtureReady(pidFile, 2_500));
+  const result = await resultPromise;
   assert.equal(result.status, "indeterminate");
   assert.equal(result.code, "turn_timeout");
   assert.deepEqual(result.events, []);
-  const pid = Number(await fs.readFile(pidFile, "utf8"));
   assert.throws(() => process.kill(pid, 0), (error: unknown) => {
     return (error as NodeJS.ErrnoException).code === "ESRCH";
   });
