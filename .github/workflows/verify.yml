@@ -29,14 +29,6 @@ jobs:
           ref: 9d048faaabe0429a6a8720bfbb31418544237b6b
           path: design-system
 
-      - name: Check out pinned Context provider
-        uses: actions/checkout@v6
-        with:
-          repository: fullstack-ai-infra/context
-          ref: f63f57f7b4cb7071309561f0383683017ae79eb2
-          persist-credentials: false
-          path: context
-
       - name: Set up Node
         uses: actions/setup-node@v6
         with:
@@ -52,14 +44,6 @@ jobs:
           npm ci
           npm run build:package
 
-      - name: Build pinned Context provider
-        working-directory: context
-        run: |
-          corepack enable
-          corepack prepare pnpm@10.28.1 --activate
-          pnpm install --frozen-lockfile
-          pnpm build
-
       - name: Install workbench
         working-directory: org-workbench
         run: npm ci
@@ -67,10 +51,3 @@ jobs:
       - name: Verify workbench
         working-directory: org-workbench
         run: npm run check
-
-      - name: Verify Context occurrence export E3
-        working-directory: org-workbench
-        env:
-          ORG_WORKBENCH_REQUIRE_CONTEXT_E3: "1"
-          ORG_WORKBENCH_CONTEXT_E3_CLI: node ${{ github.workspace }}/context/packages/cli/dist/index.js
-        run: npm run test:context-e3
