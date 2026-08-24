@@ -117,7 +117,13 @@ export async function handleTurnPost(
       positionId: body.positionId,
       engine: body.engine,
       envelope,
-      onEvent: (event) => ctx.bus.publish(eventType(event), event),
+      // Stream progress immediately, but hold every terminal until the final
+      // turn record has been durably replaced below.
+      onEvent: (event) => {
+        if (event.type !== "run.completed" && event.type !== "run.failed") {
+          ctx.bus.publish(eventType(event), event);
+        }
+      },
     });
   } catch {
     result = {
@@ -143,12 +149,6 @@ export async function handleTurnPost(
         retryable: false,
       },
     };
-    ctx.bus.publish("turn.indeterminate", {
-      turnId,
-      positionId: body.positionId,
-      code: result.code,
-      envelopeDigest: envelope.envelopeDigest,
-    });
   } else {
     const terminal = result.events[result.events.length - 1]!;
     if (terminal.type === "run.completed") {
@@ -188,6 +188,19 @@ export async function handleTurnPost(
     }
   }
   await ctx.turnStore.finish(workspace.dir, record);
+  if (record.status === "indeterminate") {
+    ctx.bus.publish("turn.indeterminate", {
+      turnId,
+      positionId: body.positionId,
+      code: record.error?.code ?? "turn_protocol_invalid",
+      envelopeDigest: envelope.envelopeDigest,
+    });
+  } else {
+    const terminal = result.events[result.events.length - 1];
+    if (terminal?.type === "run.completed" || terminal?.type === "run.failed") {
+      ctx.bus.publish(eventType(terminal), terminal);
+    }
+  }
   sendJson(res, 200, record);
 }
 

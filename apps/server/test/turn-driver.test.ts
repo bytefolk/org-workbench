@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { setTimeout as delay } from "node:timers/promises";
 import test from "node:test";
 import { DigitalEmployeeCliDriver } from "../src/engine/driver-cli.js";
 import { api, copyExampleWorkspace, startTestServer } from "./helpers.js";
@@ -84,9 +85,113 @@ test("turn driver classifies exit 1 as indeterminate without retrying", async ()
     envelope: ENVELOPE,
   });
   assert.equal(result.status, "indeterminate");
-  assert.equal(result.code, "turn_process_exit_1");
+  assert.equal(result.code, "engine.model_unavailable");
   assert.equal(await fs.readFile(counter, "utf8"), "1");
   assert.ok(result.diagnostic.length <= 8 * 1024);
+});
+
+test("turn driver does not promote an unrecognized stderr token to a stable code", async () => {
+  const command = await fixtureCli(`
+    console.error("vendor.secret: must-not-become-a-result-code");
+    process.exit(1);
+  `);
+  const driver = new DigitalEmployeeCliDriver(command);
+  const result = await driver.turnRun({
+    workspace: "/workspace",
+    positionId: "repo-owner",
+    engine: "qoder",
+    envelope: ENVELOPE,
+  });
+  assert.equal(result.status, "indeterminate");
+  assert.equal(result.code, "turn_process_exit_1");
+});
+
+test("turn driver preserves UTF-8 characters split across stdout chunks", async () => {
+  const command = await fixtureCli(`
+    const base = { runId: "run-utf8", timestamp: "2026-08-24T00:00:00.000Z" };
+    const payload = [
+      JSON.stringify({ ...base, type: "run.started" }),
+      JSON.stringify({ ...base, type: "run.completed", output: "中文输出", terminalReason: "goal_met" }),
+      "",
+    ].join("\\n");
+    const bytes = Buffer.from(payload, "utf8");
+    const splitAt = bytes.indexOf(Buffer.from("中", "utf8")) + 1;
+    process.stdout.write(bytes.subarray(0, splitAt));
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    process.stdout.write(bytes.subarray(splitAt));
+  `);
+  const driver = new DigitalEmployeeCliDriver(command);
+  const result = await driver.turnRun({
+    workspace: "/workspace",
+    positionId: "repo-owner",
+    engine: "qoder",
+    envelope: ENVELOPE,
+  });
+  assert.equal(result.status, "trusted");
+  const terminal = result.events.at(-1);
+  assert.equal(terminal?.type, "run.completed");
+  assert.equal(terminal?.type === "run.completed" ? terminal.output : undefined, "中文输出");
+});
+
+test("turn driver accepts the 0c4cd54 one-megachar model output boundary", async () => {
+  const command = await fixtureCli(`
+    const base = { runId: "run-large", timestamp: "2026-08-24T00:00:00.000Z" };
+    const output = "a".repeat(1_048_576);
+    console.log(JSON.stringify({ ...base, type: "run.started" }));
+    console.log(JSON.stringify({ ...base, type: "model.delta", text: output }));
+    console.log(JSON.stringify({ ...base, type: "run.completed", output, terminalReason: "goal_met" }));
+  `);
+  const driver = new DigitalEmployeeCliDriver(command);
+  const result = await driver.turnRun({
+    workspace: "/workspace",
+    positionId: "repo-owner",
+    engine: "qoder",
+    envelope: ENVELOPE,
+  });
+  assert.equal(result.status, "trusted");
+  const terminal = result.events.at(-1);
+  assert.equal(terminal?.type, "run.completed");
+  assert.equal(
+    terminal?.type === "run.completed" && typeof terminal.output === "string"
+      ? terminal.output.length
+      : 0,
+    1_048_576,
+  );
+});
+
+test("turn timeout freezes events and reaps a child that ignores SIGTERM", async () => {
+  const stateDir = await fs.mkdtemp(path.join(os.tmpdir(), "owb-turn-timeout-"));
+  const pidFile = path.join(stateDir, "pid");
+  const command = await fixtureCli(`
+    import fs from "node:fs";
+    fs.writeFileSync(${JSON.stringify(pidFile)}, String(process.pid));
+    process.on("SIGTERM", () => {});
+    const base = { runId: "run-late", timestamp: "2026-08-24T00:00:00.000Z" };
+    setTimeout(() => {
+      console.log(JSON.stringify({ ...base, type: "run.started" }));
+      console.log(JSON.stringify({ ...base, type: "run.completed", output: "late", terminalReason: "goal_met" }));
+    }, 1_400);
+    setTimeout(() => process.exit(0), 2_000);
+  `);
+  const published: string[] = [];
+  const driver = new DigitalEmployeeCliDriver(command, 800);
+  const result = await driver.turnRun({
+    workspace: "/workspace",
+    positionId: "repo-owner",
+    engine: "qoder",
+    envelope: ENVELOPE,
+    onEvent: (event) => published.push(event.type),
+  });
+  assert.equal(result.status, "indeterminate");
+  assert.equal(result.code, "turn_timeout");
+  assert.deepEqual(result.events, []);
+  const pid = Number(await fs.readFile(pidFile, "utf8"));
+  assert.throws(() => process.kill(pid, 0), (error: unknown) => {
+    return (error as NodeJS.ErrnoException).code === "ESRCH";
+  });
+  await delay(700);
+  assert.deepEqual(result.events, []);
+  assert.deepEqual(published, []);
 });
 
 test("an exit-1 child cannot publish its apparent terminal as trusted SSE", async () => {

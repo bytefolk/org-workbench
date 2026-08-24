@@ -10,10 +10,14 @@ import {
 import type { TurnEngine, TurnHistory, TurnRecord } from "@org-workbench/shared";
 
 const STATE_ROOT = path.join(".digital-employee", "workbench", "conversations");
-const POSITION_ID_PATTERN = /^[a-z][a-z0-9-]{0,63}$/;
+// Exact mirror of digital-employee apps/cli/org/model.ts at 0c4cd54.
+const POSITION_ID_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const MAX_TURNS_PER_POSITION = 256;
-const MAX_HISTORY_BYTES = 16 * 1024 * 1024;
-const MAX_TURN_RECORD_BYTES = 2 * 1024 * 1024;
+// A one-megachar engine result is represented in model.delta, the terminal,
+// and the record's output field. Keep that upstream boundary persistable
+// while retaining a finite aggregate history bound.
+const MAX_HISTORY_BYTES = 64 * 1024 * 1024;
+const MAX_TURN_RECORD_BYTES = 20 * 1024 * 1024;
 const MAX_METADATA_BYTES = 16 * 1024;
 
 interface ConversationMetadata {
@@ -28,11 +32,15 @@ function storageError(message: string): OrgApiError {
 }
 
 export function assertPositionId(value: unknown): string {
-  if (typeof value !== "string" || !POSITION_ID_PATTERN.test(value)) {
+  if (
+    typeof value !== "string" ||
+    value.length > 64 ||
+    !POSITION_ID_PATTERN.test(value)
+  ) {
     throw new OrgApiError(
       errorCodes.turn_position_invalid,
       400,
-      "positionId must match [a-z][a-z0-9-]{0,63}",
+      "positionId must match [a-z0-9]+(?:-[a-z0-9]+)* and be at most 64 characters",
     );
   }
   return value;
@@ -136,6 +144,7 @@ function isTurnRecord(value: unknown): value is TurnRecord {
 
 export class TurnStore {
   private metadataLocks = new Map<string, Promise<ConversationMetadata>>();
+  private activeTurns = new Set<string>();
 
   async begin(input: {
     workspace: string;
@@ -162,13 +171,21 @@ export class TurnStore {
       updatedAt: input.now,
       events: [],
     };
-    await this.writeTurn(input.workspace, record);
+    const activeKey = this.activeTurnKey(input.workspace, input.positionId, input.turnId);
+    this.activeTurns.add(activeKey);
+    try {
+      await this.writeTurn(input.workspace, record);
+    } catch (error) {
+      this.activeTurns.delete(activeKey);
+      throw error;
+    }
     return record;
   }
 
   async finish(workspace: string, record: TurnRecord): Promise<void> {
     await preparePositionDirectories(workspace, record.positionId);
     await this.writeTurn(workspace, record);
+    this.activeTurns.delete(this.activeTurnKey(workspace, record.positionId, record.turnId));
   }
 
   async history(workspace: string, positionId: string, now: string): Promise<TurnHistory> {
@@ -202,7 +219,10 @@ export class TurnStore {
       if (!isTurnRecord(raw) || raw.positionId !== positionId || raw.conversationId !== metadata.conversationId) {
         throw storageError("local turn history contains an invalid record");
       }
-      if (raw.status === "running") {
+      if (
+        raw.status === "running" &&
+        !this.activeTurns.has(this.activeTurnKey(workspace, raw.positionId, raw.turnId))
+      ) {
         const recovered: TurnRecord = {
           ...raw,
           status: "indeterminate",
@@ -248,6 +268,10 @@ export class TurnStore {
       this.metadataLocks.delete(key);
       throw error;
     }
+  }
+
+  private activeTurnKey(workspace: string, positionId: string, turnId: string): string {
+    return `${path.resolve(workspace)}\0${positionId}\0${turnId}`;
   }
 
   private async loadOrCreateConversation(

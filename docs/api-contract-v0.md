@@ -209,8 +209,9 @@ data: {"seq":4,"type":"org.updated","at":"...","payload":{...}}
 - `engine` 只允许 `qoder` / `claude-code`；不接受凭据字段，凭据只从控制面进程环境的对应变量传给子进程。
 - 控制面构造 `turn-envelope.v1`，其 `envelopeDigest` 与 digital-employee canonical JSON + SHA-256 算法逐字节一致。
 - 唯一调用形态：`digital-employee turn run <workspace> --position <id> --stdin`；信封从 stdin 输入，凭据和用户输入均不进 argv。
-- stdout 必须是严格、同 runId、以 `run.started` 开始且恰有一个末尾终态的 `engine.v1` NDJSON；未知字段、超界行、多个终态或终态后事件均产生 `indeterminate`。
-- 退出码 1 记录为 `indeterminate`，绝不自动重试。用户显式重试必须创建新的 turnId/attempt。
+- stdout 必须是严格、同 runId、以 `run.started` 开始且恰有一个末尾终态的 `engine.v1` NDJSON；UTF-8 按流解码，模型文本边界镜像上游 1,048,576 字符；未知字段、超界行、多个终态或终态后事件均产生 `indeterminate`。
+- 退出码 1 记录为 `indeterminate`，绝不自动重试；仅安全透传 `engine.*` / `workspace_org_*` 稳定 spawn 码，其余保持 `turn_process_exit_1`。用户显式重试必须创建新的 turnId/attempt。
+- `turn.completed` / `turn.failed` / `turn.indeterminate` 只在最终 turn record 原子持久化成功后广播；超时后冻结事件并清理子进程，不接受迟到终态。
 - 响应 200 为单个 `turn-record.v1`，包含 `turnId`、`positionId`、`engine`、`status`、`envelopeDigest`、有界事件与可信终态输出/错误。
 
 `GET /turns?positionId=<id>` 响应 200：
@@ -224,7 +225,7 @@ data: {"seq":4,"type":"org.updated","at":"...","payload":{...}}
 }
 ```
 
-本地状态位于 `<workspace>/.digital-employee/workbench/conversations/<positionId>/`：元数据和每回合独立 JSON 均为 0600 原子写，目录为 0700；启动后读到遗留 `running` 回合时恢复为 `indeterminate/turn_interrupted`。内部路径拒绝符号链接，历史记录数、总大小、输入、输出、事件与诊断全部有界。凭据与原始 stderr 不持久化。
+本地状态位于 `<workspace>/.digital-employee/workbench/conversations/<positionId>/`：元数据和每回合独立 JSON 均为 0600 原子写，目录为 0700；启动后读到不属于当前进程活跃集合的遗留 `running` 回合时恢复为 `indeterminate/turn_interrupted`。岗位 ID 规则逐字镜像引擎组织契约。内部路径拒绝符号链接，历史记录数、总大小、输入、输出、事件与诊断全部有界。凭据与原始 stderr 不持久化。
 
 本切片只建立 workbench 本地会话/回合连续性与未来 recall 接缝，不声称已经接入 mem recall，也不依赖 Host 原生 resume。
 

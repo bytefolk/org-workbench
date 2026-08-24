@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import { StringDecoder } from "node:string_decoder";
 import type {
   EngineOrgApplySuccess,
   EngineEvent,
@@ -16,12 +17,17 @@ type DriverOutcome = Awaited<ReturnType<OrgApplyDriver["apply"]>>;
 const CAPABILITY_MISSING_PATTERN =
   /unknown command|unknown argument|invalid choice|unrecognized command|no such command|did you mean/i;
 
-const MAX_TURN_OUTPUT_BYTES = 1024 * 1024;
-const MAX_TURN_LINE_BYTES = 256 * 1024;
+// digital-employee 0c4cd54 bounds the Host model string at 1,048,576
+// characters. JSON may encode one character as a six-byte escape, and the
+// engine emits the model text once as a delta and once in its terminal.
+const ENGINE_MODEL_MAX_CHARACTERS = 1_048_576;
+const MAX_ESCAPED_MODEL_BYTES = ENGINE_MODEL_MAX_CHARACTERS * 6 + 2;
+const MAX_TURN_LINE_BYTES = MAX_ESCAPED_MODEL_BYTES + 64 * 1024;
+const MAX_TURN_OUTPUT_BYTES = MAX_TURN_LINE_BYTES * 2 + 256 * 1024;
 const MAX_TURN_EVENTS = 4_096;
 const MAX_DIAGNOSTIC_BYTES = 8 * 1024;
-const MAX_DELTA_BYTES = 64 * 1024;
-const MAX_TERMINAL_OUTPUT_BYTES = 256 * 1024;
+const MAX_TERMINAL_OUTPUT_BYTES = MAX_ESCAPED_MODEL_BYTES;
+const PROCESS_KILL_GRACE_MS = 250;
 const ENGINE_CODE_PATTERN = /^[a-z0-9][a-z0-9._-]{0,127}$/;
 const TERMINAL_REASONS = new Set<TurnTerminalReason>([
   "goal_met",
@@ -54,6 +60,24 @@ function boundedJsonBytes(value: unknown, limit: number): boolean {
   } catch {
     return false;
   }
+}
+
+function boundedCodePoints(value: string, limit: number): boolean {
+  let count = 0;
+  for (const _character of value) {
+    count += 1;
+    if (count > limit) return false;
+  }
+  return true;
+}
+
+function stableSpawnCode(diagnostic: string): string | null {
+  const match = /^(?:digital-employee:\s+)?([a-z0-9][a-z0-9._-]{0,127}):/m.exec(
+    diagnostic,
+  );
+  const code = match?.[1];
+  if (code?.startsWith("engine.") || code?.startsWith("workspace_org_")) return code;
+  return null;
 }
 
 function baseEvent(raw: Record<string, unknown>): { runId: string; timestamp: string } {
@@ -89,7 +113,7 @@ function parseEngineEvent(line: string): EngineEvent {
       exactKeys(unknownEvent, ["type", "runId", "timestamp", "text"]);
       if (
         typeof unknownEvent.text !== "string" ||
-        Buffer.byteLength(unknownEvent.text, "utf8") > MAX_DELTA_BYTES
+        !boundedCodePoints(unknownEvent.text, ENGINE_MODEL_MAX_CHARACTERS)
       ) {
         throw new EngineProtocolError("engine.v1 model.delta text is invalid or unbounded");
       }
@@ -301,6 +325,8 @@ export class DigitalEmployeeCliDriver implements OrgApplyDriver, TurnRunDriver {
   turnRun(request: TurnRunRequest): Promise<TurnRunResult> {
     return new Promise((resolve) => {
       let settled = false;
+      let acceptingOutput = true;
+      let timedOut = false;
       let child: ReturnType<typeof spawn> | undefined;
       let stdoutBuffer = "";
       let stdoutBytes = 0;
@@ -310,18 +336,33 @@ export class DigitalEmployeeCliDriver implements OrgApplyDriver, TurnRunDriver {
       let started = false;
       let terminal = false;
       const events: EngineEvent[] = [];
+      const stdoutDecoder = new StringDecoder("utf8");
+      const stderrDecoder = new StringDecoder("utf8");
+      let forceKillTimer: NodeJS.Timeout | undefined;
 
       const finish = (result: TurnRunResult): void => {
         if (settled) return;
         settled = true;
-        resolve(result);
+        acceptingOutput = false;
+        resolve({ ...result, events: [...result.events] });
+      };
+      const terminateChild = (): void => {
+        child?.kill("SIGTERM");
+        if (forceKillTimer !== undefined) return;
+        forceKillTimer = setTimeout(() => {
+          child?.kill("SIGKILL");
+        }, PROCESS_KILL_GRACE_MS);
+        forceKillTimer.unref();
       };
       const failProtocol = (message: string): void => {
         if (protocolError !== null) return;
         protocolError = message;
-        child?.kill();
+        acceptingOutput = false;
+        stdoutBuffer = "";
+        terminateChild();
       };
       const consumeLine = (line: string): void => {
+        if (!acceptingOutput || settled) return;
         if (line.endsWith("\r")) line = line.slice(0, -1);
         if (line.length === 0 || protocolError !== null) return;
         if (Buffer.byteLength(line, "utf8") > MAX_TURN_LINE_BYTES) {
@@ -381,22 +422,23 @@ export class DigitalEmployeeCliDriver implements OrgApplyDriver, TurnRunDriver {
       }
 
       const timer = setTimeout(() => {
-        child?.kill();
-        finish({
-          status: "indeterminate",
-          events,
-          diagnostic,
-          code: "turn_timeout",
-        });
+        if (settled) return;
+        timedOut = true;
+        acceptingOutput = false;
+        stdoutBuffer = "";
+        terminateChild();
       }, this.timeoutMs);
 
       child.stdout?.on("data", (chunk: Buffer | string) => {
-        const text = String(chunk);
-        stdoutBytes += Buffer.byteLength(text, "utf8");
+        if (!acceptingOutput || settled) return;
+        stdoutBytes += Buffer.isBuffer(chunk)
+          ? chunk.byteLength
+          : Buffer.byteLength(chunk, "utf8");
         if (stdoutBytes > MAX_TURN_OUTPUT_BYTES) {
           failProtocol("engine.v1 stream exceeds the bounded output size");
           return;
         }
+        const text = Buffer.isBuffer(chunk) ? stdoutDecoder.write(chunk) : chunk;
         stdoutBuffer += text;
         let newline = stdoutBuffer.indexOf("\n");
         while (newline >= 0) {
@@ -407,12 +449,15 @@ export class DigitalEmployeeCliDriver implements OrgApplyDriver, TurnRunDriver {
         }
       });
       child.stderr?.on("data", (chunk: Buffer | string) => {
+        if (!acceptingOutput || settled) return;
         if (Buffer.byteLength(diagnostic, "utf8") >= MAX_DIAGNOSTIC_BYTES) return;
         const remaining = MAX_DIAGNOSTIC_BYTES - Buffer.byteLength(diagnostic, "utf8");
-        diagnostic += Buffer.from(String(chunk), "utf8").subarray(0, remaining).toString("utf8");
+        const text = Buffer.isBuffer(chunk) ? stderrDecoder.write(chunk) : chunk;
+        diagnostic += Buffer.from(text, "utf8").subarray(0, remaining).toString("utf8");
       });
       child.on("error", () => {
         clearTimeout(timer);
+        if (forceKillTimer !== undefined) clearTimeout(forceKillTimer);
         finish({
           status: "indeterminate",
           events,
@@ -422,7 +467,27 @@ export class DigitalEmployeeCliDriver implements OrgApplyDriver, TurnRunDriver {
       });
       child.on("close", (code) => {
         clearTimeout(timer);
-        if (stdoutBuffer.length > 0) consumeLine(stdoutBuffer);
+        if (forceKillTimer !== undefined) clearTimeout(forceKillTimer);
+        if (settled) return;
+        if (timedOut) {
+          finish({
+            status: "indeterminate",
+            events,
+            diagnostic,
+            code: "turn_timeout",
+          });
+          return;
+        }
+        if (acceptingOutput) {
+          stdoutBuffer += stdoutDecoder.end();
+          if (Buffer.byteLength(diagnostic, "utf8") < MAX_DIAGNOSTIC_BYTES) {
+            const remaining = MAX_DIAGNOSTIC_BYTES - Buffer.byteLength(diagnostic, "utf8");
+            diagnostic += Buffer.from(stderrDecoder.end(), "utf8")
+              .subarray(0, remaining)
+              .toString("utf8");
+          }
+          if (stdoutBuffer.length > 0) consumeLine(stdoutBuffer);
+        }
         if (protocolError !== null) {
           finish({
             status: "indeterminate",
@@ -437,7 +502,10 @@ export class DigitalEmployeeCliDriver implements OrgApplyDriver, TurnRunDriver {
             status: "indeterminate",
             events,
             diagnostic,
-            code: code === 1 ? "turn_process_exit_1" : "turn_process_failed",
+            code:
+              code === 1
+                ? (stableSpawnCode(diagnostic) ?? "turn_process_exit_1")
+                : "turn_process_failed",
           });
           return;
         }

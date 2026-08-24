@@ -9,7 +9,7 @@ import type {
   TurnRunResult,
 } from "@org-workbench/shared";
 import { api, connectSse, copyExampleWorkspace, startTestServer } from "./helpers.js";
-import { TurnStore } from "../src/turns/store.js";
+import { TurnStore, assertPositionId } from "../src/turns/store.js";
 import { createTurnEnvelope } from "../src/turns/envelope.js";
 
 test("turn envelope digest is byte-compatible with digital-employee 0c4cd54", () => {
@@ -187,7 +187,7 @@ test("exit 1 is persisted as indeterminate and is never automatically retried", 
     status: "indeterminate",
     events: [],
     diagnostic: "digital-employee: engine.model_unavailable: token-super-secret-value",
-    code: "turn_process_exit_1",
+    code: "engine.model_unavailable",
   });
   const server = await startTestServer(undefined, turnDriver);
   const workspace = await copyExampleWorkspace();
@@ -201,7 +201,7 @@ test("exit 1 is persisted as indeterminate and is never automatically retried", 
     assert.equal(response.status, 200);
     const record = response.body as { status: string; error: { code: string } };
     assert.equal(record.status, "indeterminate");
-    assert.equal(record.error.code, "turn_process_exit_1");
+    assert.equal(record.error.code, "engine.model_unavailable");
     assert.equal(turnDriver.calls.length, 1, "indeterminate turn must not auto-retry");
     assert.doesNotMatch(JSON.stringify(response.body), /token-super-secret-value/);
 
@@ -232,6 +232,103 @@ test("GET /turns requires a bounded positionId and never crosses workspace state
     assert.equal(traversal.status, 400);
     assert.equal((traversal.body as { code: string }).code, "turn_position_invalid");
   } finally {
+    await server.close();
+  }
+});
+
+test("turn position ids mirror the digital-employee organization contract", () => {
+  assert.equal(assertPositionId("1st-responder"), "1st-responder");
+  for (const invalid of ["repo--owner", "repo-owner-", "RepoOwner"]) {
+    assert.throws(() => assertPositionId(invalid));
+  }
+});
+
+test("history leaves a turn owned by the active store in running state", async () => {
+  const workspace = await copyExampleWorkspace();
+  const store = new TurnStore();
+  await store.begin({
+    workspace,
+    positionId: "repo-owner",
+    turnId: "active-turn",
+    engine: "qoder",
+    message: "still running",
+    envelopeDigest: `sha256:${"a".repeat(64)}`,
+    now: "2026-08-24T01:00:00.000Z",
+  });
+
+  const history = await store.history(
+    workspace,
+    "repo-owner",
+    "2026-08-24T01:00:01.000Z",
+  );
+  assert.equal(history.turns[0]?.status, "running");
+  assert.equal(history.turns[0]?.error, undefined);
+});
+
+test("turn store persists the upstream one-megachar output boundary", async () => {
+  const workspace = await copyExampleWorkspace();
+  const store = new TurnStore();
+  const output = "a".repeat(1_048_576);
+  const running = await store.begin({
+    workspace,
+    positionId: "repo-owner",
+    turnId: "max-output-turn",
+    engine: "qoder",
+    message: "produce a bounded result",
+    envelopeDigest: `sha256:${"a".repeat(64)}`,
+    now: "2026-08-24T01:00:00.000Z",
+  });
+  const base = { runId: "max-output-run", timestamp: "2026-08-24T01:00:01.000Z" };
+  await store.finish(workspace, {
+    ...running,
+    status: "completed",
+    updatedAt: "2026-08-24T01:00:02.000Z",
+    runId: base.runId,
+    output,
+    events: [
+      { ...base, type: "run.started" },
+      { ...base, type: "model.delta", text: output },
+      { ...base, type: "run.completed", output, terminalReason: "goal_met" },
+    ],
+  });
+  const history = await store.history(
+    workspace,
+    "repo-owner",
+    "2026-08-24T01:00:03.000Z",
+  );
+  assert.equal(history.turns[0]?.status, "completed");
+  assert.equal(
+    typeof history.turns[0]?.output === "string" ? history.turns[0].output.length : 0,
+    1_048_576,
+  );
+});
+
+test("a terminal SSE event is not published when durable finish fails", async () => {
+  class FailingFinishTurnStore extends TurnStore {
+    override async finish(): Promise<void> {
+      throw new Error("simulated durable finish failure");
+    }
+  }
+
+  const server = await startTestServer(undefined, new FakeTurnDriver());
+  server.ctx.turnStore = new FailingFinishTurnStore();
+  const workspace = await copyExampleWorkspace();
+  const published: string[] = [];
+  const unsubscribe = server.ctx.bus.subscribe((event) => published.push(event.type));
+  try {
+    await openWorkspace(server.baseUrl, server.token, workspace);
+    const response = await api(server.baseUrl, "/turns", {
+      method: "POST",
+      token: server.token,
+      body: { positionId: "repo-owner", input: "hello", engine: "qoder" },
+    });
+    assert.equal(response.status, 500);
+    assert.ok(published.includes("turn.started"));
+    assert.equal(published.includes("turn.completed"), false);
+    assert.equal(published.includes("turn.failed"), false);
+    assert.equal(published.includes("turn.indeterminate"), false);
+  } finally {
+    unsubscribe();
     await server.close();
   }
 });
