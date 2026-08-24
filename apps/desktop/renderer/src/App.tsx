@@ -20,6 +20,8 @@ import type {
   OrgTreeSnapshot,
   ReportsResponse,
   TurnHistory,
+  WorkbenchSession,
+  WorkbenchSessionList,
   WorkspaceInfoResponse,
 } from "@org-workbench/shared";
 import { FileChartColumn, FolderTree, History, Network, TriangleAlert } from "lucide-react";
@@ -66,6 +68,10 @@ export function App() {
   const [turns, setTurns] = useState<TurnRecord[]>([]);
   const [turnBusy, setTurnBusy] = useState(false);
   const [turnError, setTurnError] = useState<string | null>(null);
+  const [sessions, setSessions] = useState<WorkbenchSession[]>([]);
+  const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
+  const selectedSessionIdRef = useRef<string | null>(null);
+  const [sessionBusy, setSessionBusy] = useState(false);
   const [sseState, setSseState] = useState<"connecting" | "connected">("connecting");
   const [backups, setBackups] = useState<OrgBackupEntry[]>([]);
   const [reports, setReports] = useState<ReportsResponse | null>(null);
@@ -77,6 +83,10 @@ export function App() {
   useEffect(() => {
     selectedIdRef.current = selectedId;
   }, [selectedId]);
+
+  useEffect(() => {
+    selectedSessionIdRef.current = selectedSessionId;
+  }, [selectedSessionId]);
 
   const loadBackups = useCallback(async () => {
     const response = await window.owb.orgBackups();
@@ -139,6 +149,9 @@ export function App() {
       setSelectedId(null);
       setCard({ loading: false, data: null, notFound: false });
       setTurns([]);
+      setSessions([]);
+      setSelectedSessionId(null);
+      selectedSessionIdRef.current = null;
       setTurnError(null);
       setBackups([]);
       setReports(null);
@@ -160,9 +173,14 @@ export function App() {
   }, []);
 
   const loadTurnHistory = useCallback(async (id: string) => {
+    const sessionId = selectedSessionIdRef.current;
+    if (sessionId === null) {
+      setTurns([]);
+      return true;
+    }
     try {
-      const res = await window.owb.turnHistory(id);
-      if (selectedIdRef.current !== id) return false;
+      const res = await window.owb.sessionTurnHistory(sessionId);
+      if (selectedIdRef.current !== id || selectedSessionIdRef.current !== sessionId) return false;
       if (res.status !== 200) {
         setTurnError(apiErrorMessage(res.body, "本地历史读取失败"));
         return false;
@@ -172,7 +190,36 @@ export function App() {
       setTurnError(null);
       return true;
     } catch {
-      if (selectedIdRef.current === id) setTurnError("本地历史读取失败：控制面不可达");
+      if (selectedIdRef.current === id && selectedSessionIdRef.current === sessionId) {
+        setTurnError("本地历史读取失败：控制面不可达");
+      }
+      return false;
+    }
+  }, []);
+
+  const loadSessions = useCallback(async (id: string) => {
+    try {
+      const res = await window.owb.sessions(id);
+      if (selectedIdRef.current !== id) return false;
+      if (res.status !== 200) {
+        setSessions([]);
+        setSelectedSessionId(null);
+        selectedSessionIdRef.current = null;
+        setTurnError(apiErrorMessage(res.body, "会话列表读取失败"));
+        return false;
+      }
+      const list = res.body as WorkbenchSessionList;
+      setSessions(list.sessions);
+      const current = selectedSessionIdRef.current;
+      const next = current && list.sessions.some((session) => session.sessionId === current)
+        ? current
+        : list.activeSessionId;
+      selectedSessionIdRef.current = next;
+      setSelectedSessionId(next);
+      setTurnError(null);
+      return true;
+    } catch {
+      if (selectedIdRef.current === id) setTurnError("会话列表读取失败：控制面不可达");
       return false;
     }
   }, []);
@@ -181,14 +228,21 @@ export function App() {
     if (workspaceInfo?.open !== true || selectedId === null) {
       setCard({ loading: false, data: null, notFound: false });
       setTurns([]);
+      setSessions([]);
+      setSelectedSessionId(null);
+      selectedSessionIdRef.current = null;
       setTurnError(null);
       return;
     }
     setTurns([]);
     setTurnError(null);
     void loadPosition(selectedId);
-    void loadTurnHistory(selectedId);
-  }, [loadPosition, loadTurnHistory, selectedId, workspaceInfo?.open, workspaceInfo?.path]);
+    void loadSessions(selectedId);
+  }, [loadPosition, loadSessions, selectedId, workspaceInfo?.open, workspaceInfo?.path]);
+
+  useEffect(() => {
+    if (workspaceInfo?.open === true && selectedId !== null) void loadTurnHistory(selectedId);
+  }, [loadTurnHistory, selectedId, selectedSessionId, workspaceInfo?.open]);
 
   useEffect(() => {
     void refresh();
@@ -222,15 +276,76 @@ export function App() {
 
   const selectPosition = useCallback((id: string) => {
     selectedIdRef.current = id;
+    selectedSessionIdRef.current = null;
+    setSelectedSessionId(null);
+    setSessions([]);
+    setTurns([]);
     setSelectedId(id);
   }, []);
 
+  const selectSession = useCallback((sessionId: string) => {
+    selectedSessionIdRef.current = sessionId;
+    setSelectedSessionId(sessionId);
+    setTurns([]);
+    setTurnError(null);
+  }, []);
+
+  const createSession = useCallback(async () => {
+    const positionId = selectedIdRef.current;
+    if (positionId === null) return;
+    setSessionBusy(true);
+    setTurnError(null);
+    try {
+      const res = await window.owb.createSession({ positionId });
+      if (res.status !== 201) {
+        setTurnError(apiErrorMessage(res.body, "新建会话失败"));
+        return;
+      }
+      const session = res.body as WorkbenchSession;
+      selectedSessionIdRef.current = session.sessionId;
+      setSelectedSessionId(session.sessionId);
+      await loadSessions(positionId);
+    } catch {
+      setTurnError("新建会话失败：控制面不可达");
+    } finally {
+      setSessionBusy(false);
+    }
+  }, [loadSessions]);
+
+  const rotateSession = useCallback(async (sessionId: string) => {
+    const positionId = selectedIdRef.current;
+    if (positionId === null) return;
+    setSessionBusy(true);
+    setTurnError(null);
+    try {
+      const res = await window.owb.rotateSession(sessionId);
+      if (res.status !== 200 && res.status !== 201) {
+        setTurnError(apiErrorMessage(res.body, "轮换会话失败"));
+        return;
+      }
+      const session = res.body as WorkbenchSession;
+      selectedSessionIdRef.current = session.sessionId;
+      setSelectedSessionId(session.sessionId);
+      setTurns([]);
+      await loadSessions(positionId);
+    } catch {
+      setTurnError("轮换会话失败：控制面不可达");
+    } finally {
+      setSessionBusy(false);
+    }
+  }, [loadSessions]);
+
   const createTurn = useCallback(async (request: CreateTurnRequest) => {
+    const sessionId = selectedSessionIdRef.current;
+    if (sessionId === null) {
+      setTurnError("请先新建或选择当前会话");
+      return false;
+    }
     setTurnBusy(true);
     setTurnError(null);
     try {
-      const res = await window.owb.createTurn({
-        positionId: request.positionId,
+      const res = await window.owb.createSessionTurn({
+        sessionId,
         engine: request.engine,
         input: request.input,
       });
@@ -466,9 +581,15 @@ export function App() {
             engineAvailability={engineAvailability}
             turns={turns}
             busy={turnBusy}
+            sessions={sessions}
+            selectedSessionId={selectedSessionId}
+            sessionBusy={sessionBusy}
             onSelectPosition={selectPosition}
             onSelectEngine={setTurnEngine}
             onCreateTurn={createTurn}
+            onSelectSession={selectSession}
+            onCreateSession={createSession}
+            onRotateSession={rotateSession}
           />
         </div>}
       </div>

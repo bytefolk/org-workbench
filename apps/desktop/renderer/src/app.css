@@ -393,7 +393,7 @@
 .owb-turn-panel {
   min-height: 0;
   display: grid;
-  grid-template-rows: auto auto auto minmax(220px, 1fr) auto;
+  grid-template-rows: auto auto auto auto minmax(220px, 1fr) auto;
   gap: var(--ui-space-3, 12px);
   border: 1px solid var(--ui-border);
   border-radius: var(--ui-radius-lg, 14px);
@@ -446,7 +446,8 @@
 }
 
 .owb-position-mention,
-.owb-turn-engine {
+.owb-turn-engine,
+.owb-session-controls label {
   display: grid;
   gap: 5px;
 }
@@ -466,7 +467,8 @@
 }
 
 .owb-position-mention select,
-.owb-turn-engine select {
+.owb-turn-engine select,
+.owb-session-controls select {
   width: 100%;
   height: 34px;
   border: 1px solid var(--ui-border);
@@ -484,6 +486,8 @@
 
 .owb-position-mention select:focus-visible,
 .owb-turn-engine select:focus-visible,
+.owb-session-controls select:focus-visible,
+.owb-session-controls button:focus-visible,
 .owb-turn-composer textarea:focus-visible,
 .owb-turn__retry:focus-visible,
 .owb-turn-composer button:focus-visible {
@@ -493,8 +497,38 @@
 
 .owb-position-mention select:disabled,
 .owb-turn-engine select:disabled,
+.owb-session-controls select:disabled,
 .owb-turn-composer textarea:disabled {
   color: var(--ui-foreground-muted);
+  cursor: not-allowed;
+}
+
+.owb-session-controls {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+  gap: var(--ui-space-2, 8px);
+  padding: 0 var(--ui-space-4, 16px);
+}
+
+.owb-session-controls button {
+  height: 34px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border: 1px solid var(--ui-border);
+  border-radius: var(--ui-radius-md, 10px);
+  background: var(--ui-surface-inset);
+  color: var(--ui-foreground);
+  padding: 0 10px;
+  font: inherit;
+  font-size: var(--ui-text-xs, 12px);
+  cursor: pointer;
+}
+
+.owb-session-controls button:disabled {
+  opacity: 0.5;
   cursor: not-allowed;
 }
 

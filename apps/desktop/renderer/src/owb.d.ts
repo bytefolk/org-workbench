@@ -9,6 +9,8 @@ import type {
   TurnEngine,
   TurnHistory,
   TurnRecord,
+  WorkbenchSession,
+  WorkbenchSessionList,
 } from "@org-workbench/shared";
 
 interface OwbApiResponse<T = unknown> {
@@ -36,6 +38,12 @@ export interface OwbBridge {
   position(positionId: string): Promise<OwbApiResponse>;
   createTurn(request: { positionId: string; input: string; engine: TurnEngine }): Promise<OwbApiResponse<TurnRecord>>;
   turnHistory(positionId: string): Promise<OwbApiResponse<TurnHistory>>;
+  createSession(request: { positionId: string }): Promise<OwbApiResponse<WorkbenchSession>>;
+  sessions(positionId: string): Promise<OwbApiResponse<WorkbenchSessionList>>;
+  session(sessionId: string): Promise<OwbApiResponse<WorkbenchSession>>;
+  rotateSession(sessionId: string): Promise<OwbApiResponse<WorkbenchSession>>;
+  createSessionTurn(request: { sessionId: string; input: string; engine: TurnEngine }): Promise<OwbApiResponse<TurnRecord>>;
+  sessionTurnHistory(sessionId: string): Promise<OwbApiResponse<TurnHistory>>;
   sseStatus(): Promise<"connecting" | "connected">;
   onEvent(callback: (event: unknown) => void): () => void;
   onSseStatus(callback: (state: "connecting" | "connected") => void): () => void;

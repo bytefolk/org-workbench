@@ -260,9 +260,28 @@ Electron renderer 只通过枚举式 `createTurn({positionId,input,engine})` 与
 
 重连补拉：客户端带 `Last-Event-ID: <seq>` 重连，服务端从环形缓冲（≥256 条）回放该版本戳之后的事件；新连接不回放历史。心跳：每 15 秒注释帧 `: ping`。
 
+### 2.11 `/sessions` — 显式 Workbench session（#12 R2 加法）
+
+```text
+POST /sessions                         {"positionId":"repo-owner"}
+GET  /sessions?positionId=repo-owner
+GET  /sessions/:sessionId
+POST /sessions/:sessionId/rotate       {}
+POST /sessions/:sessionId/turns        {"input":"...","engine":"qoder|claude-code"}
+GET  /sessions/:sessionId/turns
+```
+
+`POST /sessions` 返回 201 `workbench-session.v1`。`workspaceInstanceId` 和 `sessionId` 是服务端生成的 opaque UUID；`principal` 固定派生为 `position.<positionId>`，客户端不能传入或覆盖。每岗位至多一个 active session；已有 active 时必须显式 rotate。
+
+rotate 以一个 0600 position state 原子替换同时封存 source、创建 successor 和切换 activeSessionId。并发双 rotate 至多创建一个 successor：首次 201，幂等重放 200 同一 successor。运行中回合返回 409 `session_conflict`；重启遗留 running 先按既有规则恢复为 indeterminate，再允许轮换。source 的 turns 不复制到 successor，旧 session 的 GET/history 保持可读，POST turn 被拒。
+
+持久化位于 `<workspace>/.digital-employee/workbench/sessions/`：workspace identity、每岗位有界 session state 与每 session 独立 conversation/turn 目录均拒绝 symlink/路径穿越/错 workspace/错 position/损坏或无界记录，目录 0700、文件 0600、临时文件 fsync 后 rename 并同步目录。session API/IPC 不返回绝对路径、boot token、模型凭据、mem/context service ID 或 admin capability。
+
+这些端点不改变 legacy `/turns` 兼容行为。Workbench session 不是浏览器登录会话、Host-native resume、mem session 或授权凭据；本切片不实现 memory write/recall、Context 蒸馏或委派。
+
 ## 3. 稳定错误码登记表
 
-控制面自产码（本契约定义）：`unauthorized`、`body_invalid`、`workspace_invalid`、`workspace_not_open`、`manifest_invalid`、`organization_invalid`、`engine_unavailable`（retryable=true）、`engine_capability_missing`、`engine_failed`、`position_missing`、`restore_invalid`、`restore_conflict`、`reports_data_invalid`、`turn_request_invalid`、`turn_engine_unsupported`、`turn_position_invalid`、`turn_storage_failed`、`not_found`、`method_not_allowed`、`internal`；turn-record 内的稳定结果码包括 `turn_process_exit_1`、`turn_process_failed`、`turn_engine_unavailable`、`turn_timeout`、`turn_protocol_invalid`、`turn_driver_failure`、`turn_interrupted`；提案预检码：`org_apply_position_exists`、`org_apply_position_missing`、`org_apply_cycle`、`org_apply_owner_delete`、`org_apply_max_depth`、`org_apply_destination_exists`。
+控制面自产码（本契约定义）：`unauthorized`、`body_invalid`、`workspace_invalid`、`workspace_not_open`、`manifest_invalid`、`organization_invalid`、`engine_unavailable`（retryable=true）、`engine_capability_missing`、`engine_failed`、`position_missing`、`restore_invalid`、`restore_conflict`、`reports_data_invalid`、`turn_request_invalid`、`turn_engine_unsupported`、`turn_position_invalid`、`turn_storage_failed`、`session_request_invalid`、`session_missing`、`session_conflict`、`session_storage_failed`、`not_found`、`method_not_allowed`、`internal`；turn-record 内的稳定结果码包括 `turn_process_exit_1`、`turn_process_failed`、`turn_engine_unavailable`、`turn_timeout`、`turn_protocol_invalid`、`turn_driver_failure`、`turn_interrupted`；提案预检码：`org_apply_position_exists`、`org_apply_position_missing`、`org_apply_cycle`、`org_apply_owner_delete`、`org_apply_max_depth`、`org_apply_destination_exists`。
 引擎透传码：以 digital-employee 稳定码为准（`workspace_org_*` 等），原样透传，不在本表重定义。
 
 ## 4. 安全基线（随契约冻结）
@@ -272,7 +291,8 @@ Electron renderer 只通过枚举式 `createTurn({positionId,input,engine})` 与
 3. 最小权限：壳只触达工作区目录与本地回环；组织文件权限对齐 #157 纪律（0600）。
 4. 凭据边界：密钥只经 env 注入引擎子进程；boot-token 只经父子进程 stdout 管道，不进文件/日志。
 5. 本地回合：只持久化对话输入、严格校验后的 engine 事件与稳定结果；不持久化凭据或原始 stderr。状态路径拒绝符号链接，文件 0600、目录 0700、原子替换。
-6. 更新与分发：v1 不做静默自动更新；macOS 公证列 D4 后。
+6. 本地 session：workspace/position/principal 映射由 server 拥有；sessionId 不是授权；renderer 只拿到枚举式 session 方法和公开 DTO。
+7. 更新与分发：v1 不做静默自动更新；macOS 公证列 D4 后。
 
 ## 5. 与上游契约的映射
 
@@ -283,3 +303,4 @@ Electron renderer 只通过枚举式 `createTurn({positionId,input,engine})` 与
 | 变更清单 add/move/delete 语义 | #157 REQ-005（目录驱动 apply）；校验闸门在引擎 |
 | 引擎稳定错误码 | digital-employee fail-closed 码惯例（`workspace_*`） |
 | `turn.*` / `escalation.created` / `evidence.created` | 引擎 S1 回合契约（#165）＋ #157 REQ-007 升级接缝（D3/D4 点亮） |
+| `workbench-session.v1` / 显式 rotate | org-workbench #12 R2；仅本地边界，下游由 digital-employee #161 消费 |

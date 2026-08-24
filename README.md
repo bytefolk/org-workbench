@@ -14,6 +14,7 @@ org-workbench 是 [digital-employee](https://github.com/fullstack-ai-infra/digit
 - API 契约 v0 已冻结并以加法扩展：见 [`docs/api-contract-v0.md`](docs/api-contract-v0.md)（D0 端点 + D3 `/turns`；破坏性变更升 v1）。
 - D1/D2 组织树：`packages/ui` 四组件（OrgTree/OrgTreeNode/PositionCard/BudgetBar，消费 design-system 语义 token）+ React/Vite 渲染层（AppShell 四区、键盘树导航、拖拽提案、SSE 驱动刷新）。
 - D3 本地对话闭环：Bearer 保护的 `POST /turns` 与 `GET /turns?positionId=...`，只允许 Qoder/Claude Code；工作台可从组织树或 `@岗位` 选择器加载本地历史、发送并 readback，展示密封信封 digest 与可信终态。退出码 1 不自动重试；委派链、长期 Context 与 live Host 验证仍明确标为未完成。
+- 显式 Workbench session：每个岗位可新建、选择和轮换 `workbench-session.v1`；轮换产生新的稳定 sessionId 和空白本地回合目录，旧 session 保持只读可查询。它只是本地控制面边界，不是 Host resume、授权或长期记忆。
 - 里程碑：D0 骨架 → D1 组织树只读 → D2 拖拽/预算/裁撤恢复闭环 → D3 @岗位对话 → D4 本地上报中心。委派链、长期 Context 与 Qoder/Claude Code live E4 仍不在“已验证”范围。
 - 当前仓库尚无 tag、Release 或签名安装包；快速开始面向源码开发者，不代表已发布客户端。
 
@@ -48,9 +49,18 @@ curl -s -X POST -H "Authorization: Bearer <token>" -H "Content-Type: application
      http://127.0.0.1:N/turns
 curl -s -H "Authorization: Bearer <token>" \
      'http://127.0.0.1:N/turns?positionId=repo-owner'
+
+# 显式 session：先创建，再在 session 内执行；轮换不会复制历史
+curl -s -X POST -H "Authorization: Bearer <token>" -H "Content-Type: application/json" \
+     -d '{"positionId":"repo-owner"}' http://127.0.0.1:N/sessions
+curl -s -X POST -H "Authorization: Bearer <token>" -H "Content-Type: application/json" \
+     -d '{"input":"Start from a clean session.","engine":"qoder"}' \
+     http://127.0.0.1:N/sessions/<sessionId>/turns
+curl -s -X POST -H "Authorization: Bearer <token>" -H "Content-Type: application/json" \
+     -d '{}' http://127.0.0.1:N/sessions/<sessionId>/rotate
 ```
 
-**桌面壳**（需 `npm install` 安装 Electron 后）：`npm run dev:desktop`（自动构建 renderer 再启动）。打开工作区后，可在左侧组织树拖拽调岗、从“招聘岗位”声明预算并新增岗位、在岗位详情确认裁撤、从恢复区显式恢复；切换顶部“上报中心”查看本地证据。恢复不会自动发生，冲突或引擎拒绝会保留当前提案/backup 供人工处理。
+**桌面壳**（需 `npm install` 安装 Electron 后）：`npm run dev:desktop`（自动构建 renderer 再启动）。打开工作区后，可在左侧组织树拖拽调岗、从“招聘岗位”声明预算并新增岗位、在岗位详情确认裁撤、从恢复区显式恢复；选择岗位后先新建/选择本地会话，再发送回合；“轮换当前会话”显式创建空白 successor，旧会话可切回只读查看。切换顶部“上报中心”查看本地证据。恢复和会话轮换都不会自动发生。
 
 **design-system 依赖说明**：`@fullstack-ai-infra/ui` 目前以开发期 `file:` 链接指向同级 `design-system` 克隆（骨架定稿方案 A：开发期 file: 链接，CI/正式包只认钉版）。链接要求该克隆已 `npm run build:package`（产出 dist，含 `--ui-sidebar-wide` 等 tokens）；设计系统发布 npm 后改钉版依赖。
 

@@ -2,7 +2,20 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { App } from "../src/App";
 import type { OwbBridge } from "../src/owb";
-import type { ReportsResponse, TurnHistory, TurnRecord } from "@org-workbench/shared";
+import type { ReportsResponse, TurnHistory, TurnRecord, WorkbenchSession } from "@org-workbench/shared";
+
+const activeSession: WorkbenchSession = {
+  schemaVersion: "workbench-session.v1",
+  sessionId: "11111111-1111-4111-8111-111111111111",
+  workspaceInstanceId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+  positionId: "repo-owner",
+  principal: "position.repo-owner",
+  status: "active",
+  rotatedFrom: null,
+  rotatedTo: null,
+  createdAt: "2026-08-24T03:00:00.000Z",
+  rotatedAt: null,
+};
 
 function installBridge(overrides: Partial<OwbBridge> = {}): OwbBridge {
   const bridge: OwbBridge = {
@@ -33,6 +46,18 @@ function installBridge(overrides: Partial<OwbBridge> = {}): OwbBridge {
     turnHistory: vi.fn().mockResolvedValue({
       status: 200,
       body: { schemaVersion: "turn-history.v1", conversationId: "empty", positionId: "repo-owner", turns: [] },
+    }),
+    createSession: vi.fn().mockResolvedValue({ status: 201, body: activeSession }),
+    sessions: vi.fn().mockResolvedValue({
+      status: 200,
+      body: { schemaVersion: "workbench-session-list.v1", positionId: "repo-owner", activeSessionId: activeSession.sessionId, sessions: [activeSession] },
+    }),
+    session: vi.fn().mockResolvedValue({ status: 200, body: activeSession }),
+    rotateSession: vi.fn().mockResolvedValue({ status: 500, body: { code: "internal" } }),
+    createSessionTurn: vi.fn().mockResolvedValue({ status: 500, body: { code: "internal", message: "unexpected" } }),
+    sessionTurnHistory: vi.fn().mockResolvedValue({
+      status: 200,
+      body: { schemaVersion: "turn-history.v1", conversationId: activeSession.sessionId, positionId: "repo-owner", turns: [] },
     }),
     sseStatus: vi.fn().mockResolvedValue("connected"),
     onEvent: vi.fn().mockReturnValue(() => undefined),
@@ -156,11 +181,11 @@ describe("App runtime bridge", () => {
       updatedAt: "2026-08-24T05:01:00.000Z",
       envelopeDigest: "sha256:created",
     });
-    const turnHistory = vi.fn()
+    const sessionTurnHistory = vi.fn()
       .mockResolvedValueOnce({ status: 200, body: history([existing]) })
       .mockResolvedValueOnce({ status: 200, body: history([existing, created]) });
-    const createTurn = vi.fn().mockResolvedValue({ status: 200, body: created });
-    const bridge = openedBridge({ turnHistory, createTurn });
+    const createSessionTurn = vi.fn().mockResolvedValue({ status: 200, body: created });
+    const bridge = openedBridge({ sessionTurnHistory, createSessionTurn });
 
     render(<App />);
     await selectRepoOwner();
@@ -170,12 +195,12 @@ describe("App runtime bridge", () => {
     fireEvent.click(screen.getByRole("button", { name: "发送任务" }));
 
     await waitFor(() => {
-      expect(createTurn).toHaveBeenCalledWith({
-        positionId: "repo-owner",
+      expect(createSessionTurn).toHaveBeenCalledWith({
+        sessionId: activeSession.sessionId,
         input: "检查下一版发布",
         engine: "qoder",
       });
-      expect(turnHistory).toHaveBeenCalledTimes(2);
+      expect(sessionTurnHistory).toHaveBeenCalledTimes(2);
     });
     expect(await screen.findByText("发布门禁通过")).toBeInTheDocument();
     expect(bridge.position).toHaveBeenCalledWith("repo-owner");
@@ -207,13 +232,13 @@ describe("App runtime bridge", () => {
   });
 
   it("surfaces create-turn API failure and preserves the unsent input", async () => {
-    const createTurn = vi.fn().mockResolvedValue({
+    const createSessionTurn = vi.fn().mockResolvedValue({
       status: 503,
       body: { code: "turn_engine_unavailable", message: "Qoder Host 暂不可用", retryable: false },
     });
     openedBridge({
       turnHistory: vi.fn().mockResolvedValue({ status: 200, body: history([]) }),
-      createTurn,
+      createSessionTurn,
     });
 
     render(<App />);
@@ -224,7 +249,54 @@ describe("App runtime bridge", () => {
 
     expect(await screen.findByRole("alert")).toHaveTextContent("turn_engine_unavailable: Qoder Host 暂不可用");
     expect(input).toHaveValue("不要丢失这条任务");
-    expect(createTurn).toHaveBeenCalledTimes(1);
+    expect(createSessionTurn).toHaveBeenCalledTimes(1);
+  });
+
+  it("creates, rotates, and switches explicit sessions without copying old turns", async () => {
+    const successor: WorkbenchSession = {
+      ...activeSession,
+      sessionId: "22222222-2222-4222-8222-222222222222",
+      rotatedFrom: activeSession.sessionId,
+      createdAt: "2026-08-24T06:00:00.000Z",
+    };
+    const rotated: WorkbenchSession = {
+      ...activeSession,
+      status: "rotated",
+      rotatedTo: successor.sessionId,
+      rotatedAt: successor.createdAt,
+    };
+    const sessions = vi.fn()
+      .mockResolvedValueOnce({ status: 200, body: { schemaVersion: "workbench-session-list.v1", positionId: "repo-owner", activeSessionId: null, sessions: [] } })
+      .mockResolvedValueOnce({ status: 200, body: { schemaVersion: "workbench-session-list.v1", positionId: "repo-owner", activeSessionId: activeSession.sessionId, sessions: [activeSession] } })
+      .mockResolvedValue({ status: 200, body: { schemaVersion: "workbench-session-list.v1", positionId: "repo-owner", activeSessionId: successor.sessionId, sessions: [successor, rotated] } });
+    const createSession = vi.fn().mockResolvedValue({ status: 201, body: activeSession });
+    const rotateSession = vi.fn().mockResolvedValue({ status: 201, body: successor });
+    const sessionTurnHistory = vi.fn().mockImplementation(async (sessionId: string) => ({
+      status: 200,
+      body: history(sessionId === activeSession.sessionId ? [apiTurn()] : []),
+    }));
+    openedBridge({ sessions, createSession, rotateSession, sessionTurnHistory });
+
+    render(<App />);
+    await selectRepoOwner();
+    expect(await screen.findByText("请先新建或选择一个会话")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "新建会话" }));
+    await waitFor(() => expect(createSession).toHaveBeenCalledWith({ positionId: "repo-owner" }));
+    expect(await screen.findByText("历史结果")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "轮换当前会话" }));
+    await waitFor(() => expect(rotateSession).toHaveBeenCalledWith(activeSession.sessionId));
+    await waitFor(() => {
+      expect(sessionTurnHistory).toHaveBeenCalledWith(successor.sessionId);
+      expect(screen.getByText("从一个明确任务开始")).toBeInTheDocument();
+      expect(screen.queryByText("历史结果")).not.toBeInTheDocument();
+    });
+
+    fireEvent.change(screen.getByRole("combobox", { name: "选择本地会话" }), {
+      target: { value: rotated.sessionId },
+    });
+    expect(await screen.findByText("历史会话只读；请选择当前会话")).toBeInTheDocument();
+    expect(screen.getByLabelText("交办任务")).toBeDisabled();
   });
 
   it("submits a drag move proposal and rejects a self-drop before IPC", async () => {

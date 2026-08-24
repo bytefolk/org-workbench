@@ -18,7 +18,7 @@ import { assertPositionId } from "../turns/store.js";
 
 const MAX_INPUT_BYTES = 256 * 1024;
 
-interface TurnPostBody {
+export interface TurnPostBody {
   positionId: string;
   input: string;
   engine: TurnEngine;
@@ -62,7 +62,7 @@ function parsePostBody(raw: unknown): TurnPostBody {
   return { positionId, input: raw.input, engine: raw.engine as TurnEngine };
 }
 
-function assertPositionExists(ctx: ControlPlaneContext, positionId: string): void {
+export function assertPositionExists(ctx: ControlPlaneContext, positionId: string): void {
   const workspace = ctx.workspace.requireOpen();
   if (!workspace.organization.roles.some((role) => role.id === positionId)) {
     throw new OrgApiError(errorCodes.position_missing, 404, `position not found: ${positionId}`);
@@ -90,8 +90,19 @@ export async function handleTurnPost(
   res: ServerResponse,
 ): Promise<void> {
   const body = parsePostBody(await readJsonBody<unknown>(req));
-  const workspace = ctx.workspace.requireOpen();
   assertPositionExists(ctx, body.positionId);
+  await executeTurn(ctx, res, body);
+}
+
+/** Shared execution path. `sessionId` is server-resolved by SessionStore; it
+ * never comes from a renderer-supplied position/principal mapping. */
+export async function executeTurn(
+  ctx: ControlPlaneContext,
+  res: ServerResponse,
+  body: TurnPostBody,
+  sessionId?: string,
+): Promise<void> {
+  const workspace = ctx.workspace.requireOpen();
   const turnId = crypto.randomUUID();
   const createdAt = new Date().toISOString();
   const envelope = createTurnEnvelope({
@@ -100,7 +111,7 @@ export async function handleTurnPost(
     turnId,
     message: body.input,
   });
-  const running = await ctx.turnStore.begin({
+  const beginInput = {
     workspace: workspace.dir,
     positionId: body.positionId,
     turnId,
@@ -108,7 +119,10 @@ export async function handleTurnPost(
     message: body.input,
     envelopeDigest: envelope.envelopeDigest,
     now: createdAt,
-  });
+  };
+  const running = sessionId === undefined
+    ? await ctx.turnStore.begin(beginInput)
+    : await ctx.turnStore.beginSession({ ...beginInput, sessionId });
 
   let result;
   try {
@@ -187,7 +201,8 @@ export async function handleTurnPost(
       };
     }
   }
-  await ctx.turnStore.finish(workspace.dir, record);
+  if (sessionId === undefined) await ctx.turnStore.finish(workspace.dir, record);
+  else await ctx.turnStore.finishSession(workspace.dir, sessionId, record);
   if (record.status === "indeterminate") {
     ctx.bus.publish("turn.indeterminate", {
       turnId,

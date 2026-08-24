@@ -41,6 +41,14 @@ export const errorCodes = {
   turn_position_invalid: "turn_position_invalid",
   /** Local conversation state could not be read or atomically persisted. */
   turn_storage_failed: "turn_storage_failed",
+  /** POST/GET /sessions request shape or session id is invalid. */
+  session_request_invalid: "session_request_invalid",
+  /** A requested session does not exist in the open workspace. */
+  session_missing: "session_missing",
+  /** Session lifecycle or active-turn state rejects the requested mutation. */
+  session_conflict: "session_conflict",
+  /** Workspace-local session state failed validation or atomic persistence. */
+  session_storage_failed: "session_storage_failed",
   /** A local reports source is malformed or crosses a safe path boundary. */
   reports_data_invalid: "reports_data_invalid",
   /** Route not found. */

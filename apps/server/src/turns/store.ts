@@ -9,6 +9,7 @@ import {
   isPositionId,
 } from "@org-workbench/shared";
 import type { TurnEngine, TurnHistory, TurnRecord } from "@org-workbench/shared";
+import { assertSessionId } from "../sessions/store.js";
 
 const STATE_ROOT = path.join(".digital-employee", "workbench", "conversations");
 const MAX_TURNS_PER_POSITION = 256;
@@ -94,6 +95,34 @@ function conversationDir(workspace: string, positionId: string): string {
   return path.join(workspace, STATE_ROOT, positionId);
 }
 
+function sessionConversationDir(workspace: string, sessionId: string): string {
+  return path.join(
+    workspace,
+    ".digital-employee",
+    "workbench",
+    "sessions",
+    "conversations",
+    assertSessionId(sessionId),
+  );
+}
+
+function sessionTurnRecordFile(workspace: string, sessionId: string, turnId: unknown): string {
+  if (
+    !isBoundedTurnId(turnId) ||
+    turnId.includes("/") ||
+    turnId.includes("\\") ||
+    turnId.includes("\0")
+  ) {
+    throw storageError("local session turn record contains an unsafe turnId");
+  }
+  const turnsDir = path.resolve(sessionConversationDir(workspace, sessionId), "turns");
+  const file = path.resolve(turnsDir, `${turnId}.json`);
+  if (path.dirname(file) !== turnsDir) {
+    throw storageError("local session turn record path escapes its conversation");
+  }
+  return file;
+}
+
 async function readJson(file: string, maxBytes: number): Promise<unknown> {
   const stat = await fs.lstat(file);
   if (!stat.isFile() || stat.isSymbolicLink() || stat.size > maxBytes) {
@@ -127,6 +156,45 @@ async function preparePositionDirectories(workspace: string, positionId: string)
       const created = await fs.lstat(current);
       if (!created.isDirectory() || created.isSymbolicLink()) {
         throw storageError("local turn state directory creation raced with an unsafe path");
+      }
+    }
+    if (index >= 1) await fs.chmod(current, 0o700);
+  }
+}
+
+async function prepareSessionDirectories(workspace: string, sessionId: string): Promise<void> {
+  assertSessionId(sessionId);
+  const rootStat = await fs.lstat(workspace);
+  if (!rootStat.isDirectory() || rootStat.isSymbolicLink()) {
+    throw storageError("workspace must be a real directory for local session turn state");
+  }
+  const segments = [
+    ".digital-employee",
+    "workbench",
+    "sessions",
+    "conversations",
+    sessionId,
+    "turns",
+  ];
+  let current = workspace;
+  for (let index = 0; index < segments.length; index += 1) {
+    current = path.join(current, segments[index]!);
+    try {
+      const stat = await fs.lstat(current);
+      if (!stat.isDirectory() || stat.isSymbolicLink()) {
+        throw storageError("local session turn state path must not contain symbolic links");
+      }
+    } catch (error) {
+      if (error instanceof OrgApiError) throw error;
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+      try {
+        await fs.mkdir(current, { mode: 0o700 });
+      } catch (mkdirError) {
+        if ((mkdirError as NodeJS.ErrnoException).code !== "EEXIST") throw mkdirError;
+      }
+      const created = await fs.lstat(current);
+      if (!created.isDirectory() || created.isSymbolicLink()) {
+        throw storageError("local session turn directory creation raced with an unsafe path");
       }
     }
     if (index >= 1) await fs.chmod(current, 0o700);
@@ -253,6 +321,64 @@ export class TurnStore {
     this.activeTurns.delete(this.activeTurnKey(workspace, record.positionId, record.turnId));
   }
 
+  async beginSession(input: {
+    workspace: string;
+    sessionId: string;
+    positionId: string;
+    turnId: string;
+    engine: TurnEngine;
+    message: string;
+    envelopeDigest: string;
+    now: string;
+  }): Promise<TurnRecord> {
+    const sessionId = assertSessionId(input.sessionId);
+    assertPositionId(input.positionId);
+    sessionTurnRecordFile(input.workspace, sessionId, input.turnId);
+    await prepareSessionDirectories(input.workspace, sessionId);
+    await this.assertSessionCapacity(input.workspace, sessionId);
+    const metadata = await this.ensureSessionConversation(
+      input.workspace,
+      sessionId,
+      input.positionId,
+      input.now,
+    );
+    const record: TurnRecord = {
+      schemaVersion: TURN_RECORD_SCHEMA_VERSION,
+      conversationId: metadata.conversationId,
+      turnId: input.turnId,
+      positionId: input.positionId,
+      engine: input.engine,
+      status: "running",
+      input: input.message,
+      envelopeDigest: input.envelopeDigest,
+      createdAt: input.now,
+      updatedAt: input.now,
+      events: [],
+    };
+    const activeKey = this.sessionActiveTurnKey(input.workspace, sessionId, input.turnId);
+    this.activeTurns.add(activeKey);
+    try {
+      await this.writeSessionTurn(input.workspace, sessionId, record);
+    } catch (error) {
+      this.activeTurns.delete(activeKey);
+      throw error;
+    }
+    return record;
+  }
+
+  async finishSession(workspace: string, sessionId: string, record: TurnRecord): Promise<void> {
+    assertPositionId(record.positionId);
+    sessionTurnRecordFile(workspace, sessionId, record.turnId);
+    await prepareSessionDirectories(workspace, sessionId);
+    await this.writeSessionTurn(workspace, sessionId, record);
+    this.activeTurns.delete(this.sessionActiveTurnKey(workspace, sessionId, record.turnId));
+  }
+
+  hasActiveSessionTurns(workspace: string, sessionId: string): boolean {
+    const prefix = `${path.resolve(workspace)}\0session:${assertSessionId(sessionId)}\0`;
+    return [...this.activeTurns].some((key) => key.startsWith(prefix));
+  }
+
   async history(workspace: string, positionId: string, now: string): Promise<TurnHistory> {
     assertPositionId(positionId);
     await preparePositionDirectories(workspace, positionId);
@@ -305,6 +431,82 @@ export class TurnStore {
           },
         };
         await this.writeTurn(workspace, recovered);
+        turns.push(recovered);
+      } else {
+        turns.push(raw);
+      }
+    }
+    turns.sort((left, right) =>
+      left.createdAt === right.createdAt
+        ? left.turnId.localeCompare(right.turnId, "en")
+        : left.createdAt.localeCompare(right.createdAt, "en"),
+    );
+    return {
+      schemaVersion: TURN_HISTORY_SCHEMA_VERSION,
+      conversationId: metadata.conversationId,
+      positionId,
+      turns,
+    };
+  }
+
+  async sessionHistory(
+    workspace: string,
+    sessionId: string,
+    positionId: string,
+    now: string,
+  ): Promise<TurnHistory> {
+    assertSessionId(sessionId);
+    assertPositionId(positionId);
+    await prepareSessionDirectories(workspace, sessionId);
+    const metadata = await this.ensureSessionConversation(workspace, sessionId, positionId, now);
+    const turnsDir = path.join(sessionConversationDir(workspace, sessionId), "turns");
+    let names: string[];
+    try {
+      names = (await fs.readdir(turnsDir)).filter((name) => name.endsWith(".json"));
+    } catch {
+      throw storageError("local session turn history is unreadable");
+    }
+    if (names.length > MAX_TURNS_PER_POSITION) {
+      throw storageError("local session turn history exceeds the bounded record count");
+    }
+    let historyBytes = 0;
+    const turns: TurnRecord[] = [];
+    for (const name of names) {
+      let raw: unknown;
+      try {
+        const file = path.join(turnsDir, name);
+        const stat = await fs.lstat(file);
+        historyBytes += stat.size;
+        if (historyBytes > MAX_HISTORY_BYTES) {
+          throw storageError("local session turn history exceeds the bounded total size");
+        }
+        raw = await readJson(file, MAX_TURN_RECORD_BYTES);
+      } catch {
+        throw storageError("local session turn history contains an unreadable record");
+      }
+      if (
+        !isTurnRecord(raw) ||
+        raw.positionId !== positionId ||
+        raw.conversationId !== metadata.conversationId ||
+        sessionTurnRecordFile(workspace, sessionId, raw.turnId) !== path.resolve(turnsDir, name)
+      ) {
+        throw storageError("local session turn history contains an invalid record");
+      }
+      if (
+        raw.status === "running" &&
+        !this.activeTurns.has(this.sessionActiveTurnKey(workspace, sessionId, raw.turnId))
+      ) {
+        const recovered: TurnRecord = {
+          ...raw,
+          status: "indeterminate",
+          updatedAt: now,
+          error: {
+            code: "turn_interrupted",
+            message: "the control plane stopped before the session turn reached a trusted terminal",
+            retryable: false,
+          },
+        };
+        await this.writeSessionTurn(workspace, sessionId, recovered);
         turns.push(recovered);
       } else {
         turns.push(raw);
@@ -411,6 +613,68 @@ export class TurnStore {
     return `${path.resolve(workspace)}\0${positionId}\0${turnId}`;
   }
 
+  private sessionActiveTurnKey(workspace: string, sessionId: string, turnId: string): string {
+    return `${path.resolve(workspace)}\0session:${sessionId}\0${turnId}`;
+  }
+
+  private async ensureSessionConversation(
+    workspace: string,
+    sessionId: string,
+    positionId: string,
+    now: string,
+  ): Promise<ConversationMetadata> {
+    const key = `${workspace}\0session:${sessionId}`;
+    const existing = this.metadataLocks.get(key);
+    if (existing) return existing;
+    const pending = this.loadOrCreateSessionConversation(workspace, sessionId, positionId, now);
+    this.metadataLocks.set(key, pending);
+    try {
+      return await pending;
+    } catch (error) {
+      this.metadataLocks.delete(key);
+      throw error;
+    }
+  }
+
+  private async loadOrCreateSessionConversation(
+    workspace: string,
+    sessionId: string,
+    positionId: string,
+    now: string,
+  ): Promise<ConversationMetadata> {
+    const dir = sessionConversationDir(workspace, sessionId);
+    const file = path.join(dir, "conversation.json");
+    try {
+      const raw = await readJson(file, MAX_METADATA_BYTES);
+      if (
+        !isConversationMetadata(raw) ||
+        raw.positionId !== positionId ||
+        raw.conversationId !== sessionId
+      ) {
+        throw storageError("local session conversation metadata is invalid");
+      }
+      await fs.chmod(file, 0o600);
+      return raw;
+    } catch (error) {
+      if (error instanceof OrgApiError) throw error;
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
+        throw storageError("local session conversation metadata is unreadable");
+      }
+    }
+    const metadata: ConversationMetadata = {
+      schemaVersion: "conversation.v1",
+      conversationId: sessionId,
+      positionId,
+      createdAt: now,
+    };
+    try {
+      await atomicWriteJson(file, metadata, MAX_METADATA_BYTES);
+      return metadata;
+    } catch {
+      throw storageError("local session conversation metadata could not be persisted");
+    }
+  }
+
   private async loadOrCreateConversation(
     workspace: string,
     positionId: string,
@@ -454,6 +718,19 @@ export class TurnStore {
     }
   }
 
+  private async writeSessionTurn(
+    workspace: string,
+    sessionId: string,
+    record: TurnRecord,
+  ): Promise<void> {
+    const file = sessionTurnRecordFile(workspace, sessionId, record.turnId);
+    try {
+      await atomicWriteJson(file, record, MAX_TURN_RECORD_BYTES);
+    } catch {
+      throw storageError("local session turn record could not be persisted atomically");
+    }
+  }
+
   private async assertCapacity(workspace: string, positionId: string): Promise<void> {
     const turnsDir = path.join(conversationDir(workspace, positionId), "turns");
     let names: string[];
@@ -474,6 +751,30 @@ export class TurnStore {
       bytes += stat.size;
       if (bytes >= MAX_HISTORY_BYTES) {
         throw storageError("local turn history reached the bounded total size");
+      }
+    }
+  }
+
+  private async assertSessionCapacity(workspace: string, sessionId: string): Promise<void> {
+    const turnsDir = path.join(sessionConversationDir(workspace, sessionId), "turns");
+    let names: string[];
+    try {
+      names = (await fs.readdir(turnsDir)).filter((name) => name.endsWith(".json"));
+    } catch {
+      throw storageError("local session turn history is unreadable");
+    }
+    if (names.length >= MAX_TURNS_PER_POSITION) {
+      throw storageError("local session turn history reached the bounded record count");
+    }
+    let bytes = 0;
+    for (const name of names) {
+      const stat = await fs.lstat(path.join(turnsDir, name));
+      if (!stat.isFile() || stat.isSymbolicLink()) {
+        throw storageError("local session turn history contains a non-regular record");
+      }
+      bytes += stat.size;
+      if (bytes >= MAX_HISTORY_BYTES) {
+        throw storageError("local session turn history reached the bounded total size");
       }
     }
   }

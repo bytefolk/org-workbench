@@ -21,6 +21,7 @@ export const routes = {
   orgRestore: "/org/restore",
   positions: "/positions",
   reports: "/reports",
+  sessions: "/sessions",
   turns: "/turns",
   events: "/events",
 } as const;
