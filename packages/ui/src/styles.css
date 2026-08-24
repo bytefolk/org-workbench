@@ -7,7 +7,7 @@
   display: flex;
   flex-direction: column;
   padding: var(--ui-space-2, 8px);
-  gap: 2px;
+  gap: var(--ui-space-1, 4px);
   outline: none;
   overflow: auto;
   max-height: 100%;
@@ -139,11 +139,11 @@
 .ui-org-budget--missing {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  font-size: 12px;
+  gap: var(--ui-space-1, 4px);
+  font-size: var(--ui-text-xs, 12px);
   color: var(--ui-warning);
   background: var(--ui-warning-soft);
-  border-radius: 999px;
+  border-radius: var(--ui-radius-full, 9999px);
   padding: 1px 8px;
   white-space: nowrap;
 }
@@ -168,7 +168,7 @@
 .ui-org-budget__lane-label {
   flex: none;
   width: 42px;
-  font-size: 12px;
+  font-size: var(--ui-text-xs, 12px);
   color: var(--ui-foreground-muted);
 }
 
@@ -181,14 +181,14 @@
   min-width: 0;
   height: 8px;
   background: var(--ui-surface-inset);
-  border-radius: 999px;
+  border-radius: var(--ui-radius-full, 9999px);
   overflow: hidden;
 }
 
 .ui-org-budget__fill {
   display: block;
   height: 100%;
-  border-radius: 999px;
+  border-radius: var(--ui-radius-full, 9999px);
   transition: width var(--ui-duration-normal, 180ms) var(--ui-ease, ease);
 }
 
@@ -213,7 +213,7 @@
 .ui-org-budget__value {
   flex: none;
   font-family: var(--ui-font-mono, monospace);
-  font-size: 12px;
+  font-size: var(--ui-text-xs, 12px);
   color: var(--ui-foreground-muted);
 }
 
@@ -245,8 +245,8 @@
 .ui-org-position-card__section h3 {
   display: flex;
   align-items: center;
-  gap: 6px;
-  font-size: 12px;
+  gap: var(--ui-space-2, 8px);
+  font-size: var(--ui-text-xs, 12px);
   font-weight: 600;
   color: var(--ui-foreground-muted);
   margin: 0 0 var(--ui-space-2, 8px);
@@ -277,7 +277,7 @@
 
 .ui-org-position-card__muted {
   color: var(--ui-foreground-muted);
-  font-size: 12px;
+  font-size: var(--ui-text-xs, 12px);
 }
 
 .ui-org-position-card--empty,
@@ -291,14 +291,14 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 6px;
+  gap: var(--ui-space-2, 8px);
   margin: 0;
 }
 
 .ui-org-position-card__refresh {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--ui-space-2, 8px);
   margin-top: var(--ui-space-3, 12px);
   border: none;
   background: var(--ui-primary-soft);
@@ -307,6 +307,15 @@
   padding: 6px 12px;
   font-size: var(--ui-text-sm, 13px);
   cursor: pointer;
+}
+
+.ui-org-position-card__refresh:hover {
+  background: var(--ui-surface-inset);
+}
+
+.ui-org-position-card__refresh:focus-visible {
+  outline: 2px solid var(--ui-focus);
+  outline-offset: -2px;
 }
 
 .ui-org-position-card__skeleton-title {

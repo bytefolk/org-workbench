@@ -47,7 +47,7 @@ export function OrgTreeNode({
       aria-expanded={hasChildren ? expanded : undefined}
       tabIndex={tabIndex}
       className={cn("ui-org-tree__row", selected && "is-selected")}
-      style={{ paddingLeft: `calc(${depth} * var(--ui-space-4, 16px) + 8px)` }}
+      style={{ paddingLeft: `calc(${depth} * var(--ui-space-4, 16px) + var(--ui-space-2, 8px))` }}
       onClick={(event) => {
         if ((event.target as HTMLElement).closest("[data-ui-org-toggle]")) {
           onToggle();
@@ -297,7 +297,7 @@ export function OrgTree({
             aria-expanded={entry.expanded}
             tabIndex={focusedId === entry.id ? 0 : -1}
             className={cn("ui-org-tree__row", "ui-org-tree__row--enterprise")}
-            style={{ paddingLeft: "8px" }}
+            style={{ paddingLeft: "var(--ui-space-2, 8px)" }}
             onClick={() => {
               if (entry.hasChildren) toggleNode(entry.id);
             }}
