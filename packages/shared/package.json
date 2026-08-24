@@ -10,9 +10,15 @@
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
+    },
+    "./position-id": {
+      "types": "./dist/position-id.d.ts",
+      "import": "./dist/position-id.js",
+      "require": "./position-id.cjs"
     }
   },
   "files": [
-    "dist"
+    "dist",
+    "position-id.cjs"
   ]
 }

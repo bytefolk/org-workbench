@@ -229,7 +229,7 @@ data: {"seq":4,"type":"org.updated","at":"...","payload":{...}}
 }
 ```
 
-本地状态位于 `<workspace>/.digital-employee/workbench/conversations/<positionId>/`：元数据和每回合独立 JSON 均为 0600 原子写，目录为 0700；启动后读到不属于当前进程活跃集合的遗留 `running` 回合时恢复为 `indeterminate/turn_interrupted`。岗位 ID 规则逐字镜像引擎组织契约。内部路径拒绝符号链接，历史记录数、总大小、输入、输出、事件与诊断全部有界。凭据与原始 stderr 不持久化。
+本地状态位于 `<workspace>/.digital-employee/workbench/conversations/<positionId>/`：元数据和每回合独立 JSON 均为 0600 原子写，目录为 0700；启动后读到不属于当前进程活跃集合的遗留 `running` 回合时恢复为 `indeterminate/turn_interrupted`。岗位 ID 规则逐字镜像引擎组织契约并由 D2、turn server 与 Desktop IPC 共用同一 validator。内部路径拒绝符号链接；持久化记录的 turn ID 在路径构造前必须满足上游有界 ID 约束、本地文件名安全约束且与所在文件名一致，否则整段历史 fail closed。历史记录数、总大小、输入、输出、事件与诊断全部有界。凭据与原始 stderr 不持久化。
 
 本切片只建立 workbench 本地会话/回合连续性与未来 recall 接缝，不声称已经接入 mem recall，也不依赖 Host 原生 resume。
 

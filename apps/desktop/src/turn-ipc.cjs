@@ -1,4 +1,4 @@
-const POSITION_ID_PATTERN = /^[a-z][a-z0-9-]{0,63}$/;
+const { isPositionId } = require("@org-workbench/shared/position-id");
 const MAX_INPUT_BYTES = 256 * 1024;
 const TURN_ENGINES = new Set(["qoder", "claude-code"]);
 
@@ -7,7 +7,7 @@ function invalid(message) {
 }
 
 function validatePositionId(positionId) {
-  return typeof positionId === "string" && POSITION_ID_PATTERN.test(positionId);
+  return isPositionId(positionId);
 }
 
 function validateCreateTurnRequest(value) {

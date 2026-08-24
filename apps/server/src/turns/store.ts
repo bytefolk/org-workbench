@@ -6,13 +6,13 @@ import {
   TURN_HISTORY_SCHEMA_VERSION,
   TURN_RECORD_SCHEMA_VERSION,
   errorCodes,
+  isPositionId,
 } from "@org-workbench/shared";
 import type { TurnEngine, TurnHistory, TurnRecord } from "@org-workbench/shared";
 
 const STATE_ROOT = path.join(".digital-employee", "workbench", "conversations");
-// Exact mirror of digital-employee apps/cli/org/model.ts at 0c4cd54.
-const POSITION_ID_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const MAX_TURNS_PER_POSITION = 256;
+const MAX_TURN_ID_LENGTH = 256;
 // A one-megachar engine result is represented in model.delta, the terminal,
 // and the record's output field. Keep that upstream boundary persistable
 // while retaining a finite aggregate history bound.
@@ -32,11 +32,7 @@ function storageError(message: string): OrgApiError {
 }
 
 export function assertPositionId(value: unknown): string {
-  if (
-    typeof value !== "string" ||
-    value.length > 64 ||
-    !POSITION_ID_PATTERN.test(value)
-  ) {
+  if (!isPositionId(value)) {
     throw new OrgApiError(
       errorCodes.turn_position_invalid,
       400,
@@ -44,6 +40,31 @@ export function assertPositionId(value: unknown): string {
     );
   }
   return value;
+}
+
+function isBoundedTurnId(value: unknown): value is string {
+  return (
+    typeof value === "string" &&
+    value.trim().length > 0 &&
+    value.length <= MAX_TURN_ID_LENGTH
+  );
+}
+
+function turnRecordFile(workspace: string, positionId: string, turnId: unknown): string {
+  if (
+    !isBoundedTurnId(turnId) ||
+    turnId.includes("/") ||
+    turnId.includes("\\") ||
+    turnId.includes("\0")
+  ) {
+    throw storageError("local turn record contains an unsafe turnId");
+  }
+  const turnsDir = path.resolve(conversationDir(workspace, positionId), "turns");
+  const file = path.resolve(turnsDir, `${turnId}.json`);
+  if (path.dirname(file) !== turnsDir) {
+    throw storageError("local turn record path escapes its conversation");
+  }
+  return file;
 }
 
 async function atomicWriteJson(file: string, value: unknown, maxBytes: number): Promise<void> {
@@ -119,7 +140,7 @@ function isConversationMetadata(value: unknown): value is ConversationMetadata {
     record.schemaVersion === "conversation.v1" &&
     typeof record.conversationId === "string" &&
     record.conversationId.length > 0 &&
-    typeof record.positionId === "string" &&
+    isPositionId(record.positionId) &&
     typeof record.createdAt === "string"
   );
 }
@@ -130,8 +151,8 @@ function isTurnRecord(value: unknown): value is TurnRecord {
   return (
     record.schemaVersion === TURN_RECORD_SCHEMA_VERSION &&
     typeof record.conversationId === "string" &&
-    typeof record.turnId === "string" &&
-    typeof record.positionId === "string" &&
+    isBoundedTurnId(record.turnId) &&
+    isPositionId(record.positionId) &&
     (record.engine === "qoder" || record.engine === "claude-code") &&
     ["running", "completed", "failed", "indeterminate"].includes(String(record.status)) &&
     typeof record.input === "string" &&
@@ -155,6 +176,8 @@ export class TurnStore {
     envelopeDigest: string;
     now: string;
   }): Promise<TurnRecord> {
+    assertPositionId(input.positionId);
+    turnRecordFile(input.workspace, input.positionId, input.turnId);
     await preparePositionDirectories(input.workspace, input.positionId);
     await this.assertCapacity(input.workspace, input.positionId);
     const metadata = await this.ensureConversation(input.workspace, input.positionId, input.now);
@@ -183,12 +206,15 @@ export class TurnStore {
   }
 
   async finish(workspace: string, record: TurnRecord): Promise<void> {
+    assertPositionId(record.positionId);
+    turnRecordFile(workspace, record.positionId, record.turnId);
     await preparePositionDirectories(workspace, record.positionId);
     await this.writeTurn(workspace, record);
     this.activeTurns.delete(this.activeTurnKey(workspace, record.positionId, record.turnId));
   }
 
   async history(workspace: string, positionId: string, now: string): Promise<TurnHistory> {
+    assertPositionId(positionId);
     await preparePositionDirectories(workspace, positionId);
     const metadata = await this.ensureConversation(workspace, positionId, now);
     const turnsDir = path.join(conversationDir(workspace, positionId), "turns");
@@ -216,7 +242,12 @@ export class TurnStore {
       } catch {
         throw storageError("local turn history contains an unreadable record");
       }
-      if (!isTurnRecord(raw) || raw.positionId !== positionId || raw.conversationId !== metadata.conversationId) {
+      if (
+        !isTurnRecord(raw) ||
+        raw.positionId !== positionId ||
+        raw.conversationId !== metadata.conversationId ||
+        turnRecordFile(workspace, raw.positionId, raw.turnId) !== path.resolve(turnsDir, name)
+      ) {
         throw storageError("local turn history contains an invalid record");
       }
       if (
@@ -309,11 +340,7 @@ export class TurnStore {
   }
 
   private async writeTurn(workspace: string, record: TurnRecord): Promise<void> {
-    const file = path.join(
-      conversationDir(workspace, record.positionId),
-      "turns",
-      `${record.turnId}.json`,
-    );
+    const file = turnRecordFile(workspace, record.positionId, record.turnId);
     try {
       await atomicWriteJson(file, record, MAX_TURN_RECORD_BYTES);
     } catch {

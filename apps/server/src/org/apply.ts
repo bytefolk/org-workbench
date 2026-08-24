@@ -4,8 +4,8 @@ import path from "node:path";
 import {
   CHANGE_MANIFEST_SCHEMA_VERSION,
   OrgApiError,
-  POSITION_ID_PATTERN,
   errorCodes,
+  isPositionId,
 } from "@org-workbench/shared";
 import type {
   AddPositionChange,
@@ -111,7 +111,7 @@ async function scanProposalTree(workspaceDir: string): Promise<ProposalPosition[
     if (depth > MAX_POSITION_DEPTH) {
       throw conflict(stagingConflictCodes.maxDepth, `position tree exceeds maxDepth=${MAX_POSITION_DEPTH}`);
     }
-    if (!POSITION_ID_PATTERN.test(id)) {
+    if (!isPositionId(id)) {
       throw conflict("workspace_org_tree_invalid_position_id", `invalid position id: ${id}`);
     }
     if (seen.has(id)) {
@@ -332,10 +332,10 @@ function validateAdd(index: number, change: Record<string, unknown>): void {
   const position = change.position;
   if (typeof position !== "object" || position === null) throw invalid("position must be an object");
   const p = position as Record<string, unknown>;
-  if (typeof p.id !== "string" || !POSITION_ID_PATTERN.test(p.id)) throw invalid("position.id is invalid");
+  if (!isPositionId(p.id)) throw invalid("position.id is invalid");
   if (typeof p.name !== "string" || p.name.length === 0) throw invalid("position.name required");
   if (typeof p.description !== "string" || p.description.length === 0) throw invalid("position.description required");
-  if (p.reportTo !== null && typeof p.reportTo !== "string") throw invalid("position.reportTo must be string | null");
+  if (p.reportTo !== null && !isPositionId(p.reportTo)) throw invalid("position.reportTo must be a position id | null");
   if (p.mode !== "read_only" && p.mode !== "approval_required") throw invalid("position.mode is invalid");
   if (typeof p.memoryScope !== "string") throw invalid("position.memoryScope must be a string");
   for (const key of ["toolAllow", "toolDeny"] as const) {
@@ -351,16 +351,16 @@ function validateAdd(index: number, change: Record<string, unknown>): void {
 }
 
 function validateMove(index: number, change: Record<string, unknown>): void {
-  if (typeof change.id !== "string" || !POSITION_ID_PATTERN.test(change.id)) {
+  if (!isPositionId(change.id)) {
     throw new OrgApiError(errorCodes.manifest_invalid, 400, `changes[${index}]: id is invalid`);
   }
-  if (change.reportTo !== null && (typeof change.reportTo !== "string" || !POSITION_ID_PATTERN.test(change.reportTo))) {
+  if (change.reportTo !== null && !isPositionId(change.reportTo)) {
     throw new OrgApiError(errorCodes.manifest_invalid, 400, `changes[${index}]: reportTo must be a position id | null`);
   }
 }
 
 function validateDelete(index: number, change: Record<string, unknown>): void {
-  if (typeof change.id !== "string" || !POSITION_ID_PATTERN.test(change.id)) {
+  if (!isPositionId(change.id)) {
     throw new OrgApiError(errorCodes.manifest_invalid, 400, `changes[${index}]: id is invalid`);
   }
 }

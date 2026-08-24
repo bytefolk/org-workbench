@@ -11,8 +11,6 @@ import type { PositionBudget, PositionMode } from "./org-tree.js";
 
 export const CHANGE_MANIFEST_SCHEMA_VERSION = "change-manifest.v1" as const;
 
-export const POSITION_ID_PATTERN = /^[a-z][a-z0-9-]{0,63}$/;
-
 export interface AddPositionChange {
   op: "add";
   position: {

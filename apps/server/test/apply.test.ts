@@ -282,6 +282,49 @@ test("org apply: shape/conflict failures do not mutate proposal tree or call eng
   }
 });
 
+test("org apply: position ids use the digital-employee authority pattern", async () => {
+  const driver = new FakeDriver({
+    status: "failed",
+    code: "fixture_rejected_after_manifest_validation",
+    message: "fixture stops after the D2 boundary",
+    retryable: false,
+  });
+  const server = await startTestServer(driver);
+  const dir = await copyExampleWorkspace();
+  try {
+    await seedAppliedState(dir);
+    await api(server.baseUrl, "/workspace/open", {
+      method: "POST", token: server.token, body: { path: dir },
+    });
+    const valid = {
+      schemaVersion: "change-manifest.v1",
+      changes: [{ ...HIRE_CHANGE, position: { ...HIRE_CHANGE.position, id: "7x" } }],
+    };
+    const accepted = await api(server.baseUrl, "/org/apply", {
+      method: "POST", token: server.token, body: valid,
+    });
+    assert.equal(accepted.status, 422);
+    assert.equal((accepted.body as { code: string }).code, "fixture_rejected_after_manifest_validation");
+    assert.deepEqual(driver.calls, [dir]);
+
+    for (const id of ["a--b", "a-"]) {
+      const rejected = await api(server.baseUrl, "/org/apply", {
+        method: "POST",
+        token: server.token,
+        body: {
+          schemaVersion: "change-manifest.v1",
+          changes: [{ ...HIRE_CHANGE, position: { ...HIRE_CHANGE.position, id } }],
+        },
+      });
+      assert.equal(rejected.status, 400);
+      assert.equal((rejected.body as { code: string }).code, "manifest_invalid");
+    }
+    assert.deepEqual(driver.calls, [dir]);
+  } finally {
+    await server.close();
+  }
+});
+
 test("org apply: maxDepth=8 rejects before mutating the proposal", async () => {
   const driver = new FakeDriver({ status: "applied" });
   const server = await startTestServer(driver);

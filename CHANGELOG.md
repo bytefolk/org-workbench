@@ -40,6 +40,7 @@
 
 - D3 turn control plane now preserves split UTF-8 output, accepts the upstream 1,048,576-character model boundary, reaps timed-out engine processes without late SSE, and safely preserves allowlisted spawn error codes.
 - Active turns are no longer recovered as interrupted; trusted terminal SSE is emitted only after the final turn record is durably persisted, and position IDs mirror the engine organization contract.
+- Persisted turn recovery now rejects unsafe or filename-mismatched turn IDs before path construction, and D2/shared/server/Desktop consume one position-ID validator (`7x` valid; repeated or trailing hyphens invalid).
 - 桌面壳从 Vite 的实际输出目录加载 renderer，干净构建不再依赖被忽略的旧产物。
 - renderer 按 IPC 的真实响应结构读取引擎健康状态，不再把可用引擎恒显为离线。
 - renderer 可读取当前 SSE 连接状态，避免窗口加载晚于连接事件时一直显示“事件流重连中”。
@@ -48,7 +49,7 @@
 
 ### Verification
 
-- `npm run check` 全绿（ui 14/14、server 25/25、renderer 9/9、desktop-main 3/3，依赖审计 0 漏洞）。
+- `npm run check` 全绿（ui 14/14、server 35/35、renderer 9/9、desktop-main 3/3，依赖审计 0 漏洞）。
 - 真实本地引擎 E2E：digital-employee `7a92690` 成功招聘后 `/org/tree` 重载 5 岗位；非法预算拒绝码透传，`org.json`/`org-audit.jsonl`/`permissions.json` 前后 SHA-256 一致，提案和 0600 `budget.json` 保留。
 - macOS 桌面壳实测：组织树渲染、岗位卡片、SSE 刷新、关窗进程退出全部通过（issue #4 验收，证据见 issue #1/#2 评论）。
 - D3 后端以 fixture CLI 和 HTTP 集成测试验证；renderer 以 IPC fixture 验证“打开工作区 → 选岗位 → 加载本地历史 → 发送 → readback”、idle 禁用和 API failure。Qoder/Claude Code live Host 未在本机执行；委派与 mem recall 不在本切片范围。

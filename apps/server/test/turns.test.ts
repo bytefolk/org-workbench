@@ -8,6 +8,7 @@ import type {
   TurnRunRequest,
   TurnRunResult,
 } from "@org-workbench/shared";
+import { POSITION_ID_PATTERN } from "@org-workbench/shared";
 import { api, connectSse, copyExampleWorkspace, startTestServer } from "./helpers.js";
 import { TurnStore, assertPositionId } from "../src/turns/store.js";
 import { createTurnEnvelope } from "../src/turns/envelope.js";
@@ -237,8 +238,12 @@ test("GET /turns requires a bounded positionId and never crosses workspace state
 });
 
 test("turn position ids mirror the digital-employee organization contract", () => {
-  assert.equal(assertPositionId("1st-responder"), "1st-responder");
-  for (const invalid of ["repo--owner", "repo-owner-", "RepoOwner"]) {
+  for (const valid of ["7x", "1st-responder", "repo-owner"]) {
+    assert.equal(POSITION_ID_PATTERN.test(valid), true);
+    assert.equal(assertPositionId(valid), valid);
+  }
+  for (const invalid of ["a--b", "a-", "RepoOwner"]) {
+    assert.equal(POSITION_ID_PATTERN.test(invalid), false);
     assert.throws(() => assertPositionId(invalid));
   }
 });
@@ -361,6 +366,47 @@ test("turn store recovers a persisted running record as indeterminate after rest
   assert.equal(history.turns.length, 1);
   assert.equal(history.turns[0]!.status, "indeterminate");
   assert.equal(history.turns[0]!.error?.code, "turn_interrupted");
+});
+
+test("turn store rejects a persisted traversal turnId without writing outside turns", async () => {
+  const workspace = await copyExampleWorkspace();
+  const store = new TurnStore();
+  const now = "2026-08-24T01:00:00.000Z";
+  const initialized = await store.history(workspace, "repo-owner", now);
+  const turnsDir = path.join(
+    workspace,
+    ".digital-employee",
+    "workbench",
+    "conversations",
+    "repo-owner",
+    "turns",
+  );
+  const poisonFile = path.join(turnsDir, "poison.json");
+  const outsideFile = path.join(workspace, "pwned.json");
+  const poison = {
+    schemaVersion: "turn-record.v1",
+    conversationId: initialized.conversationId,
+    turnId: "../../../../../pwned",
+    positionId: "repo-owner",
+    engine: "qoder",
+    status: "running",
+    input: "poison",
+    envelopeDigest: `sha256:${"a".repeat(64)}`,
+    createdAt: now,
+    updatedAt: now,
+    events: [],
+  };
+  await fs.writeFile(poisonFile, `${JSON.stringify(poison)}\n`, { mode: 0o600 });
+
+  await assert.rejects(
+    store.history(workspace, "repo-owner", "2026-08-24T01:01:00.000Z"),
+    (error: unknown) =>
+      error instanceof Error &&
+      "code" in error &&
+      (error as { code: string }).code === "turn_storage_failed",
+  );
+  await assert.rejects(fs.stat(outsideFile), { code: "ENOENT" });
+  assert.equal(JSON.parse(await fs.readFile(poisonFile, "utf8")).status, "running");
 });
 
 test("turn store rejects a symlinked local-state path instead of writing outside the workspace", async () => {
