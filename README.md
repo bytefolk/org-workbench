@@ -4,20 +4,23 @@
 
 org-workbench 是 [digital-employee](https://github.com/fullstack-ai-infra/digital-employee) 工作区的组织工作台：Electron 桌面壳 + 本地控制面服务，围绕组织树提供只读视图、结构变更（经引擎校验的 staging + 原子发布）与上报中心。macOS 首版聚焦组织树完整闭环；web/移动端未来同仓复用同一控制面与契约。
 
-## 当前状态：D0 骨架
+## 当前状态：D0 骨架 + D1 组织树只读（实现中）
 
 - 壳-服务分离：Electron main 拉起 `apps/server`（Node，仅 127.0.0.1，每启动随机 boot-token）；控制面可脱离壳独立运行。
 - 引擎消费：spawn 钉版 `digital-employee` CLI（ADR-0002）；`/health` 报告引擎可用性与下一步。
-- `org apply`：staging 暂存 → 引擎校验 → rename 原子发布；失败留档 `rejected/`，裁撤归档 `archive/`，全程不硬删除（ADR-0003）。
+- `org apply`：staging 暂存 → 引擎校验 → rename 原子发布；失败留档 `rejected/`，裁撤归档 `archive/`，全程不硬删除（ADR-0003）。**OQ-2 裁决后 D2 将翻转为"positions/ 树=提案面"模型，本机制随 D2 改造。**
 - API 契约 v0 已冻结：见 [`docs/api-contract-v0.md`](docs/api-contract-v0.md)（8 端点全量；新增走增量，破坏性变更升 v1）。
+- D1（组织树只读）：`packages/ui` 四组件（OrgTree/OrgTreeNode/PositionCard/BudgetBar，消费 design-system 语义 token）+ React/Vite 渲染层（AppShell 四区、Sidebar 288px、键盘树导航、SSE 驱动刷新）。
 - 里程碑：D0 骨架 → D1 组织树只读 → D2 拖拽/预算闭环 → D3 @岗位对话 → D4 上报中心。
 
 ## 快速开始
 
 ```bash
-npm install          # 根目录（npm workspaces）
-npm run build        # tsc -b（strict）
-npm run check        # 构建 + 全量测试（node --test）
+# 前置：design-system 仓须与本仓同级克隆（开发期 file: 链接，见下方说明）
+git clone https://github.com/fullstack-ai-infra/design-system.git ../design-system
+
+npm install          # 根目录（npm workspaces；Electron 二进制仅在 macOS/桌面环境下载）
+npm run check        # 全量门禁：tsc -b + ui 类型检查 + vitest + server node --test + renderer 构建
 ```
 
 **壳-服务分离实证（控制面独立运行）**：
@@ -32,7 +35,9 @@ curl -s -X POST -H "Authorization: Bearer <token>" -H "Content-Type: application
 curl -s -H "Authorization: Bearer <token>" http://127.0.0.1:N/org/tree
 ```
 
-**桌面壳**（需 `npm install` 安装 Electron 后）：`npm run dev:desktop`。
+**桌面壳**（需 `npm install` 安装 Electron 后）：`npm run dev:desktop`（自动构建 renderer 再启动）。
+
+**design-system 依赖说明**：`@fullstack-ai-infra/ui` 目前以开发期 `file:` 链接指向同级 `design-system` 克隆（骨架定稿方案 A：开发期 file: 链接，CI/正式包只认钉版）。链接要求该克隆已 `npm run build:package`（产出 dist，含 `--ui-sidebar-wide` 等 tokens）；设计系统发布 npm 后改钉版依赖。
 
 **引擎指针**：开发期以 `ORG_WORKBENCH_DIGITAL_EMPLOYEE_CLI` 指向钉版入口，例如
 `node <repo>/digital-employee/dist/apps/cli/bin.js`；引擎 `org apply`（#157 切片 V2）落地前，`/org/apply` 如实返回 `engine_capability_missing`（503）。

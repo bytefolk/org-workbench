@@ -9,6 +9,8 @@ import {
 } from "@org-workbench/shared";
 import type {
   OrganizationFile,
+  OrgRole,
+  OrgTreeNodeV1,
   OrgTreeSnapshot,
   OrgTreeVersion,
   WorkspaceManifest,
@@ -17,6 +19,8 @@ import type {
 export const ORGANIZATION_FILE = "organization.v1alpha1.json";
 export const MANIFEST_FILE = "workspace.json";
 export const POSITIONS_DIR = "positions";
+/** Applied-state model written by the engine `org apply` (0600). */
+export const APPLIED_MODEL_FILE = ".digital-employee/org.json";
 
 export interface OpenWorkspace {
   dir: string;
@@ -60,17 +64,7 @@ export class WorkspaceState {
         `unsupported workspace manifest schemaVersion: ${String(manifest.schemaVersion)}`,
       );
     }
-    const organization = await this.readJson<OrganizationFile>(
-      path.join(dir, ORGANIZATION_FILE),
-      "organization file missing (organization.v1alpha1.json)",
-    );
-    if (organization.schemaVersion !== WORKSPACE_ORG_SCHEMA_VERSION) {
-      throw new OrgApiError(
-        errorCodes.workspace_invalid,
-        422,
-        `unsupported organization schemaVersion: ${String(organization.schemaVersion)}`,
-      );
-    }
+    const organization = await this.readOrganizationFile(dir);
     if (
       typeof organization.business !== "string" ||
       typeof organization.owner !== "string" ||
@@ -129,21 +123,101 @@ export class WorkspaceState {
     return this.current.version;
   }
 
+  /**
+   * org-tree.v1 snapshot (frozen minimal shape, mirror of the engine's
+   * buildOrgTree): nested tree from applied-state roles, children sorted by
+   * id, depth from 1, updatedAt from the organization model. Budget is
+   * required on every node (REQ-006 fail-closed mirror): a budget-less
+   * position makes the org invalid rather than emitting a schema-violating
+   * tree.
+   */
   snapshot(): OrgTreeSnapshot {
     const ws = this.requireOpen();
+    const roles = ws.organization.roles;
+    for (const role of roles) {
+      if (!role.budget) {
+        throw new OrgApiError(
+          errorCodes.organization_invalid,
+          422,
+          `position lacks a budget declaration: ${role.id} (REQ-006; mirror of the engine budget gate)`,
+        );
+      }
+    }
+    const childrenByParent = new Map<string | null, OrgRole[]>();
+    for (const role of roles) {
+      const list = childrenByParent.get(role.reportTo) ?? [];
+      list.push(role);
+      childrenByParent.set(role.reportTo, list);
+    }
+    for (const list of childrenByParent.values()) {
+      list.sort((a, b) => a.id.localeCompare(b.id, "en"));
+    }
+    let depth = 0;
+    const build = (role: OrgRole, level: number): OrgTreeNodeV1 => {
+      depth = Math.max(depth, level);
+      return {
+        id: role.id,
+        reportTo: role.reportTo,
+        budget: role.budget,
+        children: (childrenByParent.get(role.id) ?? []).map((child) =>
+          build(child, level + 1),
+        ),
+      };
+    };
+    const tree = (childrenByParent.get(null) ?? []).map((root) => build(root, 1));
     return {
       schemaVersion: ORG_TREE_SCHEMA_VERSION,
-      workspacePath: ws.dir,
       business: ws.organization.business,
       owner: ws.organization.owner,
-      edges: ws.organization.roles.map((role) => ({
-        positionId: role.id,
-        reportTo: role.reportTo,
-      })),
-      positions: ws.organization.roles,
-      organization: ws.organization,
-      version: ws.version,
+      updatedAt: ws.organization.updatedAt,
+      positionCount: roles.length,
+      depth,
+      tree,
     };
+  }
+
+  /**
+   * Read the organization model with applied-state precedence (V2 model):
+   * `.digital-employee/org.json` (written by the engine `org apply`, 0600)
+   * when present, else the init declaration `organization.v1alpha1.json`
+   * (pre-apply, mirrors the engine's loadOrgModel bootstrap).
+   */
+  private async readOrganizationFile(dir: string): Promise<OrganizationFile> {
+    let text: string | null = null;
+    try {
+      text = await fs.readFile(path.join(dir, APPLIED_MODEL_FILE), "utf8");
+    } catch {
+      text = null;
+    }
+    if (text === null) {
+      try {
+        text = await fs.readFile(path.join(dir, ORGANIZATION_FILE), "utf8");
+      } catch {
+        throw new OrgApiError(
+          errorCodes.workspace_invalid,
+          422,
+          "organization file missing (organization.v1alpha1.json)",
+        );
+      }
+    }
+    let organization: OrganizationFile;
+    try {
+      organization = JSON.parse(text) as OrganizationFile;
+    } catch {
+      throw new OrgApiError(
+        errorCodes.workspace_invalid,
+        422,
+        "organization file is not valid JSON",
+      );
+    }
+    if (organization.schemaVersion !== WORKSPACE_ORG_SCHEMA_VERSION) {
+      throw new OrgApiError(
+        errorCodes.workspace_invalid,
+        422,
+        `unsupported organization schemaVersion: ${String(organization.schemaVersion)}`,
+      );
+    }
+    return organization;
   }
 
   private async readJson<T>(file: string, missingMessage: string): Promise<T> {

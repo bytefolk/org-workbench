@@ -100,6 +100,7 @@ function apiRequest(pathname, { method = "GET", withAuth = true, body = null } =
 
 function startEventStream() {
   if (!controlPlane || eventStreamRequest) return;
+  broadcastSseStatus("connecting");
   const req = http.request(
     {
       host: "127.0.0.1",
@@ -112,6 +113,7 @@ function startEventStream() {
       },
     },
     (res) => {
+      broadcastSseStatus("connected");
       let buffer = "";
       res.on("data", (chunk) => {
         buffer += String(chunk);
@@ -134,16 +136,24 @@ function startEventStream() {
       });
       res.on("end", () => {
         eventStreamRequest = null;
+        broadcastSseStatus("connecting");
         setTimeout(startEventStream, 2000);
       });
     },
   );
   req.on("error", () => {
     eventStreamRequest = null;
+    broadcastSseStatus("connecting");
     setTimeout(startEventStream, 2000);
   });
   req.end();
   eventStreamRequest = req;
+}
+
+function broadcastSseStatus(state) {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send("owb:sse-status", state);
+  }
 }
 
 // Whitelisted IPC bridge — enumerated, typed, no generic channel.
@@ -205,7 +215,7 @@ function createWindow() {
     },
   });
   mainWindow.setMenuBarVisibility(false);
-  void mainWindow.loadFile(path.join(__dirname, "renderer", "index.html"));
+  void mainWindow.loadFile(path.join(__dirname, "..", "..", "dist", "renderer", "index.html"));
   mainWindow.on("closed", () => {
     mainWindow = null;
   });

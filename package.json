@@ -14,9 +14,13 @@
   },
   "scripts": {
     "build": "tsc -b",
-    "check": "npm run build && node --test \"apps/server/dist/test/*.test.js\"",
+    "typecheck:ui": "tsc --noEmit -p packages/ui",
+    "typecheck:renderer": "tsc --noEmit -p apps/desktop",
+    "test:ui": "vitest run --config packages/ui/vitest.config.ts",
+    "build:renderer": "vite build --config apps/desktop/vite.config.ts",
+    "check": "npm run build && npm run typecheck:ui && npm run test:ui && node --test \"apps/server/dist/test/*.test.js\" && npm run typecheck:renderer && npm run build:renderer",
     "dev:server": "npm run build && node apps/server/dist/src/index.js",
-    "dev:desktop": "npm run build && electron apps/desktop/src/main.js",
+    "dev:desktop": "npm run build && npm run build:renderer && electron apps/desktop/src/main.js",
     "typecheck": "tsc -b --force"
   },
   "devDependencies": {
