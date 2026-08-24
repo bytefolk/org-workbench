@@ -145,7 +145,7 @@ function isConversationMetadata(value: unknown): value is ConversationMetadata {
   );
 }
 
-function isTurnRecord(value: unknown): value is TurnRecord {
+export function isTurnRecord(value: unknown): value is TurnRecord {
   if (value === null || typeof value !== "object" || Array.isArray(value)) return false;
   const record = value as Partial<TurnRecord>;
   return (
@@ -161,6 +161,46 @@ function isTurnRecord(value: unknown): value is TurnRecord {
     typeof record.updatedAt === "string" &&
     Array.isArray(record.events)
   );
+}
+
+function isReportTurnRecord(value: unknown): value is TurnRecord {
+  if (!isTurnRecord(value)) return false;
+  if (value.runId !== undefined && typeof value.runId !== "string") return false;
+  if (value.error !== undefined && (
+    value.error === null ||
+    typeof value.error !== "object" ||
+    typeof value.error.code !== "string" ||
+    typeof value.error.message !== "string" ||
+    typeof value.error.retryable !== "boolean"
+  )) return false;
+  return value.events.every(isReportEngineEvent);
+}
+
+function isReportEngineEvent(value: unknown): boolean {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) return false;
+  const event = value as Record<string, unknown>;
+  if (typeof event.runId !== "string" || typeof event.timestamp !== "string") return false;
+  switch (event.type) {
+    case "run.started":
+      return true;
+    case "model.delta":
+      return typeof event.text === "string";
+    case "usage":
+      return [event.inputTokens, event.outputTokens, event.totalTokens].every((amount) =>
+        amount === undefined || (Number.isSafeInteger(amount) && (amount as number) >= 0));
+    case "run.completed":
+      return event.terminalReason === "goal_met";
+    case "run.failed": {
+      const error = event.error;
+      return error !== null && typeof error === "object" && !Array.isArray(error) &&
+        typeof (error as Record<string, unknown>).code === "string" &&
+        typeof (error as Record<string, unknown>).message === "string" &&
+        typeof (error as Record<string, unknown>).retryable === "boolean" &&
+        typeof (error as Record<string, unknown>).terminalReason === "string";
+    }
+    default:
+      return false;
+  }
 }
 
 export class TurnStore {
@@ -283,6 +323,72 @@ export class TurnStore {
     };
   }
 
+  /** Read existing turn facts for D4 without creating conversations or
+   * recovering state. Any malformed/symlinked source rejects the whole view. */
+  async reportRecords(workspace: string): Promise<TurnRecord[]> {
+    const root = path.join(workspace, STATE_ROOT);
+    let positionEntries;
+    try {
+      await assertRealDirectoryChain(workspace, STATE_ROOT.split(path.sep));
+      positionEntries = await fs.readdir(root, { withFileTypes: true });
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") return [];
+      throw storageError("local reports turn root is unreadable");
+    }
+    if (positionEntries.length > 1024) {
+      throw storageError("local reports position count exceeds its bound");
+    }
+    const records: TurnRecord[] = [];
+    let totalBytes = 0;
+    for (const entry of positionEntries) {
+      if (!entry.isDirectory() || entry.isSymbolicLink() || !isPositionId(entry.name)) {
+        throw storageError("local reports turn root contains an unsafe position");
+      }
+      const positionId = entry.name;
+      const dir = conversationDir(workspace, positionId);
+      await assertRealDirectory(dir, "local reports position path is unsafe");
+      const metadata = await readJson(path.join(dir, "conversation.json"), MAX_METADATA_BYTES);
+      if (!isConversationMetadata(metadata) || metadata.positionId !== positionId) {
+        throw storageError("local reports conversation metadata is invalid");
+      }
+      const turnsDir = path.join(dir, "turns");
+      await assertRealDirectory(turnsDir, "local reports turn directory is unsafe");
+      const turnEntries = await fs.readdir(turnsDir, { withFileTypes: true });
+      const jsonEntries = turnEntries.filter((turnEntry) => turnEntry.name.endsWith(".json"));
+      if (jsonEntries.length > MAX_TURNS_PER_POSITION) {
+        throw storageError("local reports turn count exceeds its bound");
+      }
+      for (const turnEntry of turnEntries) {
+        if (turnEntry.name.startsWith(".") && turnEntry.name.endsWith(".tmp")) continue;
+        if (!turnEntry.isFile() || turnEntry.isSymbolicLink() || !turnEntry.name.endsWith(".json")) {
+          throw storageError("local reports turn directory contains an unsafe record");
+        }
+        const file = path.join(turnsDir, turnEntry.name);
+        const stat = await fs.lstat(file);
+        totalBytes += stat.size;
+        if (totalBytes > MAX_HISTORY_BYTES) {
+          throw storageError("local reports turn data exceeds its bounded total size");
+        }
+        const raw = await readJson(file, MAX_TURN_RECORD_BYTES);
+        if (
+          !isReportTurnRecord(raw) ||
+          raw.positionId !== positionId ||
+          raw.conversationId !== metadata.conversationId ||
+          turnRecordFile(workspace, raw.positionId, raw.turnId) !== path.resolve(file)
+        ) {
+          throw storageError("local reports contains an invalid turn record");
+        }
+        records.push(raw);
+      }
+    }
+    records.sort((left, right) =>
+      right.updatedAt === left.updatedAt
+        ? right.turnId.localeCompare(left.turnId, "en")
+        : right.updatedAt.localeCompare(left.updatedAt, "en"),
+    );
+    return records;
+  }
+
   private async ensureConversation(
     workspace: string,
     positionId: string,
@@ -371,4 +477,18 @@ export class TurnStore {
       }
     }
   }
+}
+
+async function assertRealDirectoryChain(workspace: string, segments: string[]): Promise<void> {
+  await assertRealDirectory(workspace, "workspace path is unsafe");
+  let current = workspace;
+  for (const segment of segments) {
+    current = path.join(current, segment);
+    await assertRealDirectory(current, "local reports state path is unsafe");
+  }
+}
+
+async function assertRealDirectory(directory: string, message: string): Promise<void> {
+  const stat = await fs.lstat(directory);
+  if (!stat.isDirectory() || stat.isSymbolicLink()) throw storageError(message);
 }

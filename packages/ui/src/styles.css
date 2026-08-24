@@ -47,6 +47,19 @@
   box-shadow: inset 3px 0 0 var(--ui-primary);
 }
 
+.ui-org-tree__row.is-draggable {
+  cursor: grab;
+}
+
+.ui-org-tree__row.is-draggable:active {
+  cursor: grabbing;
+}
+
+.ui-org-tree__row.is-drop-target {
+  box-shadow: inset 0 0 0 2px var(--ui-primary);
+  background: var(--ui-primary-soft);
+}
+
 .ui-org-tree__toggle {
   display: inline-flex;
   align-items: center;

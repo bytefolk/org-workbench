@@ -2,6 +2,10 @@
 
 import type {
   HealthResponse,
+  ChangeManifest,
+  OrgBackupsResponse,
+  OrgRestoreResult,
+  ReportsResponse,
   TurnEngine,
   TurnHistory,
   TurnRecord,
@@ -25,6 +29,10 @@ export interface OwbBridge {
   openWorkspace(): Promise<OwbApiResponse>;
   workspace(): Promise<OwbApiResponse>;
   orgTree(): Promise<OwbApiResponse>;
+  orgApply(manifest: ChangeManifest): Promise<OwbApiResponse>;
+  orgBackups(): Promise<OwbApiResponse<OrgBackupsResponse>>;
+  orgRestore(backupId: string): Promise<OwbApiResponse<OrgRestoreResult>>;
+  reports(): Promise<OwbApiResponse<ReportsResponse>>;
   position(positionId: string): Promise<OwbApiResponse>;
   createTurn(request: { positionId: string; input: string; engine: TurnEngine }): Promise<OwbApiResponse<TurnRecord>>;
   turnHistory(positionId: string): Promise<OwbApiResponse<TurnHistory>>;

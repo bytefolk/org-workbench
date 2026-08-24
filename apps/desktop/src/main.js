@@ -14,6 +14,7 @@ const { spawn } = require("node:child_process");
 const http = require("node:http");
 const path = require("node:path");
 const { rendererEntryPath } = require("./runtime-paths.cjs");
+const { validateRestoreRequest } = require("./org-ipc.cjs");
 const { turnHistoryPath, validateCreateTurnRequest } = require("./turn-ipc.cjs");
 
 const SERVER_ENTRY = path.join(__dirname, "..", "..", "server", "dist", "src", "index.js");
@@ -199,6 +200,19 @@ ipcMain.handle("owb:workspace:get", async () => apiRequest("/workspace"));
 
 ipcMain.handle("owb:org:tree", async () => apiRequest("/org/tree"));
 
+ipcMain.handle("owb:org:apply", async (_event, manifest) =>
+  apiRequest("/org/apply", { method: "POST", body: manifest }));
+
+ipcMain.handle("owb:org:backups", async () => apiRequest("/org/backups"));
+
+ipcMain.handle("owb:org:restore", async (_event, backupId) => {
+  const validated = validateRestoreRequest(backupId);
+  if (!validated.ok) return validated.response;
+  return apiRequest("/org/restore", { method: "POST", body: validated.request });
+});
+
+ipcMain.handle("owb:reports:get", async () => apiRequest("/reports"));
+
 ipcMain.handle("owb:position:get", async (_event, positionId) => {
   if (typeof positionId !== "string" || positionId.length === 0) {
     return { status: 400, body: { code: "manifest_invalid", message: "positionId required" } };
@@ -226,6 +240,8 @@ function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1240,
     height: 800,
+    minWidth: 980,
+    minHeight: 680,
     title: "org-workbench",
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),
