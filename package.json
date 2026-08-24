@@ -21,6 +21,7 @@
     "test:ui": "vitest run --config packages/ui/vitest.config.ts",
     "test:renderer": "vitest run --config apps/desktop/vitest.config.ts",
     "test:desktop-main": "npm run build:renderer && node --test \"apps/desktop/test/*.test.cjs\"",
+    "test:context-e3": "node --test apps/server/dist/test/context-exporter-e3.test.js",
     "security:check": "npm audit --audit-level=high",
     "build:renderer": "vite build --config apps/desktop/vite.config.ts",
     "check": "npm run build && npm run typecheck:ui && npm run test:ui && node --test \"apps/server/dist/test/*.test.js\" && npm run typecheck:renderer && npm run test:renderer && npm run test:desktop-main && npm run security:check",

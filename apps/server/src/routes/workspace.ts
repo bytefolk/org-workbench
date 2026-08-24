@@ -37,6 +37,10 @@ export async function handleWorkspaceOpen(
     version,
     changes: [],
   });
+  await resumeContextExports(ctx, ws.dir).catch(() => {
+    // Workspace open remains independent from Context availability. A later
+    // open/restart retries export intents without invoking any Host turn.
+  });
   sendJson(res, 200, {
     open: true,
     path: ws.dir,
@@ -44,4 +48,24 @@ export async function handleWorkspaceOpen(
     owner: ws.organization.owner,
     version: ws.version,
   });
+}
+
+async function resumeContextExports(ctx: ControlPlaneContext, workspace: string): Promise<void> {
+  const roles = ctx.workspace.requireOpen().organization.roles;
+  for (const role of roles) {
+    const sessions = await ctx.sessionStore.list(workspace, role.id);
+    for (const session of sessions.sessions) {
+      const history = await ctx.turnStore.sessionHistory(
+        workspace,
+        session.sessionId,
+        session.positionId,
+        new Date().toISOString(),
+      );
+      for (const turn of history.turns) {
+        if (turn.status === "completed") {
+          await ctx.contextExporter.enqueueCompletedTurn(workspace, session, turn);
+        }
+      }
+    }
+  }
 }

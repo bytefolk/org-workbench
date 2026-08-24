@@ -28,6 +28,8 @@
 - org-workbench #12 R2 显式 session：`workbench-session.v1`、create/list/get/rotate/session-turn API，server-owned principal/workspace mapping、每岗位单 active、多 session 只读历史和 zero-history-copy successor。
 - Desktop 枚举式 session IPC 与岗位会话选择器：显式新建/轮换、旧 session 只读切换、session-scoped turn/readback；不暴露 boot token、绝对路径或 mem/context 能力。
 - Session 持久化安全门禁：0700/0600、单文件原子 rotate、并发双 rotate 幂等、running-turn conflict、重启恢复、symlink/路径/损坏/错 workspace/无界状态 fail closed。
+- org-workbench #15 R1 Context exporter：可信 session `completed` 回合落盘后异步生成两条 scoped `context-occurrence.v1`，持久 `pending|done|failed` 与跨重启幂等恢复；固定消费 `context@f63f57f` 公共 CLI/stdio adapter，失败不重跑 Host。
+- Context exporter E3：真实临时 SQLite vault 通过 provider grant → ingest/distill → recall/readback 验证两条 raw occurrence，另覆盖 partial replay、wrong scope、revoked token、adapter outage、symlink/corrupt state 与 failed/indeterminate 不导出。
 
 ### Changed
 

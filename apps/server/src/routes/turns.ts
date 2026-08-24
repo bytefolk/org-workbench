@@ -10,6 +10,7 @@ import type {
   SseEventType,
   TurnEngine,
   TurnRecord,
+  WorkbenchSession,
 } from "@org-workbench/shared";
 import type { ControlPlaneContext } from "../context.js";
 import { readJsonBody, sendJson } from "../http.js";
@@ -100,7 +101,7 @@ export async function executeTurn(
   ctx: ControlPlaneContext,
   res: ServerResponse,
   body: TurnPostBody,
-  sessionId?: string,
+  session?: WorkbenchSession,
 ): Promise<void> {
   const workspace = ctx.workspace.requireOpen();
   const turnId = crypto.randomUUID();
@@ -120,9 +121,9 @@ export async function executeTurn(
     envelopeDigest: envelope.envelopeDigest,
     now: createdAt,
   };
-  const running = sessionId === undefined
+  const running = session === undefined
     ? await ctx.turnStore.begin(beginInput)
-    : await ctx.turnStore.beginSession({ ...beginInput, sessionId });
+    : await ctx.turnStore.beginSession({ ...beginInput, sessionId: session.sessionId });
 
   let result;
   try {
@@ -204,8 +205,17 @@ export async function executeTurn(
       };
     }
   }
-  if (sessionId === undefined) await ctx.turnStore.finish(workspace.dir, record);
-  else await ctx.turnStore.finishSession(workspace.dir, sessionId, record);
+  if (session === undefined) await ctx.turnStore.finish(workspace.dir, record);
+  else await ctx.turnStore.finishSession(workspace.dir, session.sessionId, record);
+  if (session !== undefined && record.status === "completed") {
+    // The durable turn is authoritative. Export persistence/adapter failure is
+    // intentionally isolated and will be retried by workspace-open recovery.
+    try {
+      await ctx.contextExporter.enqueueCompletedTurn(workspace.dir, session, record);
+    } catch {
+      // No raw adapter or turn content crosses into the HTTP response/report.
+    }
+  }
   if (record.status === "indeterminate") {
     ctx.bus.publish("turn.indeterminate", {
       turnId,

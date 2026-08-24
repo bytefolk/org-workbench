@@ -139,7 +139,7 @@ export async function handleSessionTurnPost(
   const session = await ctx.sessionStore.reserveTurn(workspace.dir, assertSessionId(sessionId));
   try {
     assertPositionExists(ctx, session.positionId);
-    await executeTurn(ctx, res, { ...body, positionId: session.positionId }, session.sessionId);
+    await executeTurn(ctx, res, { ...body, positionId: session.positionId }, session);
   } finally {
     ctx.sessionStore.releaseTurn(workspace.dir, session.sessionId);
   }

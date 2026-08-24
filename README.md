@@ -15,6 +15,7 @@ org-workbench 是 [digital-employee](https://github.com/fullstack-ai-infra/digit
 - D1/D2 组织树：`packages/ui` 四组件（OrgTree/OrgTreeNode/PositionCard/BudgetBar，消费 design-system 语义 token）+ React/Vite 渲染层（AppShell 四区、键盘树导航、拖拽提案、SSE 驱动刷新）。
 - D3 本地对话闭环：Bearer 保护的 `POST /turns` 与 `GET /turns?positionId=...`，只允许 Qoder/Claude Code；工作台可从组织树或 `@岗位` 选择器加载本地历史、发送并 readback，展示密封信封 digest 与可信终态。退出码 1 不自动重试；委派链、长期 Context 与 live Host 验证仍明确标为未完成。
 - 显式 Workbench session：每个岗位可新建、选择和轮换 `workbench-session.v1`；轮换产生新的稳定 sessionId 和空白本地回合目录，旧 session 保持只读可查询。它只是本地控制面边界，不是 Host resume、授权或长期记忆。
+- Context 导出接缝：显式 session 的可信 `completed` 回合在终态记录落盘后异步导出为两条 `context-occurrence.v1`；导出状态可跨重启恢复，失败不改变回合结果、也不重跑 Host。当前钉定 provider 为 [`context@f63f57f`](https://github.com/fullstack-ai-infra/context/commit/f63f57f7b4cb7071309561f0383683017ae79eb2)，只走公共 CLI/stdio adapter，不直连 vault SQLite。
 - 里程碑：D0 骨架 → D1 组织树只读 → D2 拖拽/预算/裁撤恢复闭环 → D3 @岗位对话 → D4 本地上报中心。委派链、长期 Context 与 Qoder/Claude Code live E4 仍不在“已验证”范围。
 - 当前仓库尚无 tag、Release 或签名安装包；快速开始面向源码开发者，不代表已发布客户端。
 
@@ -58,6 +59,12 @@ curl -s -X POST -H "Authorization: Bearer <token>" -H "Content-Type: application
      http://127.0.0.1:N/sessions/<sessionId>/turns
 curl -s -X POST -H "Authorization: Bearer <token>" -H "Content-Type: application/json" \
      -d '{}' http://127.0.0.1:N/sessions/<sessionId>/rotate
+
+# 可选 Context provider：operator 需先在 Workbench 之外建立精确 scope grant。
+# Workbench server 只持有 runtime token；不接受 renderer/HTTP/turn-record 传 token。
+export ORG_WORKBENCH_CONTEXT_CLI='node ../context/packages/cli/dist/index.js'
+export CONTEXT_VAULT='<server-local-vault-path>'
+export CONTEXT_RUNTIME_TOKEN='<redacted-runtime-token>'
 ```
 
 **桌面壳**（需 `npm install` 安装 Electron 后）：`npm run dev:desktop`（自动构建 renderer 再启动）。打开工作区后，可在左侧组织树拖拽调岗、从“招聘岗位”声明预算并新增岗位、在岗位详情确认裁撤、从恢复区显式恢复；选择岗位后先新建/选择本地会话，再发送回合；“轮换当前会话”显式创建空白 successor，旧会话可切回只读查看。切换顶部“上报中心”查看本地证据。恢复和会话轮换都不会自动发生。
@@ -83,6 +90,7 @@ examples/            oss-maintainer 示例工作区（1 owner + 3 岗位，含�
 - 控制面仅绑 127.0.0.1 + 每启动随机 token；除 `/health` 外无 token 一律 401。
 - renderer：contextIsolation 开、nodeIntegration 关、sandbox 开；preload 仅暴露枚举式工作区/组织/岗位/回合方法与事件订阅，无通用请求通道；CSP 全 `'self'`，无第三方 CDN、无远程代码。
 - 凭据边界：密钥只经 env 注入引擎子进程；boot-token 只经父子进程 stdout 管道，不进文件/日志。
+- Context authority：导出子进程环境仅允许 `CONTEXT_VAULT` 与 `CONTEXT_RUNTIME_TOKEN` 及最小系统变量；operator token、Host 凭据和 boot-token 不透传。renderer/preload/IPC 无 Context token 或通用 adapter 能力。
 
 ## 契约镜像纪律
 
