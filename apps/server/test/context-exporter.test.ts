@@ -244,6 +244,12 @@ test("symlinked or corrupted export state fails closed before adapter access", a
     const outside = await fs.mkdtemp(path.join(path.dirname(workspace), "owb-export-outside-"));
     const workbench = path.join(workspace, ".digital-employee", "workbench");
     await fs.mkdir(workbench, { recursive: true, mode: 0o700 });
+    await fs.mkdir(path.join(outside, sourceSession.sessionId), { recursive: true, mode: 0o700 });
+    await fs.writeFile(
+      path.join(outside, sourceSession.sessionId, `${turn.turnId}.json`),
+      '{"credential":"outside-must-not-be-read"}\n',
+      { mode: 0o600 },
+    );
     await fs.symlink(outside, path.join(workbench, "context-exports"));
     const adapter = new RecordingAdapter();
     await assert.rejects(

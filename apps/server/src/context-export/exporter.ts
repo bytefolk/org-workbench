@@ -1,6 +1,7 @@
 import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
+import { isPositionId } from "@org-workbench/shared";
 import type { TurnRecord, WorkbenchSession } from "@org-workbench/shared";
 import { isTurnRecord } from "../turns/store.js";
 
@@ -11,7 +12,6 @@ const MAX_OCCURRENCE_BYTES = 64 * 1024;
 const MAX_EXPORT_STATE_BYTES = 64 * 1024;
 const SHA256_PATTERN = /^sha256:[a-f0-9]{64}$/;
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
-const POSITION_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 
 export interface ContextOccurrence {
   schemaVersion: typeof OCCURRENCE_SCHEMA_VERSION;
@@ -287,7 +287,7 @@ function isValidSession(session: WorkbenchSession): boolean {
     session.schemaVersion === "workbench-session.v1" &&
     UUID_PATTERN.test(session.sessionId) &&
     UUID_PATTERN.test(session.workspaceInstanceId) &&
-    POSITION_PATTERN.test(session.positionId) && session.positionId.length <= 64 &&
+    isPositionId(session.positionId) &&
     session.principal === `position.${session.positionId}` &&
     (session.status === "active" || session.status === "rotated") &&
     Number.isFinite(Date.parse(session.createdAt)) &&
@@ -433,6 +433,7 @@ async function readContextExportStateIfPresent(
   sessionId: string,
   turnId: string,
 ): Promise<ContextExportState | null> {
+  if (!await hasSafeExistingExportDirectory(workspace, sessionId)) return null;
   const file = exportStateFile(workspace, sessionId, turnId);
   let stat;
   try {
@@ -456,6 +457,33 @@ async function readContextExportStateIfPresent(
   return value;
 }
 
+async function hasSafeExistingExportDirectory(
+  workspace: string,
+  sessionId: string,
+): Promise<boolean> {
+  if (!UUID_PATTERN.test(sessionId)) throw new ContextExportError("context export session is invalid");
+  const root = path.resolve(workspace);
+  const rootStat = await fs.lstat(root);
+  if (!rootStat.isDirectory() || rootStat.isSymbolicLink()) {
+    throw new ContextExportError("context export workspace path is unsafe");
+  }
+  let current = root;
+  for (const segment of [...EXPORT_ROOT, sessionId]) {
+    current = path.join(current, segment);
+    let stat;
+    try {
+      stat = await fs.lstat(current);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") return false;
+      throw new ContextExportError("context export state path is unavailable");
+    }
+    if (!stat.isDirectory() || stat.isSymbolicLink()) {
+      throw new ContextExportError("context export state path is unsafe");
+    }
+  }
+  return true;
+}
+
 function isContextExportState(value: unknown): value is ContextExportState {
   if (value === null || typeof value !== "object" || Array.isArray(value)) return false;
   const record = value as Record<string, unknown>;
@@ -472,7 +500,7 @@ function isContextExportState(value: unknown): value is ContextExportState {
     typeof record.workspaceInstanceId !== "string" || !UUID_PATTERN.test(record.workspaceInstanceId) ||
     typeof record.sessionId !== "string" || !UUID_PATTERN.test(record.sessionId) ||
     typeof record.turnId !== "string" || record.turnId.length === 0 || record.turnId.length > 256 || /[\\/\0]/.test(record.turnId) ||
-    typeof record.positionId !== "string" || !POSITION_PATTERN.test(record.positionId) || record.positionId.length > 64 ||
+    !isPositionId(record.positionId) ||
     record.principal !== `position.${record.positionId}` ||
     !["pending", "done", "failed"].includes(String(record.status)) ||
     !Number.isSafeInteger(record.attempts) || (record.attempts as number) < 0 ||
