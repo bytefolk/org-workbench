@@ -164,6 +164,34 @@ test("reports: malformed persisted turn events fail closed instead of becoming i
   }
 });
 
+test("reports: reversed persisted event timestamps fail closed instead of creating false chronology", async () => {
+  const server = await startTestServer();
+  const dir = await copyExampleWorkspace();
+  try {
+    const reversed = turn({
+      turnId: "turn-reversed-time",
+      events: [
+        { type: "run.started", runId: "run-report", timestamp: "2026-08-24T06:00:00.000Z" },
+        {
+          type: "run.completed",
+          runId: "run-report",
+          timestamp: "2026-08-24T05:59:59.999Z",
+          output: "sensitive raw output",
+          terminalReason: "goal_met",
+        },
+      ],
+    });
+    await writeTurn(dir, reversed);
+    await open(server, dir);
+    const response = await api(server.baseUrl, "/reports", { token: server.token });
+    assert.equal(response.status, 500);
+    assert.equal((response.body as { code: string }).code, "reports_data_invalid");
+    assert.equal(JSON.stringify(response.body).includes("sensitive raw output"), false);
+  } finally {
+    await server.close();
+  }
+});
+
 test("reports: symlinked local report roots are rejected without reading outside the workspace", async () => {
   const server = await startTestServer();
   const dir = await copyExampleWorkspace();

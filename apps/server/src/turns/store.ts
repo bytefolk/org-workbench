@@ -28,6 +28,8 @@ const MAX_DIAGNOSTIC_BYTES = 8 * 1024;
 const MAX_TERMINAL_OUTPUT_BYTES = MAX_MODEL_CHARACTERS * 6 + 2;
 const ENGINE_CODE_PATTERN = /^[a-z0-9][a-z0-9._-]{0,127}$/;
 const ENVELOPE_DIGEST_PATTERN = /^sha256:[a-f0-9]{64}$/;
+const RFC3339_INSTANT_PATTERN =
+  /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.(\d{1,9}))?(Z|([+-])(\d{2}):(\d{2}))$/;
 const TERMINAL_REASONS = new Set<TurnTerminalReason>([
   "goal_met",
   "invalid_output_exhausted",
@@ -305,6 +307,8 @@ export function isTurnRecord(value: unknown): value is TurnRecord {
     ],
     ["runId", "output", "error"],
   )) return false;
+  const createdInstant = parseRfc3339Instant(value.createdAt);
+  const updatedInstant = parseRfc3339Instant(value.updatedAt);
   if (
     value.schemaVersion !== TURN_RECORD_SCHEMA_VERSION ||
     !isBoundedIdentifier(value.conversationId) ||
@@ -316,8 +320,7 @@ export function isTurnRecord(value: unknown): value is TurnRecord {
     typeof value.input !== "string" || Buffer.byteLength(value.input, "utf8") > MAX_INPUT_BYTES ||
     typeof value.envelopeDigest !== "string" ||
     !ENVELOPE_DIGEST_PATTERN.test(value.envelopeDigest) ||
-    !isTimestamp(value.createdAt) || !isTimestamp(value.updatedAt) ||
-    value.updatedAt < value.createdAt ||
+    createdInstant === null || updatedInstant === null || updatedInstant < createdInstant ||
     !Array.isArray(value.events) || value.events.length > MAX_EVENTS
   ) return false;
   const events: EngineEvent[] = [];
@@ -373,8 +376,34 @@ function isBoundedIdentifier(value: unknown): value is string {
   return typeof value === "string" && value.length > 0 && value.length <= 256;
 }
 
-function isTimestamp(value: unknown): value is string {
-  return typeof value === "string" && value.length <= 64 && !Number.isNaN(Date.parse(value));
+function parseRfc3339Instant(value: unknown): number | null {
+  if (typeof value !== "string" || value.length > 64) return null;
+  const match = RFC3339_INSTANT_PATTERN.exec(value);
+  if (match === null) return null;
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const hour = Number(match[4]);
+  const minute = Number(match[5]);
+  const second = Number(match[6]);
+  const zone = match[8]!;
+  const offsetHour = match[10] === undefined ? 0 : Number(match[10]);
+  const offsetMinute = match[11] === undefined ? 0 : Number(match[11]);
+  if (
+    year < 1 || month < 1 || month > 12 || day < 1 ||
+    day > daysInMonth(year, month) || hour > 23 || minute > 59 || second > 59 ||
+    offsetHour > 23 || offsetMinute > 59 || zone === "-00:00"
+  ) return null;
+  const instant = Date.parse(value);
+  return Number.isFinite(instant) ? instant : null;
+}
+
+function daysInMonth(year: number, month: number): number {
+  if (month === 2) {
+    const leap = year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0);
+    return leap ? 29 : 28;
+  }
+  return [4, 6, 9, 11].includes(month) ? 30 : 31;
 }
 
 function isBoundedCodePoints(value: string, limit: number): boolean {
@@ -411,10 +440,13 @@ function validateRecordError(
 }
 
 function validateEngineEvent(value: unknown): EngineEvent | null {
-  if (!isObjectRecord(value) || !isBoundedIdentifier(value.runId) || !isTimestamp(value.timestamp)) {
+  if (
+    !isObjectRecord(value) || !isBoundedIdentifier(value.runId) ||
+    parseRfc3339Instant(value.timestamp) === null
+  ) {
     return null;
   }
-  const base = { runId: value.runId, timestamp: value.timestamp };
+  const base = { runId: value.runId, timestamp: value.timestamp as string };
   switch (value.type) {
     case "run.started":
       return hasExactKeys(value, ["type", "runId", "timestamp"])
@@ -479,9 +511,15 @@ function isValidEventSequence(events: EngineEvent[]): boolean {
   if (events[0]!.type !== "run.started") return false;
   const runId = events[0]!.runId;
   let terminal = false;
+  let previousInstant = parseRfc3339Instant(events[0]!.timestamp)!;
   for (let index = 0; index < events.length; index += 1) {
     const event = events[index]!;
-    if (event.runId !== runId || (index > 0 && event.type === "run.started") || terminal) return false;
+    const instant = parseRfc3339Instant(event.timestamp)!;
+    if (
+      event.runId !== runId || (index > 0 && event.type === "run.started") || terminal ||
+      instant < previousInstant
+    ) return false;
+    previousInstant = instant;
     if (event.type === "run.completed" || event.type === "run.failed") {
       terminal = true;
       if (index !== events.length - 1) return false;
@@ -662,9 +700,9 @@ export class TurnStore {
       }
     }
     turns.sort((left, right) =>
-      left.createdAt === right.createdAt
+      parseRfc3339Instant(left.createdAt) === parseRfc3339Instant(right.createdAt)
         ? left.turnId.localeCompare(right.turnId, "en")
-        : left.createdAt.localeCompare(right.createdAt, "en"),
+        : parseRfc3339Instant(left.createdAt)! - parseRfc3339Instant(right.createdAt)!,
     );
     return {
       schemaVersion: TURN_HISTORY_SCHEMA_VERSION,
@@ -738,9 +776,9 @@ export class TurnStore {
       }
     }
     turns.sort((left, right) =>
-      left.createdAt === right.createdAt
+      parseRfc3339Instant(left.createdAt) === parseRfc3339Instant(right.createdAt)
         ? left.turnId.localeCompare(right.turnId, "en")
-        : left.createdAt.localeCompare(right.createdAt, "en"),
+        : parseRfc3339Instant(left.createdAt)! - parseRfc3339Instant(right.createdAt)!,
     );
     return {
       schemaVersion: TURN_HISTORY_SCHEMA_VERSION,
@@ -809,9 +847,9 @@ export class TurnStore {
       }
     }
     records.sort((left, right) =>
-      right.updatedAt === left.updatedAt
+      parseRfc3339Instant(right.updatedAt) === parseRfc3339Instant(left.updatedAt)
         ? right.turnId.localeCompare(left.turnId, "en")
-        : right.updatedAt.localeCompare(left.updatedAt, "en"),
+        : parseRfc3339Instant(right.updatedAt)! - parseRfc3339Instant(left.updatedAt)!,
     );
     return records;
   }

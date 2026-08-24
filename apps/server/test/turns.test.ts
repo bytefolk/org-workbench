@@ -289,6 +289,47 @@ test("legacy history rejects credential-shaped and invalid persisted event field
   }
 });
 
+test("legacy history rejects date-only and non-canonical persisted record timestamps", async () => {
+  const server = await startTestServer(undefined, new FakeTurnDriver());
+  const workspace = await copyExampleWorkspace();
+  try {
+    await openWorkspace(server.baseUrl, server.token, workspace);
+    const created = await api(server.baseUrl, "/turns", {
+      method: "POST",
+      token: server.token,
+      body: { positionId: "repo-owner", input: "preserve chronology", engine: "qoder" },
+    });
+    assert.equal(created.status, 200);
+    const valid = created.body as Record<string, unknown>;
+    const turnFile = path.join(
+      workspace,
+      ".digital-employee",
+      "workbench",
+      "conversations",
+      "repo-owner",
+      "turns",
+      `${String(valid.turnId)}.json`,
+    );
+    for (const tampered of [
+      { ...valid, createdAt: "2026-08-24", updatedAt: "2026-08-24T01:00:00.000Z" },
+      {
+        ...valid,
+        createdAt: "2026-08-24T00:00:00.000Z",
+        updatedAt: "2026-08-24t01:00:00.000z",
+      },
+    ]) {
+      await fs.writeFile(turnFile, `${JSON.stringify(tampered)}\n`, { mode: 0o600 });
+      const response = await api(server.baseUrl, "/turns?positionId=repo-owner", {
+        token: server.token,
+      });
+      assert.equal(response.status, 500);
+      assert.equal((response.body as { code: string }).code, "turn_storage_failed");
+    }
+  } finally {
+    await server.close();
+  }
+});
+
 test("turn position ids mirror the digital-employee organization contract", () => {
   for (const valid of ["7x", "1st-responder", "repo-owner"]) {
     assert.equal(POSITION_ID_PATTERN.test(valid), true);

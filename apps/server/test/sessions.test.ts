@@ -170,6 +170,50 @@ test("session history rejects credential-shaped and invalid persisted event fiel
   }
 });
 
+test("session history compares persisted record timestamps as instants across offsets", async () => {
+  const server = await startTestServer();
+  const workspace = await copyExampleWorkspace();
+  try {
+    await openWorkspace(server.baseUrl, server.token, workspace);
+    const created = await api(server.baseUrl, "/sessions", {
+      method: "POST",
+      token: server.token,
+      body: { positionId: "repo-owner" },
+    });
+    const session = created.body as WorkbenchSession;
+    const turn = await api(server.baseUrl, `/sessions/${session.sessionId}/turns`, {
+      method: "POST",
+      token: server.token,
+      body: { input: "preserve chronology", engine: "qoder" },
+    });
+    assert.equal(turn.status, 200);
+    const valid = turn.body as Record<string, unknown>;
+    const turnFile = path.join(
+      workspace,
+      ".digital-employee",
+      "workbench",
+      "sessions",
+      "conversations",
+      session.sessionId,
+      "turns",
+      `${String(valid.turnId)}.json`,
+    );
+    await fs.writeFile(turnFile, `${JSON.stringify({
+      ...valid,
+      createdAt: "2026-08-24T01:00:00.000-08:00",
+      updatedAt: "2026-08-24T08:30:00.000+00:00",
+    })}\n`, { mode: 0o600 });
+
+    const response = await api(server.baseUrl, `/sessions/${session.sessionId}/turns`, {
+      token: server.token,
+    });
+    assert.equal(response.status, 500);
+    assert.equal((response.body as { code: string }).code, "turn_storage_failed");
+  } finally {
+    await server.close();
+  }
+});
+
 test("double rotation creates one durable successor and returns it on retry", async () => {
   const server = await startTestServer();
   const workspace = await copyExampleWorkspace();
