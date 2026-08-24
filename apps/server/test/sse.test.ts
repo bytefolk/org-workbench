@@ -1,10 +1,35 @@
 import assert from "node:assert/strict";
+import fs from "node:fs/promises";
+import path from "node:path";
 import test from "node:test";
-import { api, connectSse, copyExampleWorkspace, startTestServer } from "./helpers.js";
+import type { OrganizationFile } from "@org-workbench/shared";
+import { FakeDriver, api, connectSse, copyExampleWorkspace, startTestServer } from "./helpers.js";
 
 test("events: SSE delivers org.updated; reconnect resumes by version stamp", async () => {
-  const server = await startTestServer();
   const dir = await copyExampleWorkspace();
+  const runtime = path.join(dir, ".digital-employee");
+  await fs.mkdir(runtime, { recursive: true });
+  await fs.copyFile(
+    path.join(dir, "organization.v1alpha1.json"),
+    path.join(runtime, "org.json"),
+  );
+  const driver = new FakeDriver({ status: "applied" }, async (workspaceDir) => {
+    const file = path.join(workspaceDir, ".digital-employee", "org.json");
+    const model = JSON.parse(await fs.readFile(file, "utf8")) as OrganizationFile;
+    const moved = model.roles.find((role) => role.id === "issue-researcher");
+    assert.ok(moved);
+    moved.reportTo = "release-engineer";
+    moved.package.localReference = path.join(
+      workspaceDir,
+      "positions",
+      "repo-owner",
+      "release-engineer",
+      "issue-researcher",
+    );
+    model.updatedAt = new Date(Date.now() + 1000).toISOString();
+    await fs.writeFile(file, `${JSON.stringify(model, null, 2)}\n`, "utf8");
+  });
+  const server = await startTestServer(driver);
   const first = connectSse(server.baseUrl, server.token);
   try {
     await api(server.baseUrl, "/workspace/open", {

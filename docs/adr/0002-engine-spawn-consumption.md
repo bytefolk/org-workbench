@@ -4,7 +4,7 @@
 
 ## 决策
 
-控制面消费 digital-employee 引擎的唯一形态是 spawn 子进程：每次组织生效运行一次钉版 `digital-employee org apply <staging> --json`（D3 起加回合执行），stdout 输出结构化结果，凭据仅经 env 注入。
+控制面消费 digital-employee 引擎的唯一形态是 spawn 子进程：每次组织生效运行一次钉版 `digital-employee org apply <workspace> --json`（D3 起加回合执行），stdout 输出结构化结果，凭据仅经 env 注入。
 
 ## 备选与否决理由
 
@@ -21,4 +21,4 @@ spawn+stdout 结构化事件与 agent-host.v1 进程模型/NDJSON 事件流同�
 
 ## 后果
 
-- 引擎 `org apply` 子命令（#157 切片 V2）落地前，驱动层如实返回 `engine_capability_missing`（503）；staging/发布/回滚链路以 FakeDriver 测试保障，V2 落地后换钉版 CLI 复测。
+- CLI 缺少 `org apply` 时驱动层如实返回 `engine_capability_missing`（503）；可用时严格按 JSON `status` 判断，不以退出码 0 冒充 applied。

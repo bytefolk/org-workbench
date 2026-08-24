@@ -33,7 +33,9 @@ export interface WorkspaceOpenRequest {
   path: string;
 }
 
-/** Report-center streams (D0: audits come from the apply log; others empty). */
+import type { OrgRole } from "./org-tree.js";
+
+/** Report-center streams (D2: audits come from engine org-audit.v1). */
 export interface ReportsResponse {
   schemaVersion: "reports.v1";
   streams: {
@@ -45,9 +47,16 @@ export interface ReportsResponse {
 }
 
 export interface AuditEntry {
-  ts: string;
-  kind: "org.applied" | "org.rejected";
-  status: string;
-  code?: string;
-  changes: Array<{ op: string; id: string }>;
+  schemaVersion: "org-audit.v1";
+  at: string;
+  actor: string;
+  workspace: string;
+  bootstrapped: boolean;
+  changes: {
+    hired: OrgRole[];
+    moved: Array<{ id: string; from: string | null; to: string | null }>;
+    dismissed: OrgRole[];
+    budgetUpdated: string[];
+  };
+  positionCount: number;
 }

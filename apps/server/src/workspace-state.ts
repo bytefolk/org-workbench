@@ -65,17 +65,7 @@ export class WorkspaceState {
       );
     }
     const organization = await this.readOrganizationFile(dir);
-    if (
-      typeof organization.business !== "string" ||
-      typeof organization.owner !== "string" ||
-      !Array.isArray(organization.roles)
-    ) {
-      throw new OrgApiError(
-        errorCodes.workspace_invalid,
-        422,
-        "organization file failed structural checks (business/owner/roles)",
-      );
-    }
+    this.assertOrganizationStructure(organization, errorCodes.workspace_invalid, 422);
     let positionsStat;
     try {
       positionsStat = await fs.stat(path.join(dir, POSITIONS_DIR));
@@ -113,6 +103,40 @@ export class WorkspaceState {
     this.seq += 1;
     ws.version = { seq: this.seq, updatedAt };
     return ws.version;
+  }
+
+  /** Reload the engine-owned applied model after a successful org apply. */
+  async reloadAppliedOrganization(): Promise<OrgTreeVersion> {
+    const ws = this.requireOpen();
+    let text: string;
+    try {
+      text = await fs.readFile(path.join(ws.dir, APPLIED_MODEL_FILE), "utf8");
+    } catch {
+      throw new OrgApiError(
+        errorCodes.engine_failed,
+        500,
+        "engine reported applied but .digital-employee/org.json is unavailable",
+      );
+    }
+    let organization: OrganizationFile;
+    try {
+      organization = JSON.parse(text) as OrganizationFile;
+    } catch {
+      throw new OrgApiError(
+        errorCodes.engine_failed,
+        500,
+        "engine wrote an invalid .digital-employee/org.json",
+      );
+    }
+    if (organization.schemaVersion !== WORKSPACE_ORG_SCHEMA_VERSION) {
+      throw new OrgApiError(
+        errorCodes.engine_failed,
+        500,
+        `engine wrote unsupported organization schemaVersion: ${String(organization.schemaVersion)}`,
+      );
+    }
+    this.assertOrganizationStructure(organization, errorCodes.engine_failed, 500);
+    return this.replaceOrganization(organization, organization.updatedAt);
   }
 
   /** Bump version stamp without changing organization content (e.g. workspace open). */
@@ -241,6 +265,25 @@ export class WorkspaceState {
         errorCodes.workspace_invalid,
         422,
         `workspace file is not valid JSON: ${path.basename(file)}`,
+      );
+    }
+  }
+
+  private assertOrganizationStructure(
+    organization: OrganizationFile,
+    code: string,
+    status: number,
+  ): void {
+    if (
+      typeof organization.business !== "string" ||
+      typeof organization.owner !== "string" ||
+      typeof organization.updatedAt !== "string" ||
+      !Array.isArray(organization.roles)
+    ) {
+      throw new OrgApiError(
+        code,
+        status,
+        "organization file failed structural checks (business/owner/updatedAt/roles)",
       );
     }
   }

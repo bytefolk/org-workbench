@@ -14,7 +14,7 @@
         "name": "repo-owner",
         "version": "0.1.0",
         "digest": "sha256:714cc87cdb57f9a201a13edf517b0affb0ddf67ab5283c85170008a0b1107909",
-        "localReference": "/Users/huyz/Documents/data/fullstack-ai-infra/org-workbench/examples/oss-maintainer/positions/repo-owner"
+        "localReference": "/workspace/positions/repo-owner"
       },
       "mode": "read_only",
       "memoryScope": "/",
@@ -45,7 +45,7 @@
         "name": "issue-researcher",
         "version": "0.1.0",
         "digest": "sha256:1c4b68133291c0bb8a519538abe3e1550c235f067e0d16cc1a6d3c3c24468b10",
-        "localReference": "/Users/huyz/Documents/data/fullstack-ai-infra/org-workbench/examples/oss-maintainer/positions/issue-researcher"
+        "localReference": "/workspace/positions/repo-owner/issue-researcher"
       },
       "mode": "read_only",
       "memoryScope": "/",
@@ -76,7 +76,7 @@
         "name": "release-engineer",
         "version": "0.1.0",
         "digest": "sha256:009a0cc88c589bc8fc7228f736fca10439b5ddbface4868baa794707909729dd",
-        "localReference": "/Users/huyz/Documents/data/fullstack-ai-infra/org-workbench/examples/oss-maintainer/positions/release-engineer"
+        "localReference": "/workspace/positions/repo-owner/release-engineer"
       },
       "mode": "read_only",
       "memoryScope": "/",
@@ -107,7 +107,7 @@
         "name": "community-operator",
         "version": "0.1.0",
         "digest": "sha256:1b006a8258e18f648abeb3993dd3bb9ed63ecd2d28e12d97bd42a3235ee5dd67",
-        "localReference": "/Users/huyz/Documents/data/fullstack-ai-infra/org-workbench/examples/oss-maintainer/positions/community-operator"
+        "localReference": "/workspace/positions/repo-owner/community-operator"
       },
       "mode": "read_only",
       "memoryScope": "/",

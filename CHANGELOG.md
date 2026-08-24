@@ -3,11 +3,15 @@
 本仓库采用 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 格式。
 版本号在首个正式 release 前以里程碑（D0/D1/D2…）标注。
 
-## [Unreleased] — D1 组织树只读
+## [Unreleased] — D2 目录提案 apply（服务侧）
 
 含 PR #3（feat(d1): 组织树只读）与 PR #7（fix(examples)）。
 
 ### Added
+
+- **D2 目录提案编排**：招聘直接生成嵌套岗位包与 0600 原子写 `budget.json`，调岗整目录 rename，裁撤移至树外 `.digital-employee/backup/<id>-<stamp>/`；支持移至根和 `maxDepth=8` 防御上限。
+- **引擎 org-audit 报告流**：`GET /reports` 改读 `.digital-employee/org-audit.jsonl`（org-audit.v1）。
+- **真实引擎契约测试**：覆盖 workspace 参数、严格 status/payload 解析、拒绝时应用态字节零变更与提案保留。
 
 - **`packages/ui` 组件包**：OrgTree / OrgTreeNode / PositionCard / BudgetBar 四组件，消费 design-system 语义 token；OrgTree 支持键盘树导航（↑↓ 移动、←→ 折叠展开）。
 - **React/Vite 渲染层**：桌面壳 renderer 重写为 AppShell 四区布局（Sidebar 288px / 主区 / 岗位卡片 / 预算条），SSE `org.updated` 驱动自动刷新。
@@ -17,11 +21,14 @@
 
 ### Changed
 
+- `DigitalEmployeeCliDriver` 调用翻转为 `digital-employee org apply <workspace> --json`；成功后控制面从 `.digital-employee/org.json` 重载应用态，`org.updated.updatedAt` 与引擎时间戳对齐。
+- oss-maintainer 示例改为目录表达汇报线的嵌套布局，并为每个岗位增加 `budget.json`。
 - 桌面壳 IPC 白名单新增渲染层所需通道（preload）。
 - README：状态更新为 "D0 骨架 + D1 组织树只读"，补充 design-system 开发期 `file:` 链接说明（同级克隆 + `npm run build:package`）。
 
 ### Removed
 
+- 旧 staging/rejected/applied 发布机制、客户端 `apply-log.ndjson` 写入和 `archive/` 裁撤路径。
 - 旧原生 renderer（app.js / index.html / style.css）。
 
 ### Fixed
@@ -30,11 +37,12 @@
 - renderer 按 IPC 的真实响应结构读取引擎健康状态，不再把可用引擎恒显为离线。
 - renderer 可读取当前 SSE 连接状态，避免窗口加载晚于连接事件时一直显示“事件流重连中”。
 - Electron 从 33 升级到 43.4.1，清除当前依赖审计中的高危漏洞；新增 Linux/macOS 双平台源码门禁。
-- oss-maintainer 示例工作区：四个岗位的 `localReference` 从不存在的 `/home/huyz/data/...` 前缀改为本机实际路径 `/Users/huyz/Documents/data/...`，示例工作区在 macOS 上可正常解析（PR #7）。
+- oss-maintainer 示例工作区：去除机器专属的 `localReference`，改用可移植占位路径；真实绝对绑定由引擎 apply 时重算。
 
 ### Verification
 
-- `npm run check` 全绿（ui 14/14、server 8/8、renderer 1/1、desktop-main 1/1，依赖审计 0 漏洞）。
+- `npm run check` 全绿（ui 14/14、server 12/12、renderer 1/1、desktop-main 1/1，依赖审计 0 漏洞）。
+- 真实本地引擎 E2E：digital-employee `7a92690` 成功招聘后 `/org/tree` 重载 5 岗位；非法预算拒绝码透传，`org.json`/`org-audit.jsonl`/`permissions.json` 前后 SHA-256 一致，提案和 0600 `budget.json` 保留。
 - macOS 桌面壳实测：组织树渲染、岗位卡片、SSE 刷新、关窗进程退出全部通过（issue #4 验收，证据见 issue #1/#2 评论）。
 
 ## [D0] — 骨架

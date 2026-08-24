@@ -11,7 +11,7 @@ export async function handleReports(
   res: ServerResponse,
 ): Promise<void> {
   const ws = ctx.workspace.requireOpen();
-  const audits = await readApplyLog(path.join(ws.dir, RUNTIME_DIR, "apply-log.ndjson"));
+  const audits = await readOrgAudit(path.join(ws.dir, RUNTIME_DIR, "org-audit.jsonl"));
   const body: ReportsResponse = {
     schemaVersion: "reports.v1",
     streams: {
@@ -24,7 +24,7 @@ export async function handleReports(
   sendJson(res, 200, body);
 }
 
-async function readApplyLog(file: string): Promise<AuditEntry[]> {
+async function readOrgAudit(file: string): Promise<AuditEntry[]> {
   let text: string;
   try {
     text = await fs.readFile(file, "utf8");
@@ -35,12 +35,11 @@ async function readApplyLog(file: string): Promise<AuditEntry[]> {
   for (const line of text.split("\n")) {
     if (line.trim().length === 0) continue;
     try {
-      const parsed = JSON.parse(line) as AuditEntry;
-      entries.unshift(parsed);
-      if (entries.length >= 200) break;
+      const parsed = JSON.parse(line) as Partial<AuditEntry>;
+      if (parsed.schemaVersion === "org-audit.v1") entries.push(parsed as AuditEntry);
     } catch {
       continue;
     }
   }
-  return entries;
+  return entries.slice(-200).reverse();
 }

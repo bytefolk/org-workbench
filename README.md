@@ -2,16 +2,17 @@
 
 **文件树即组织架构。** 加目录 = 招聘（必配预算），移动目录 = 改汇报线，删除 = 裁撤（留痕归档）。
 
-org-workbench 是 [digital-employee](https://github.com/fullstack-ai-infra/digital-employee) 工作区的组织工作台：Electron 桌面壳 + 本地控制面服务，围绕组织树提供只读视图、结构变更（经引擎校验的 staging + 原子发布）与上报中心。macOS 首版聚焦组织树完整闭环；web/移动端未来同仓复用同一控制面与契约。
+org-workbench 是 [digital-employee](https://github.com/fullstack-ai-infra/digital-employee) 工作区的组织工作台：Electron 桌面壳 + 本地控制面服务，围绕组织树提供只读视图、目录提案、引擎校验与上报中心。macOS 首版聚焦组织树完整闭环；web/移动端未来同仓复用同一控制面与契约。
 
-## 当前状态：D0 骨架 + D1 组织树只读（开发预览）
+## 当前状态：D1 组织树 + D2 服务侧 apply（开发预览）
 
 - 壳-服务分离：Electron main 拉起 `apps/server`（Node，仅 127.0.0.1，每启动随机 boot-token）；控制面可脱离壳独立运行。
 - 引擎消费：spawn 钉版 `digital-employee` CLI（ADR-0002）；`/health` 报告引擎可用性与下一步。
-- `org apply`：staging 暂存 → 引擎校验 → rename 原子发布；失败留档 `rejected/`，裁撤归档 `archive/`，全程不硬删除（ADR-0003）。**OQ-2 裁决后 D2 将翻转为"positions/ 树=提案面"模型，本机制随 D2 改造。**
+- `org apply`：客户端直接物化 `positions/` 提案树，再运行 `digital-employee org apply <workspace> --json`；成功后重载引擎应用态，失败保留提案供修正。裁撤目录移至树外 `.digital-employee/backup/`，应用态由引擎原子维护（ADR-0005）。
+- `/reports` 审计流读取引擎 `.digital-employee/org-audit.jsonl`；旧 staging、`apply-log.ndjson`、`archive/` 发布链路已退役。
 - API 契约 v0 已冻结：见 [`docs/api-contract-v0.md`](docs/api-contract-v0.md)（8 端点全量；新增走增量，破坏性变更升 v1）。
 - D1（组织树只读）：`packages/ui` 四组件（OrgTree/OrgTreeNode/PositionCard/BudgetBar，消费 design-system 语义 token）+ React/Vite 渲染层（AppShell 四区、Sidebar 288px、键盘树导航、SSE 驱动刷新）。
-- 里程碑：D0 骨架 → D1 组织树只读 → D2 拖拽/预算闭环 → D3 @岗位对话 → D4 上报中心。
+- 里程碑：D0 骨架 → D1 组织树只读 → D2 拖拽/预算闭环（服务侧已接约，UI 待完成）→ D3 @岗位对话 → D4 上报中心。
 - 当前仓库尚无 tag、Release 或签名安装包；快速开始面向源码开发者，不代表已发布客户端。
 
 ## 快速开始

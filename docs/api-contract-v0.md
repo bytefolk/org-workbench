@@ -75,17 +75,23 @@
 ```json
 {
   "schemaVersion": "org-tree.v1",
-  "workspacePath": "/abs/path",
   "business": "oss-maintainer-demo",
   "owner": "repo-owner",
-  "edges": [ { "positionId": "issue-researcher", "reportTo": "repo-owner" } ],
-  "positions": [ { "id": "repo-owner", "name": "Repo Owner", "reportTo": null, "budget": { "perTask": { "tokens": 40000, "iterations": 12 }, "perDay": { "tokens": 400000, "iterations": 96 } }, "...": "workspace-org.v1 岗位全字段镜像" } ],
-  "organization": { "...": "organization.v1alpha1.json 原文镜像" },
-  "version": { "seq": 3, "updatedAt": "..." }
+  "updatedAt": "...",
+  "positionCount": 4,
+  "depth": 2,
+  "tree": [
+    {
+      "id": "repo-owner",
+      "reportTo": null,
+      "budget": { "perTask": { "tokens": 40000 }, "perDay": { "iterations": 96 } },
+      "children": []
+    }
+  ]
 }
 ```
 
-约束：`positions`/`organization` 镜像 digital-employee workspace-org.v1 契约词汇（#157 REQ-002），客户端不增删语义字段；预算字段镜像 #157 R3 批准契约（单位仅令牌/迭代次数，无货币）。未开工作区时 422 `workspace_not_open`。
+约束：响应镜像 digital-employee org-tree.v1 冻结形状；`updatedAt` 来自引擎应用态，控制面 seq 不进入树快照。预算单位仅令牌/迭代次数，无货币。未开工作区时 422 `workspace_not_open`。
 
 ### 2.5 `POST /org/apply` — 提交变更清单
 
@@ -107,12 +113,13 @@
 }
 ```
 
-语义：add=招聘（**必须携带预算声明**，REQ-006，缺预算 → 400 `manifest_invalid`）；move=改汇报线；delete=裁撤。校验逻辑永远在 digital-employee（`org apply`），客户端只做形状校验，不重写预算闸门，不做本地"假生效"。
+语义：add=招聘（**必须携带预算声明**，REQ-006，缺预算 → 400 `manifest_invalid`）；move=改汇报线（`reportTo:null` 表示直挂 `positions/` 根）；delete=裁撤。组织/预算合法性由 digital-employee（`org apply`）裁决；客户端只做请求形状和目录操作可执行性预检。
 
-执行序列（staging＋原子发布）：
+执行序列（目录提案＋引擎应用态）：
 
-1. 形状校验 → 2. 在 `<workspace>/.digital-employee/staging/apply-<stamp>/` 物化工作区骨架副本并施加变更 → 3. spawn 钉版 `digital-employee org apply <staging> --json`（唯一校验者）→ 4. 成功：`organization` 文件 rename 原子覆盖＋岗位目录同步（新增/裁撤）→ 广播 `org.updated`；失败：staging 整体移入 `.digital-employee/rejected/`，工作区原状不动。
-留痕纪律：每次尝试追加 `.digital-employee/apply-log.ndjson`；裁撤的岗位目录移入 `.digital-employee/archive/`（永不硬删除）；日志中不打印 `localReference` 等状态性路径。
+1. 完整预检清单（重名/缺位/环/owner/`maxDepth=8`）→ 2. 直接物化 `positions/` 提案树（add 写岗位骨架和 0600 `budget.json`；move rename；delete 移入 `.digital-employee/backup/`）→ 3. spawn 钉版 `digital-employee org apply <workspace> --json` → 4. 成功：重载 `.digital-employee/org.json` 并广播 `org.updated`；失败：稳定码透传、提案树保留，不自动回滚。
+
+应用态纪律：`.digital-employee/org.json`、`org-audit.jsonl`、`permissions.json` 只由引擎写。拒绝时三者字节级零变更。旧 staging 与 `apply-log.ndjson` 停写。
 
 成功响应 200：
 
@@ -127,8 +134,7 @@
   "status": "failed",
   "code": "workspace_org_budget_missing",
   "message": "...",
-  "retryable": false,
-  "rejectedStaging": "/abs/path/.digital-employee/rejected/apply-..."
+  "retryable": false
 }
 ```
 
@@ -163,14 +169,21 @@
   "schemaVersion": "reports.v1",
   "streams": {
     "escalations": [],
-    "audits": [ { "ts": "...", "kind": "org.applied", "status": "applied", "changes": [ { "op": "add", "id": "docs-writer" } ] } ],
+    "audits": [ {
+      "schemaVersion": "org-audit.v1",
+      "at": "...",
+      "actor": "digital-employee org apply",
+      "bootstrapped": false,
+      "changes": { "hired": [], "moved": [], "dismissed": [], "budgetUpdated": [] },
+      "positionCount": 4
+    } ],
     "evidence": []
   },
   "page": { "cursor": null, "hasMore": false }
 }
 ```
 
-D0 阶段：`audits` 来自 `apply-log.ndjson`（真实）；`escalations`（超支升级，依赖引擎预算停止+上报接缝，切片 V4）与 `evidence`（逐回合证据，依赖引擎 S1）为空数组占位，形状冻结。
+D2 阶段：`audits` 读取引擎 `.digital-employee/org-audit.jsonl`（org-audit.v1，最新在前，最多 200 条）；`escalations` 与 `evidence` 仍为空数组占位。
 
 ### 2.8 `GET /events` — SSE 事件流
 
@@ -188,7 +201,7 @@ data: {"seq":4,"type":"org.updated","at":"...","payload":{...}}
 
 ## 3. 稳定错误码登记表
 
-控制面自产码（本契约定义）：`unauthorized`、`body_invalid`、`workspace_invalid`、`workspace_not_open`、`manifest_invalid`、`organization_invalid`、`engine_unavailable`（retryable=true）、`engine_capability_missing`、`engine_failed`、`position_missing`、`not_found`、`method_not_allowed`、`internal`；staging 冲突码：`org_apply_position_exists`、`org_apply_position_missing`、`org_apply_cycle`、`org_apply_owner_delete`。
+控制面自产码（本契约定义）：`unauthorized`、`body_invalid`、`workspace_invalid`、`workspace_not_open`、`manifest_invalid`、`organization_invalid`、`engine_unavailable`（retryable=true）、`engine_capability_missing`、`engine_failed`、`position_missing`、`not_found`、`method_not_allowed`、`internal`；提案预检码：`org_apply_position_exists`、`org_apply_position_missing`、`org_apply_cycle`、`org_apply_owner_delete`、`org_apply_max_depth`、`org_apply_destination_exists`。
 引擎透传码：以 digital-employee 稳定码为准（`workspace_org_*` 等），原样透传，不在本表重定义。
 
 ## 4. 安全基线（随契约冻结）

@@ -20,10 +20,14 @@ export type FakeOutcome = Awaited<ReturnType<OrgApplyDriver["apply"]>>;
 export class FakeDriver implements OrgApplyDriver {
   calls: string[] = [];
 
-  constructor(public outcome: FakeOutcome = { status: "applied" }) {}
+  constructor(
+    public outcome: FakeOutcome = { status: "applied" },
+    private readonly beforeReturn?: (workspaceDir: string) => Promise<void>,
+  ) {}
 
-  async apply(stagingDir: string): Promise<FakeOutcome> {
-    this.calls.push(stagingDir);
+  async apply(workspaceDir: string): Promise<FakeOutcome> {
+    this.calls.push(workspaceDir);
+    await this.beforeReturn?.(workspaceDir);
     return this.outcome;
   }
 }
