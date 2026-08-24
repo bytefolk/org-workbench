@@ -38,7 +38,7 @@
 }
 
 .ui-org-tree__row:focus-visible {
-  outline: 2px solid var(--ui-focus);
+  outline: 2px solid var(--ui-focus, Highlight);
   outline-offset: -2px;
 }
 
@@ -71,7 +71,7 @@
 }
 
 .ui-org-tree__toggle:focus-visible {
-  outline: 2px solid var(--ui-focus);
+  outline: 2px solid var(--ui-focus, Highlight);
 }
 
 .ui-org-tree__spacer {
@@ -314,7 +314,7 @@
 }
 
 .ui-org-position-card__refresh:focus-visible {
-  outline: 2px solid var(--ui-focus);
+  outline: 2px solid var(--ui-focus, Highlight);
   outline-offset: -2px;
 }
 
