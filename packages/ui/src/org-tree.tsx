@@ -1,5 +1,5 @@
 import { Building2, ChevronRight, Folder, FolderOpen } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent, type KeyboardEvent } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type DragEvent, type KeyboardEvent, type ReactNode } from "react";
 import { cn } from "@fullstack-ai-infra/ui";
 import { BudgetBar } from "./budget-bar";
 import type { OrgTreeNodeV1, OrgTreeSnapshot } from "./types";
@@ -63,7 +63,7 @@ export function OrgTreeNode({
       tabIndex={tabIndex}
       draggable={draggable}
       className={cn("ui-org-tree__row", selected && "is-selected", draggable && "is-draggable", dropActive && "is-drop-target")}
-      style={{ paddingLeft: `calc(${depth} * var(--ui-space-4, 16px) + var(--ui-space-2, 8px))` }}
+      style={{ paddingLeft: "var(--ui-space-2, 8px)" }}
       onClick={(event) => {
         if ((event.target as HTMLElement).closest("[data-ui-org-toggle]")) {
           onToggle();
@@ -302,6 +302,57 @@ export function OrgTree({
     );
   }
 
+  const renderPosition = (node: OrgTreeNodeV1, depth: number): ReactNode => {
+    const hasChildren = node.children.length > 0;
+    const isExpanded = hasChildren && expanded.has(node.id);
+    return (
+      <Fragment key={node.id}>
+        <OrgTreeNode
+          node={node}
+          depth={depth}
+          selected={selectedId === node.id}
+          expanded={isExpanded}
+          hasChildren={hasChildren}
+          tabIndex={focusedId === node.id ? 0 : -1}
+          onSelect={() => onSelect?.(node.id)}
+          onToggle={() => toggleNode(node.id)}
+          onFocus={() => setFocusedId(node.id)}
+          draggable={!moveDisabled && node.id !== snapshot.owner}
+          dropActive={dropTarget === node.id}
+          onDragStart={(event) => {
+            event.dataTransfer.effectAllowed = "move";
+            event.dataTransfer.setData("application/x-org-workbench-position-id", node.id);
+            setDraggedId(node.id);
+          }}
+          onDragEnd={() => {
+            setDraggedId(null);
+            setDropTarget(undefined);
+          }}
+          onDragOver={(event) => {
+            if (!draggedId || moveDisabled) return;
+            event.preventDefault();
+            event.dataTransfer.dropEffect = "move";
+            setDropTarget(node.id);
+          }}
+          onDrop={(event) => {
+            event.preventDefault();
+            const source = draggedId || event.dataTransfer.getData("application/x-org-workbench-position-id");
+            setDropTarget(undefined);
+            setDraggedId(null);
+            if (source) onMove?.(source, node.id);
+          }}
+        />
+        {isExpanded && hasChildren ? (
+          <div className="ui-org-tree__children" role="group">
+            {node.children.map((child) => renderPosition(child, depth + 1))}
+          </div>
+        ) : null}
+      </Fragment>
+    );
+  };
+
+  const enterpriseExpanded = expanded.has(ENTERPRISE_ID) && topLevel.length > 0;
+
   return (
     <div
       role="tree"
@@ -311,21 +362,20 @@ export function OrgTree({
       className={cn("ui-org-tree", refreshed && "is-refreshed", className)}
       onKeyDown={handleKeyDown}
     >
-      {flatNodes.map((entry) =>
-        entry.kind === "enterprise" ? (
+      {useEnterpriseRoot ? (
+        <Fragment>
           <div
-            key={entry.id}
             role="treeitem"
-            data-org-node-id={entry.id}
+            data-org-node-id={ENTERPRISE_ID}
             aria-level={1}
-            aria-expanded={entry.expanded}
-            tabIndex={focusedId === entry.id ? 0 : -1}
+            aria-expanded={enterpriseExpanded}
+            tabIndex={focusedId === ENTERPRISE_ID ? 0 : -1}
             className={cn("ui-org-tree__row", "ui-org-tree__row--enterprise", dropTarget === null && "is-drop-target")}
             style={{ paddingLeft: "var(--ui-space-2, 8px)" }}
             onClick={() => {
-              if (entry.hasChildren) toggleNode(entry.id);
+              if (topLevel.length > 0) toggleNode(ENTERPRISE_ID);
             }}
-            onFocus={() => setFocusedId(entry.id)}
+            onFocus={() => setFocusedId(ENTERPRISE_ID)}
             onDragOver={(event) => {
               if (!draggedId || moveDisabled) return;
               event.preventDefault();
@@ -344,11 +394,11 @@ export function OrgTree({
             <button
               type="button"
               data-ui-org-toggle
-              aria-label={entry.expanded ? "收起" : "展开"}
-              className={cn("ui-org-tree__toggle", entry.expanded && "is-expanded")}
+              aria-label={enterpriseExpanded ? "收起" : "展开"}
+              className={cn("ui-org-tree__toggle", enterpriseExpanded && "is-expanded")}
               onClick={(event) => {
                 event.stopPropagation();
-                toggleNode(entry.id);
+                toggleNode(ENTERPRISE_ID);
               }}
             >
               <ChevronRight aria-hidden="true" size={14} />
@@ -356,48 +406,18 @@ export function OrgTree({
             <span className="ui-org-tree__icon" aria-hidden="true">
               <Building2 size={15} />
             </span>
-            <span className="ui-org-tree__label" title={entry.name}>
-              {entry.name}
+            <span className="ui-org-tree__label" title={enterpriseName}>
+              {enterpriseName}
             </span>
           </div>
-        ) : (
-          <OrgTreeNode
-            key={entry.id}
-            node={entry.node as OrgTreeNodeV1}
-            depth={entry.depth}
-            selected={selectedId === entry.id}
-            expanded={entry.expanded}
-            hasChildren={entry.hasChildren}
-            tabIndex={focusedId === entry.id ? 0 : -1}
-            onSelect={() => onSelect?.(entry.id)}
-            onToggle={() => toggleNode(entry.id)}
-            onFocus={() => setFocusedId(entry.id)}
-            draggable={!moveDisabled && entry.id !== snapshot.owner}
-            dropActive={dropTarget === entry.id}
-            onDragStart={(event) => {
-              event.dataTransfer.effectAllowed = "move";
-              event.dataTransfer.setData("application/x-org-workbench-position-id", entry.id);
-              setDraggedId(entry.id);
-            }}
-            onDragEnd={() => {
-              setDraggedId(null);
-              setDropTarget(undefined);
-            }}
-            onDragOver={(event) => {
-              if (!draggedId || moveDisabled) return;
-              event.preventDefault();
-              event.dataTransfer.dropEffect = "move";
-              setDropTarget(entry.id);
-            }}
-            onDrop={(event) => {
-              event.preventDefault();
-              const source = draggedId || event.dataTransfer.getData("application/x-org-workbench-position-id");
-              setDropTarget(undefined);
-              setDraggedId(null);
-              if (source) onMove?.(source, entry.id);
-            }}
-          />
-        ),
+          {enterpriseExpanded ? (
+            <div className="ui-org-tree__children" role="group">
+              {topLevel.map((node) => renderPosition(node, 1))}
+            </div>
+          ) : null}
+        </Fragment>
+      ) : (
+        topLevel.map((node) => renderPosition(node, 0))
       )}
     </div>
   );
