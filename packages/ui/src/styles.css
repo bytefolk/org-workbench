@@ -125,6 +125,19 @@
   font-weight: 600;
 }
 
+/* Reporting connection lines (qa-8, 胡总强调项): nested children containers
+ * carry a vertical border aligned under the parent toggle center
+ * (margin-left 18px = 8px base padding + half of the 20px toggle), so the
+ * tree reads as an org chart, not a flat list. --ui-tree-line token decided at D2. */
+.ui-org-tree__children {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ui-space-1, 4px);
+  margin-left: 18px;
+  padding-left: var(--ui-space-2, 8px);
+  border-left: 1px solid var(--ui-border-strong);
+}
+
 .ui-org-tree__hire-placeholder {
   border: 1px dashed var(--ui-border-strong);
   background: none;
