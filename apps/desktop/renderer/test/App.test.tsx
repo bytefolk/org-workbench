@@ -311,7 +311,13 @@ describe("App runtime bridge", () => {
         audits: [],
         evidence: [{ schemaVersion: "turn-evidence.v1", positionId: "repo-owner", turnId: "turn-1", conversationId: "conversation-1", engine: "qoder", status: "failed", createdAt: "2026-08-24T05:59:00Z", updatedAt: "2026-08-24T06:00:00Z", envelopeDigest: "sha256:evidence", usage: { inputTokens: 10, outputTokens: 20, totalTokens: 30 }, errorCode: "position_budget_exceeded" }],
       },
-      budgets: [{ positionId: "repo-owner", declared: snapshot.tree[0]!.budget, recorded: { inputTokens: 10, outputTokens: 20, totalTokens: 30 }, latestTurn: { inputTokens: 10, outputTokens: 20, totalTokens: 30 }, state: "within" }],
+      budgets: [{
+        positionId: "repo-owner",
+        declared: { perTask: { tokens: 100 }, perDay: { tokens: 1000 } },
+        recorded: { inputTokens: 20, outputTokens: 30, totalTokens: 50 },
+        latestTurn: { inputTokens: 20, outputTokens: 30, totalTokens: 50 },
+        state: "within",
+      }],
       page: { cursor: null, hasMore: false },
     };
     openedBridge({ reports: vi.fn().mockResolvedValue({ status: 200, body: reports }), turnHistory: vi.fn().mockResolvedValue({ status: 200, body: history([]) }) });
@@ -319,6 +325,9 @@ describe("App runtime bridge", () => {
     fireEvent.click(await screen.findByRole("button", { name: "上报" }));
     expect(await screen.findByRole("heading", { name: "上报中心" })).toBeInTheDocument();
     expect(screen.getByText("position_budget_exceeded")).toBeInTheDocument();
+    expect(screen.getByRole("meter", { name: "单任务消耗" })).toHaveAttribute("aria-valuenow", "50");
+    expect(screen.getByRole("meter", { name: "单日用量不可用" })).not.toHaveAttribute("aria-valuenow");
+    expect(screen.getAllByText("50%")).toHaveLength(1);
     fireEvent.click(screen.getByRole("button", { name: /回合证据/ }));
     expect(screen.getByText("sha256:evidence")).toBeInTheDocument();
     expect(screen.queryByText("sensitive raw input")).not.toBeInTheDocument();

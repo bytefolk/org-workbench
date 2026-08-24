@@ -48,6 +48,18 @@ function turn(overrides: Partial<TurnRecord>): TurnRecord {
   };
 }
 
+function audit(workspace: string): Record<string, unknown> {
+  return {
+    schemaVersion: "org-audit.v1",
+    at: "2026-08-24T06:00:00.000Z",
+    actor: "digital-employee org apply",
+    workspace,
+    bootstrapped: false,
+    changes: { hired: [], moved: [], dismissed: [], budgetUpdated: [] },
+    positionCount: 4,
+  };
+}
+
 test("reports: empty workspace returns truthful empty streams and declared budgets", async () => {
   const server = await startTestServer();
   const dir = await copyExampleWorkspace();
@@ -167,5 +179,71 @@ test("reports: symlinked local report roots are rejected without reading outside
   } finally {
     await server.close();
     await fs.rm(outside, { recursive: true, force: true });
+  }
+});
+
+test("reports: rejects a valid workspace-external org audit symlink before reading it", async () => {
+  const server = await startTestServer();
+  const dir = await copyExampleWorkspace();
+  const outside = path.join(path.dirname(dir), `owb-external-audit-${path.basename(dir)}.jsonl`);
+  try {
+    const runtime = path.join(dir, ".digital-employee");
+    await fs.mkdir(runtime, { recursive: true, mode: 0o700 });
+    await fs.writeFile(outside, `${JSON.stringify({ ...audit(dir), message: "RAW_EXTERNAL_SENTINEL" })}\n`, { mode: 0o600 });
+    await fs.symlink(outside, path.join(runtime, "org-audit.jsonl"));
+    await open(server, dir);
+
+    const response = await api(server.baseUrl, "/reports", { token: server.token });
+    assert.equal(response.status, 500);
+    assert.equal((response.body as { code: string }).code, "reports_data_invalid");
+    assert.equal(JSON.stringify(response.body).includes("RAW_EXTERNAL_SENTINEL"), false);
+  } finally {
+    await server.close();
+    await fs.rm(outside, { force: true });
+  }
+});
+
+test("reports: projects ordinary org audits onto an exact allowlist and drops raw fields", async () => {
+  const server = await startTestServer();
+  const dir = await copyExampleWorkspace();
+  try {
+    const runtime = path.join(dir, ".digital-employee");
+    await fs.mkdir(runtime, { recursive: true, mode: 0o700 });
+    await fs.writeFile(path.join(runtime, "org-audit.jsonl"), `${JSON.stringify({
+      ...audit(dir),
+      message: "RAW_AUDIT_SENTINEL",
+      changes: { hired: [], moved: [], dismissed: [], budgetUpdated: [], message: "RAW_NESTED_SENTINEL" },
+    })}\n`, { mode: 0o600 });
+    await open(server, dir);
+
+    const response = await api(server.baseUrl, "/reports", { token: server.token });
+    assert.equal(response.status, 200);
+    const serialized = JSON.stringify(response.body);
+    assert.equal(serialized.includes("RAW_AUDIT_SENTINEL"), false);
+    assert.equal(serialized.includes("RAW_NESTED_SENTINEL"), false);
+    const entry = (response.body as ReportsResponse).streams.audits[0] as unknown as Record<string, unknown>;
+    assert.deepEqual(Object.keys(entry).sort(), ["actor", "bootstrapped", "changes", "positionCount", "schemaVersion", "workspace", "at"].sort());
+    assert.deepEqual(Object.keys(entry.changes as Record<string, unknown>).sort(), ["budgetUpdated", "dismissed", "hired", "moved"].sort());
+  } finally {
+    await server.close();
+  }
+});
+
+test("reports: rejects an oversized org audit source", async () => {
+  const server = await startTestServer();
+  const dir = await copyExampleWorkspace();
+  try {
+    const runtime = path.join(dir, ".digital-employee");
+    await fs.mkdir(runtime, { recursive: true, mode: 0o700 });
+    const file = path.join(runtime, "org-audit.jsonl");
+    await fs.writeFile(file, "{}\n", { mode: 0o600 });
+    await fs.truncate(file, 16 * 1024 * 1024 + 1);
+    await open(server, dir);
+
+    const response = await api(server.baseUrl, "/reports", { token: server.token });
+    assert.equal(response.status, 500);
+    assert.equal((response.body as { code: string }).code, "reports_data_invalid");
+  } finally {
+    await server.close();
   }
 });

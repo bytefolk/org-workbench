@@ -6,8 +6,10 @@ import { capsText, primaryCap, type BudgetCaps } from "./types";
 export interface BudgetBarProps {
   /** Budget declaration of one position (perTask → taskLimit, perDay → dailyLimit). null = 预算未配齐. */
   declared: { taskLimit: BudgetCaps | null; dailyLimit: BudgetCaps | null } | null;
-  /** Consumption ratio (0..1+). null = declaration phase (D1); provided = consumption phase (D3+). */
+  /** Per-task consumption ratio (0..1+). null = declaration phase. */
   consumption?: number | null;
+  /** Per-day window ratio. Omit when no truthful day bucket exists. */
+  dailyConsumption?: number | null;
   format?: "compact" | "full";
   label?: string;
   className?: string;
@@ -33,6 +35,7 @@ function tierClass(ratio: number): string {
 export function BudgetBar({
   declared,
   consumption = null,
+  dailyConsumption,
   format = "full",
   label,
   className,
@@ -63,7 +66,11 @@ export function BudgetBar({
     <div className={cn("ui-org-budget", className)}>
       <div className="ui-org-budget__lanes">
         <BudgetLane label="单任务" caps={declared.taskLimit} consumption={consumption} />
-        <BudgetLane label="单日" caps={declared.dailyLimit} consumption={consumption} />
+        <BudgetLane
+          label="单日"
+          caps={declared.dailyLimit}
+          consumption={consumption === null && dailyConsumption === undefined ? null : dailyConsumption}
+        />
       </div>
     </div>
   );
@@ -76,12 +83,13 @@ function BudgetLane({
 }: {
   label: string;
   caps: BudgetCaps | null;
-  consumption: number | null;
+  consumption: number | null | undefined;
 }) {
   const cap = primaryCap(caps);
   const declarationMode = consumption === null;
-  const ratio = cap && consumption !== null ? consumption : null;
-  const laneClass = declarationMode ? "is-declared" : ratio === null ? "is-declared" : tierClass(ratio);
+  const unavailable = consumption === undefined;
+  const ratio = cap && typeof consumption === "number" ? consumption : null;
+  const laneClass = declarationMode || unavailable || ratio === null ? "is-declared" : tierClass(ratio);
   const fillWidth =
     ratio === null
       ? "100%"
@@ -96,7 +104,7 @@ function BudgetLane({
       <span
         className={cn("ui-org-budget__track", laneClass)}
         role="meter"
-        aria-label={`${label}${declarationMode ? "声明" : "消耗"}`}
+        aria-label={`${label}${declarationMode ? "声明" : unavailable ? "用量不可用" : "消耗"}`}
         aria-valuemin={0}
         aria-valuemax={100}
         aria-valuenow={ratio === null ? undefined : Math.round(ratio * 100)}
@@ -104,7 +112,7 @@ function BudgetLane({
         <span className="ui-org-budget__fill" style={meterProps ?? undefined} />
       </span>
       <span className="ui-org-budget__value">
-        {declarationMode ? capsText(caps) : `${Math.round((ratio ?? 0) * 100)}%`}
+        {declarationMode ? capsText(caps) : unavailable ? `未记录 · 上限 ${capsText(caps)}` : `${Math.round((ratio ?? 0) * 100)}%`}
       </span>
     </div>
   );
