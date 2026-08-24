@@ -376,7 +376,7 @@ function isBoundedIdentifier(value: unknown): value is string {
   return typeof value === "string" && value.length > 0 && value.length <= 256;
 }
 
-function parseRfc3339Instant(value: unknown): number | null {
+function parseRfc3339Instant(value: unknown): bigint | null {
   if (typeof value !== "string" || value.length > 64) return null;
   const match = RFC3339_INSTANT_PATTERN.exec(value);
   if (match === null) return null;
@@ -394,8 +394,13 @@ function parseRfc3339Instant(value: unknown): number | null {
     day > daysInMonth(year, month) || hour > 23 || minute > 59 || second > 59 ||
     offsetHour > 23 || offsetMinute > 59 || zone === "-00:00"
   ) return null;
-  const instant = Date.parse(value);
-  return Number.isFinite(instant) ? instant : null;
+  const localSeconds =
+    BigInt(daysFromCivil(year, month, day)) * 86_400n +
+    BigInt(hour * 3_600 + minute * 60 + second);
+  const offsetDirection = match[9] === "-" ? -1n : 1n;
+  const offsetSeconds = offsetDirection * BigInt(offsetHour * 3_600 + offsetMinute * 60);
+  const fractionalNanoseconds = BigInt((match[7] ?? "").padEnd(9, "0") || "0");
+  return (localSeconds - offsetSeconds) * 1_000_000_000n + fractionalNanoseconds;
 }
 
 function daysInMonth(year: number, month: number): number {
@@ -404,6 +409,24 @@ function daysInMonth(year: number, month: number): number {
     return leap ? 29 : 28;
   }
   return [4, 6, 9, 11].includes(month) ? 30 : 31;
+}
+
+/** Proleptic Gregorian civil date to days since 1970-01-01. */
+function daysFromCivil(year: number, month: number, day: number): number {
+  const adjustedYear = year - (month <= 2 ? 1 : 0);
+  const era = Math.floor(adjustedYear / 400);
+  const yearOfEra = adjustedYear - era * 400;
+  const adjustedMonth = month + (month > 2 ? -3 : 9);
+  const dayOfYear = Math.floor((153 * adjustedMonth + 2) / 5) + day - 1;
+  const dayOfEra =
+    yearOfEra * 365 + Math.floor(yearOfEra / 4) - Math.floor(yearOfEra / 100) + dayOfYear;
+  return era * 146_097 + dayOfEra - 719_468;
+}
+
+function compareRfc3339Instants(left: string, right: string): number {
+  const leftInstant = parseRfc3339Instant(left)!;
+  const rightInstant = parseRfc3339Instant(right)!;
+  return leftInstant < rightInstant ? -1 : leftInstant > rightInstant ? 1 : 0;
 }
 
 function isBoundedCodePoints(value: string, limit: number): boolean {
@@ -700,9 +723,9 @@ export class TurnStore {
       }
     }
     turns.sort((left, right) =>
-      parseRfc3339Instant(left.createdAt) === parseRfc3339Instant(right.createdAt)
+      compareRfc3339Instants(left.createdAt, right.createdAt) === 0
         ? left.turnId.localeCompare(right.turnId, "en")
-        : parseRfc3339Instant(left.createdAt)! - parseRfc3339Instant(right.createdAt)!,
+        : compareRfc3339Instants(left.createdAt, right.createdAt),
     );
     return {
       schemaVersion: TURN_HISTORY_SCHEMA_VERSION,
@@ -776,9 +799,9 @@ export class TurnStore {
       }
     }
     turns.sort((left, right) =>
-      parseRfc3339Instant(left.createdAt) === parseRfc3339Instant(right.createdAt)
+      compareRfc3339Instants(left.createdAt, right.createdAt) === 0
         ? left.turnId.localeCompare(right.turnId, "en")
-        : parseRfc3339Instant(left.createdAt)! - parseRfc3339Instant(right.createdAt)!,
+        : compareRfc3339Instants(left.createdAt, right.createdAt),
     );
     return {
       schemaVersion: TURN_HISTORY_SCHEMA_VERSION,
@@ -847,9 +870,9 @@ export class TurnStore {
       }
     }
     records.sort((left, right) =>
-      parseRfc3339Instant(right.updatedAt) === parseRfc3339Instant(left.updatedAt)
+      compareRfc3339Instants(right.updatedAt, left.updatedAt) === 0
         ? right.turnId.localeCompare(left.turnId, "en")
-        : parseRfc3339Instant(right.updatedAt)! - parseRfc3339Instant(left.updatedAt)!,
+        : compareRfc3339Instants(right.updatedAt, left.updatedAt),
     );
     return records;
   }

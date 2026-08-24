@@ -13,6 +13,7 @@ import { api, connectSse, copyExampleWorkspace, startTestServer } from "./helper
 import {
   TurnStore,
   assertPositionId,
+  isTurnRecord,
   nodeAtomicTurnWriteOperations,
 } from "../src/turns/store.js";
 import type { AtomicTurnWriteOperations } from "../src/turns/store.js";
@@ -317,6 +318,11 @@ test("legacy history rejects date-only and non-canonical persisted record timest
         createdAt: "2026-08-24T00:00:00.000Z",
         updatedAt: "2026-08-24t01:00:00.000z",
       },
+      {
+        ...valid,
+        createdAt: "2026-08-24T00:00:00.000000002Z",
+        updatedAt: "2026-08-24T00:00:00.000000001Z",
+      },
     ]) {
       await fs.writeFile(turnFile, `${JSON.stringify(tampered)}\n`, { mode: 0o600 });
       const response = await api(server.baseUrl, "/turns?positionId=repo-owner", {
@@ -328,6 +334,37 @@ test("legacy history rejects date-only and non-canonical persisted record timest
   } finally {
     await server.close();
   }
+});
+
+test("persisted timestamp validation accepts legal nanoseconds and equivalent offsets", () => {
+  assert.equal(isTurnRecord({
+    schemaVersion: "turn-record.v1",
+    conversationId: "equivalent-offset-conversation",
+    turnId: "equivalent-offset-turn",
+    positionId: "repo-owner",
+    engine: "qoder",
+    status: "completed",
+    input: "valid chronology",
+    envelopeDigest: `sha256:${"a".repeat(64)}`,
+    createdAt: "2026-08-24T08:00:00.1+08:00",
+    updatedAt: "2026-08-24T00:00:00.100000000Z",
+    runId: "equivalent-offset-run",
+    output: "done",
+    events: [
+      {
+        type: "run.started",
+        runId: "equivalent-offset-run",
+        timestamp: "2026-08-24T08:00:00.000000001+08:00",
+      },
+      {
+        type: "run.completed",
+        runId: "equivalent-offset-run",
+        timestamp: "2026-08-24T00:00:00.000000001Z",
+        output: "done",
+        terminalReason: "goal_met",
+      },
+    ],
+  }), true);
 });
 
 test("turn position ids mirror the digital-employee organization contract", () => {

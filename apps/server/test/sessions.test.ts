@@ -198,17 +198,25 @@ test("session history compares persisted record timestamps as instants across of
       "turns",
       `${String(valid.turnId)}.json`,
     );
-    await fs.writeFile(turnFile, `${JSON.stringify({
-      ...valid,
-      createdAt: "2026-08-24T01:00:00.000-08:00",
-      updatedAt: "2026-08-24T08:30:00.000+00:00",
-    })}\n`, { mode: 0o600 });
-
-    const response = await api(server.baseUrl, `/sessions/${session.sessionId}/turns`, {
-      token: server.token,
-    });
-    assert.equal(response.status, 500);
-    assert.equal((response.body as { code: string }).code, "turn_storage_failed");
+    for (const timestamps of [
+      {
+        createdAt: "2026-08-24T01:00:00.000-08:00",
+        updatedAt: "2026-08-24T08:30:00.000+00:00",
+      },
+      {
+        createdAt: "2026-08-24T00:00:00.000000002Z",
+        updatedAt: "2026-08-24T00:00:00.000000001Z",
+      },
+    ]) {
+      await fs.writeFile(turnFile, `${JSON.stringify({ ...valid, ...timestamps })}\n`, {
+        mode: 0o600,
+      });
+      const response = await api(server.baseUrl, `/sessions/${session.sessionId}/turns`, {
+        token: server.token,
+      });
+      assert.equal(response.status, 500);
+      assert.equal((response.body as { code: string }).code, "turn_storage_failed");
+    }
   } finally {
     await server.close();
   }
