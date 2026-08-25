@@ -153,7 +153,7 @@ function emptyReports(): ReportsResponse {
 }
 
 async function selectRepoOwner(): Promise<void> {
-  await screen.findByRole("option", { name: "代码库负责人 · repo-owner" });
+  await screen.findByRole("treeitem", { name: /repo-owner/ });
   fireEvent.click(screen.getByText("repo-owner", { selector: ".ui-org-tree__label" }));
   expect(await screen.findByRole("heading", { name: "@代码库负责人" })).toBeInTheDocument();
 }
@@ -369,7 +369,7 @@ describe("App runtime bridge", () => {
     render(<App />);
     fireEvent.click(await screen.findByText("docs-writer", { selector: ".ui-org-tree__label" }));
     fireEvent.click(await screen.findByRole("button", { name: "裁撤" }));
-    fireEvent.click(screen.getByRole("button", { name: "取消" }));
+    fireEvent.click(screen.getByRole("button", { name: /取\s*消/ }));
     expect(orgApply).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole("button", { name: "裁撤" }));
     fireEvent.click(screen.getByRole("button", { name: "确认裁撤并留痕" }));
