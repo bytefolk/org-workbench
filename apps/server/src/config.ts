@@ -9,6 +9,8 @@ export interface ServerConfig {
   token: string;
   /** Pinned digital-employee CLI command consumed via spawn. */
   cliCommand: string;
+  /** Spawn timeout (ms) for engine org apply / turn run. */
+  engineTimeoutMs?: number;
   serverVersion: string;
 }
 

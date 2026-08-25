@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Alert, Button as AntButton } from "antd";
+import { Alert, Button as AntButton, ConfigProvider, theme } from "antd";
+import zhCN from "antd/locale/zh_CN";
 import {
   AppShell,
   ModuleRail,
@@ -76,11 +77,10 @@ export function App() {
   });
   const [positionNames, setPositionNames] = useState<Record<string, string>>({});
   const positionNamesRef = useRef<Record<string, string>>({});
-  const [turnEngine, setTurnEngine] = useState<TurnEngine>("local-mock");
+  const [positionColors, setPositionColors] = useState<Record<string, string>>({});
+  const [turnEngine, setTurnEngine] = useState<TurnEngine>("qoder");
   const [turns, setTurns] = useState<TurnRecord[]>([]);
   const [turnStream, setTurnStream] = useState<TurnStreamState>(EMPTY_TURN_STREAM);
-  const [mockTurns, setMockTurns] = useState<TurnRecord[]>([]);
-  const mockSeqRef = useRef(0);
   const [turnBusy, setTurnBusy] = useState(false);
   const [turnError, setTurnError] = useState<string | null>(null);
   const [sessions, setSessions] = useState<WorkbenchSession[]>([]);
@@ -143,24 +143,29 @@ export function App() {
         setSnapshot(nextSnapshot);
         const positionIds = flattenPositionIds(nextSnapshot.tree);
         setSelectedId((current) => current && positionIds.includes(current) ? current : null);
-        const nameEntries = await Promise.all(positionIds.map(async (id) => {
+        const cardEntries = await Promise.all(positionIds.map(async (id) => {
           const response = await window.owb.position(id);
           const body = response.body as { position?: PositionCardData };
-          return [id, response.status === 200 ? body.position?.name ?? id : id] as const;
+          const position = response.status === 200 ? body.position : undefined;
+          const color = position?.metadata?.color;
+          return [id, { name: position?.name ?? id, ...(typeof color === "string" && color.length > 0 ? { color } : {}) }] as const;
         }));
-        const names = Object.fromEntries(nameEntries);
+        const names = Object.fromEntries(cardEntries.map(([id, entry]) => [id, entry.name]));
         positionNamesRef.current = names;
         setPositionNames(names);
+        setPositionColors(Object.fromEntries(cardEntries.filter(([, entry]) => "color" in entry).map(([id, entry]) => [id, (entry as { color: string }).color])));
         await Promise.all([loadBackups(), loadReports()]);
       } else {
         setSnapshot(null);
         positionNamesRef.current = {};
         setPositionNames({});
+        setPositionColors({});
       }
     } else {
       setSnapshot(null);
       positionNamesRef.current = {};
       setPositionNames({});
+      setPositionColors({});
       setSelectedId(null);
       setCard({ loading: false, data: null, notFound: false });
       setTurns([]);
@@ -363,25 +368,6 @@ export function App() {
   }, [loadSessions]);
 
   const createTurn = useCallback(async (request: CreateTurnRequest) => {
-    if (request.engine === "local-mock") {
-      mockSeqRef.current += 1;
-      const now = new Date().toISOString();
-      const record: TurnRecord = {
-        id: `mock-${String(mockSeqRef.current).padStart(3, "0")}`,
-        positionId: request.positionId,
-        positionName: positionNamesRef.current[request.positionId] ?? request.positionId,
-        engine: "local-mock",
-        input: request.input,
-        status: "completed",
-        createdAt: now,
-        completedAt: now,
-        output:
-          `【mock 回复 · 非真实执行】已收到交办：「${request.input}」。\n` +
-          `原型演示由本地 mock host 合成回复；真实执行需配置 Qoder / Claude Code host 并经引擎预算闸门。`,
-      };
-      setMockTurns((current) => [...current, record]);
-      return true;
-    }
     const sessionId = selectedSessionIdRef.current;
     if (sessionId === null) {
       setTurnError("请先新建或选择当前会话");
@@ -536,15 +522,9 @@ export function App() {
       ready: health?.hosts?.["claude-local"]?.ready === true,
       reason: health?.hosts?.["claude-local"]?.nextStep ?? "Claude Code（本地登录）Host 探测状态不可用",
     },
-    "local-mock": {
-      configured: true,
-      ready: true,
-      reason: "本地 mock host：仅原型演示，非真实执行",
-    },
   }), [health]);
 
   const displayTurns = useMemo(() => {
-    const overlay = selectedId === null ? [] : mockTurns.filter((turn) => turn.positionId === selectedId);
     const historyRunIds = new Set(turns.flatMap((turn) => (turn.runId ? [turn.runId] : [])));
     const live: TurnRecord[] = selectedId === null
       ? []
@@ -560,14 +540,34 @@ export function App() {
             createdAt: run.startedAt,
             ...(run.text !== "" ? { output: run.text } : {}),
           }));
-    const merged = [...turns, ...overlay, ...live];
-    if (overlay.length === 0 && live.length === 0) return turns;
-    return merged.sort((a, b) => a.createdAt.localeCompare(b.createdAt));
-  }, [mockTurns, positionNames, selectedId, turnStream.runs, turns]);
+    if (live.length === 0) return turns;
+    return [...turns, ...live].sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+  }, [positionNames, selectedId, turnStream.runs, turns]);
 
+  // ADR-0002: Ant Design is the shared design language; token values are antd
+  // official palette values, consumed via ConfigProvider — no ad-hoc theming.
+  // The provider lives here (not in main.tsx) so tests render the same config;
+  // autoInsertSpace is off so two-char CJK labels keep exact accessible names.
   return (
+    <ConfigProvider
+      locale={zhCN}
+      button={{ autoInsertSpace: false }}
+      theme={{
+        algorithm: theme.defaultAlgorithm,
+        token: {
+          colorPrimary: "#1677FF",
+          colorSuccess: "#52C41A",
+          colorWarning: "#FAAD14",
+          colorError: "#FF4D4F",
+          colorInfo: "#1677FF",
+          borderRadius: 6,
+          fontFamily:
+            "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif",
+        },
+      }}
+    >
     <AppShell
-      style={{ "--ui-sidebar-width": "var(--ui-sidebar-wide)" } as CSSProperties}
+      style={{ "--ui-sidebar-width": "18rem" } as CSSProperties}
       moduleRail={
         <ModuleRail
           label="模块"
@@ -599,6 +599,8 @@ export function App() {
               <OrgTree
                 snapshot={snapshot}
                 versionStamp={snapshot.updatedAt}
+                displayNames={positionNames}
+                avatarColors={positionColors}
                 selectedId={selectedId}
                 onSelect={selectPosition}
                 onMove={(id, reportTo) => void movePosition(id, reportTo)}
@@ -682,6 +684,7 @@ export function App() {
         </div>}
       </div>
     </AppShell>
+    </ConfigProvider>
   );
 }
 

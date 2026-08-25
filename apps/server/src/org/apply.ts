@@ -168,7 +168,10 @@ export async function scanProposalTree(workspaceDir: string): Promise<ProposalPo
   for (const entry of entries) {
     const directory = path.join(root, entry.name);
     if (!entry.isDirectory() || entry.isSymbolicLink() || !(await isRegularFile(path.join(directory, "employee.json")))) {
-      throw conflict("workspace_org_tree_position_invalid", `invalid top-level position entry: ${entry.name}`);
+      throw conflict(
+        "workspace_org_tree_position_invalid",
+        `invalid top-level position entry: ${entry.name} (positions/${entry.name} must be a regular directory containing employee.json; remove the stray directory or restore its employee package, then retry)`,
+      );
     }
     await scanPosition(directory, entry.name, null, 1);
   }

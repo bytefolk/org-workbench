@@ -8,6 +8,12 @@ export interface OrgTreeProps {
   snapshot: OrgTreeSnapshot;
   /** Applied-state stamp (updatedAt); change re-triggers the 180ms fade. */
   versionStamp?: string | null;
+  /** Display names keyed by position id (served via /positions/:id; the
+   * frozen org-tree.v1 node carries ids only). Falls back to the raw id. */
+  displayNames?: Record<string, string>;
+  /** Avatar background colors keyed by position id (e.g. metadata.color);
+   * positions without one get a deterministic hue from their id. */
+  avatarColors?: Record<string, string>;
   selectedId?: string | null;
   onSelect?: (id: string) => void;
   onExpand?: (id: string, expanded: boolean) => void;
@@ -25,6 +31,8 @@ export interface OrgTreeNodeProps {
   expanded: boolean;
   hasChildren: boolean;
   tabIndex: number;
+  displayName?: string;
+  avatarColor?: string;
   onSelect: () => void;
   onToggle: () => void;
   onFocus: () => void;
@@ -43,6 +51,8 @@ export function OrgTreeNode({
   expanded,
   hasChildren,
   tabIndex,
+  displayName,
+  avatarColor,
   onSelect,
   onToggle,
   onFocus,
@@ -97,7 +107,15 @@ export function OrgTreeNode({
       <span className="ui-org-tree__icon" aria-hidden="true">
         {expanded ? <FolderOpen size={15} /> : <Folder size={15} />}
       </span>
+      <span
+        className="ui-org-tree__avatar"
+        aria-hidden="true"
+        style={{ background: avatarColor ?? `hsl(${hueForId(node.id)}, 65%, 42%)` }}
+      >
+        {(displayName ?? node.id).trim().charAt(0).toUpperCase()}
+      </span>
       <span className="ui-org-tree__label" title={node.id}>
+        {displayName && displayName !== node.id ? <span className="ui-org-tree__name">{displayName}</span> : null}
         {node.id}
       </span>
       <BudgetBar
@@ -110,6 +128,13 @@ export function OrgTreeNode({
 }
 
 const ENTERPRISE_ID = "__enterprise__";
+
+/** Stable avatar hue for positions without a declared color. */
+function hueForId(id: string): number {
+  let hash = 0;
+  for (const char of id) hash = (hash * 31 + (char.codePointAt(0) ?? 0)) % 360;
+  return hash;
+}
 
 interface FlatNode {
   id: string;
@@ -138,6 +163,8 @@ interface FlatNode {
 export function OrgTree({
   snapshot,
   versionStamp,
+  displayNames,
+  avatarColors,
   selectedId,
   onSelect,
   onExpand,
@@ -314,6 +341,8 @@ export function OrgTree({
           expanded={isExpanded}
           hasChildren={hasChildren}
           tabIndex={focusedId === node.id ? 0 : -1}
+          displayName={displayNames?.[node.id]}
+          avatarColor={avatarColors?.[node.id]}
           onSelect={() => onSelect?.(node.id)}
           onToggle={() => toggleNode(node.id)}
           onFocus={() => setFocusedId(node.id)}

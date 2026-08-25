@@ -80,6 +80,31 @@ describe("OrgTree (D1 spec §2, frozen org-tree.v1)", () => {
     expect(screen.queryByText("repo-owner")).not.toBeInTheDocument();
   });
 
+  it("renders human display names and avatar initials from position cards", () => {
+    const { container } = render(
+      <OrgTree
+        snapshot={SNAPSHOT}
+        displayNames={{ "issue-researcher": "议题研究员" }}
+        avatarColors={{ "issue-researcher": "#c96a12" }}
+      />,
+    );
+    expect(screen.getByText("议题研究员")).toBeInTheDocument();
+    expect(screen.getByText("issue-researcher")).toBeInTheDocument();
+
+    const row = screen.getByText("issue-researcher").closest('[role="treeitem"]')!;
+    const avatar = row.querySelector(".ui-org-tree__avatar")!;
+    expect(avatar.textContent).toBe("议");
+    expect((avatar as HTMLElement).style.background).toContain("rgb(201, 106, 18)");
+
+    // Positions without a card name keep the id label and get a hue from the id.
+    const ownerRow = screen.getByText("repo-owner").closest('[role="treeitem"]')!;
+    const ownerAvatar = ownerRow.querySelector(".ui-org-tree__avatar")!;
+    expect(ownerAvatar.textContent).toBe("R");
+    // jsdom serializes the deterministic hsl hue as rgb.
+    expect((ownerAvatar as HTMLElement).style.background).toBe("rgb(149, 37, 177)");
+    expect(container.querySelector('[role="treeitem"] .ui-org-tree__name')).toBeTruthy();
+  });
+
   it("renders the empty state when the tree has no positions", () => {
     render(<OrgTree snapshot={{ ...SNAPSHOT, tree: [], positionCount: 0, depth: 0 }} />);
     expect(screen.getByText("尚无岗位，点击招聘")).toBeInTheDocument();
