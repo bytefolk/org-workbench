@@ -115,8 +115,14 @@ export function OrgTreeNode({
         {(displayName ?? node.id).trim().charAt(0).toUpperCase()}
       </span>
       <span className="ui-org-tree__label" title={node.id}>
-        {displayName && displayName !== node.id ? <span className="ui-org-tree__name">{displayName}</span> : null}
-        {node.id}
+        {displayName && displayName !== node.id ? (
+          <>
+            <span className="ui-org-tree__name">{displayName}</span>
+            <span className="ui-org-tree__id">{node.id}</span>
+          </>
+        ) : (
+          node.id
+        )}
       </span>
       <BudgetBar
         className="ui-org-tree__budget"
