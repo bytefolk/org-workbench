@@ -562,7 +562,7 @@ export function App() {
 
   return (
     <AppShell
-      style={{ "--ui-sidebar-width": "18rem" } as CSSProperties}
+      style={{ "--ui-sidebar-width": "var(--ui-sidebar-wide)" } as CSSProperties}
       moduleRail={
         <ModuleRail
           label="模块"

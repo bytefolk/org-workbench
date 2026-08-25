@@ -46,17 +46,26 @@ function Empty({ text }: { text: string }) { return <p className="owb-report-emp
 
 function Escalations({ entries }: { entries: EscalationEntry[] }) {
   if (entries.length === 0) return <Empty text="没有已记录的失败或不确定回合" />;
-  return <ol>{entries.map((entry) => <li className="owb-report-card is-escalation" key={entry.turnId}><AlertOctagon aria-hidden="true" size={16} /><div><header><strong>{entry.code}</strong><time>{formatTime(entry.at)}</time></header><p>{entry.positionId} · {entry.status}{entry.budgetRelated ? " · 预算相关" : ""}</p><div className="owb-report-chain">{entry.reportingChain.map((position, index) => <span key={position} style={{ borderLeftWidth: Math.min(index + 1, 4) }}>{position}</span>)}</div></div></li>)}</ol>;
+  return <ol>{entries.map((entry) => {
+    const summary = `${entry.positionId} · ${entry.status}${entry.budgetRelated ? " · 预算相关" : ""}`;
+    return <li className="owb-report-card is-escalation" key={entry.turnId}><AlertOctagon aria-hidden="true" size={16} /><div><header><strong>{entry.code}</strong><time>{formatTime(entry.at)}</time></header><p className="owb-clamp-2" title={summary}>{summary}</p><div className="owb-report-chain">{entry.reportingChain.map((position, index) => <span key={position} style={{ borderLeftWidth: Math.min(index + 1, 4) }}>{position}</span>)}</div></div></li>;
+  })}</ol>;
 }
 
 function Audits({ entries }: { entries: AuditEntry[] }) {
   if (entries.length === 0) return <Empty text="尚无组织变更审计" />;
-  return <ol>{entries.map((entry, index) => <li className="owb-report-card" key={`${entry.at}-${index}`}><ClipboardList aria-hidden="true" size={16} /><div><header><strong>{entry.actor}</strong><time>{formatTime(entry.at)}</time></header><p>招聘 {entry.changes.hired.length} · 调岗 {entry.changes.moved.length} · 裁撤 {entry.changes.dismissed.length} · 预算 {entry.changes.budgetUpdated.length}</p><small>应用后 {entry.positionCount} 个岗位</small></div></li>)}</ol>;
+  return <ol>{entries.map((entry, index) => {
+    const summary = `招聘 ${entry.changes.hired.length} · 调岗 ${entry.changes.moved.length} · 裁撤 ${entry.changes.dismissed.length} · 预算 ${entry.changes.budgetUpdated.length}`;
+    return <li className="owb-report-card" key={`${entry.at}-${index}`}><ClipboardList aria-hidden="true" size={16} /><div><header><strong>{entry.actor}</strong><time>{formatTime(entry.at)}</time></header><p className="owb-clamp-2" title={summary}>{summary}</p><small>应用后 {entry.positionCount} 个岗位</small></div></li>;
+  })}</ol>;
 }
 
 function Evidence({ entries }: { entries: EvidenceEntry[] }) {
   if (entries.length === 0) return <Empty text="尚无可追溯回合证据" />;
-  return <ol>{entries.map((entry) => <li className="owb-report-card" key={entry.turnId}><Fingerprint aria-hidden="true" size={16} /><div><header><strong>{entry.positionId} · {entry.engine}</strong><time>{formatTime(entry.updatedAt)}</time></header><p>{entry.status} · {entry.usage.totalTokens.toLocaleString()} tokens{entry.errorCode ? ` · ${entry.errorCode}` : ""}</p><code title={entry.envelopeDigest}>{entry.envelopeDigest}</code><small>turn {entry.turnId} · conversation {entry.conversationId}</small></div></li>)}</ol>;
+  return <ol>{entries.map((entry) => {
+    const summary = `${entry.status} · ${entry.usage.totalTokens.toLocaleString()} tokens${entry.errorCode ? ` · ${entry.errorCode}` : ""}`;
+    return <li className="owb-report-card" key={entry.turnId}><Fingerprint aria-hidden="true" size={16} /><div><header><strong>{entry.positionId} · {entry.engine}</strong><time>{formatTime(entry.updatedAt)}</time></header><p className="owb-clamp-2" title={summary}>{summary}</p><code className="owb-clamp-2" title={entry.envelopeDigest}>{entry.envelopeDigest}</code><small>turn {entry.turnId} · conversation {entry.conversationId}</small></div></li>;
+  })}</ol>;
 }
 
 function formatTime(value: string): string {

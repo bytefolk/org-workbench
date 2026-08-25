@@ -669,6 +669,16 @@
   white-space: pre-wrap;
 }
 
+/* issue #20: two-line clamp keeps long turn/report text inside the card;
+   the full text stays reachable via the element's title tooltip. */
+.owb-clamp-2 {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+}
+
 .owb-turn__response.is-running {
   border-color: var(--ui-primary);
 }

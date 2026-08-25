@@ -59,7 +59,7 @@ export function TurnThread({ turns, retrying = false, canRetry, onRetry }: TurnT
                 <span className="owb-turn__engine">{engineLabel(turn.engine)}</span>
                 <time dateTime={turn.createdAt}>{new Date(turn.createdAt).toLocaleString()}</time>
               </header>
-              <p>{turn.input}</p>
+              <p className="owb-clamp-2" title={turn.input}>{turn.input}</p>
             </article>
 
             <article className={`owb-turn__response is-${turn.status}`} aria-live={turn.status === "running" ? "polite" : undefined}>
@@ -70,13 +70,13 @@ export function TurnThread({ turns, retrying = false, canRetry, onRetry }: TurnT
                 </span>
                 <code title={turn.id}>{turn.id}</code>
               </header>
-              {turn.output ? <p className="owb-turn__output">{turn.output}</p> : null}
+              {turn.output ? <p className="owb-turn__output owb-clamp-2" title={turn.output}>{turn.output}</p> : null}
               {turn.status === "running" && !turn.output ? (
-                <p className="owb-turn__pending">正在等待岗位完成本回合…</p>
+                <p className="owb-turn__pending owb-clamp-2" title="正在等待岗位完成本回合…">正在等待岗位完成本回合…</p>
               ) : null}
-              {turn.error ? <p className="owb-turn__error">{turn.error}</p> : null}
+              {turn.error ? <p className="owb-turn__error owb-clamp-2" title={turn.error}>{turn.error}</p> : null}
               {turn.status === "indeterminate" ? (
-                <p className="owb-turn__warning">运行器未返回可信终态。为避免重复执行，系统不会自动重试。</p>
+                <p className="owb-turn__warning owb-clamp-2" title="运行器未返回可信终态。为避免重复执行，系统不会自动重试。">运行器未返回可信终态。为避免重复执行，系统不会自动重试。</p>
               ) : null}
 
               {turn.envelopeDigest || turn.evidenceDigest ? (
