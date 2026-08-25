@@ -10,13 +10,15 @@ run.started → model.delta → usage → model.delta，随后保持在途不退
 
 ```
 QODER_PERSONAL_ACCESS_TOKEN=evidence-dummy-token \
-ORG_WORKBENCH_DEFAULT_WORKSPACE=/tmp/owb-e3-ws \
+ORG_WORKBENCH_DEFAULT_WORKSPACE=/tmp/owb-e3-ws2 \
 ORG_WORKBENCH_DIGITAL_EMPLOYEE_CLI="node /tmp/owb-e3-stub.mjs" \
 npx electron apps/desktop/src/main.js --remote-debugging-port=9334
 ```
 
 其中 `QODER_PERSONAL_ACCESS_TOKEN` 使用占位值仅用于通过 qoder host 就绪门禁
 （stub 不发起任何真实模型调用），不影响中断链路取证的有效性。
+`/tmp/owb-e3-ws2` 为全新工作区（自 oss-maintainer 模板复制组织/岗位/manifest，
+不含任何历史回合），保证「中断前 DOM 终态卡片数 = 0」的断言成立。
 
 ## statusline.png（在途回合：紧凑状态行 + 中断入口）
 
@@ -34,13 +36,15 @@ CDP 点击中断按钮后：
   复用冻结词表 `turn.indeterminate` SSE（未新增 SSE 类型、未新增错误码）；
 - 终态卡片 `.owb-turn__response.is-indeterminate` 渲染诊断码
   `turn_cancelled: the engine process ended without a trusted terminal; no automatic retry was attempted`，
-  envelope 指纹 `sha256:df1a9…e40df3a9`，并提供「创建新回合重试」入口；
+  envelope 指纹 `sha256:9db53…e50d2dcd`，并提供「创建新回合重试」入口；
 - composer 复位，hint 恢复「将通过 Qoder 创建一个新回合」。
 
 CDP 断言（轮询时间线，节选）：
 
 ```
-statusline: Qoder·0:01·320 tokens        （usage 事件已渲染进状态行）
+pre-existing indeterminate cards: 0       （全新工作区，历史无污染）
+statusline: Qoder·0:01·320 tokens         （usage 事件已渲染进状态行）
+indeterminate cards while running: 0      （中断前回合确实在途）
 cancel clicked                            （aria-label="中断回合" 按钮命中）
 terminal: turn_cancelled                  （indeterminate 卡片出现）
 composer hint restored: 将通过 Qoder 创建一个新回合
