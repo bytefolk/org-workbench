@@ -16,6 +16,7 @@ import { WorkspaceState } from "../src/workspace-state.js";
 import { TurnStore } from "../src/turns/store.js";
 import { RunningTurnRegistry } from "../src/turns/running.js";
 import { SessionStore } from "../src/sessions/store.js";
+import { ContextExportService, type ContextAdapterClient } from "../src/context-export/exporter.js";
 
 export const TEST_TOKEN = "test-boot-token-0123456789abcdef";
 
@@ -72,6 +73,7 @@ export interface TestServer {
 export async function startTestServer(
   driver?: FakeDriver,
   turnDriver: TurnRunDriver = new DefaultFakeTurnDriver(),
+  contextExporter: ContextExportService = new ContextExportService(new UnavailableTestContextAdapter()),
 ): Promise<TestServer> {
   const ctx: ControlPlaneContext = {
     config: {
@@ -79,6 +81,7 @@ export async function startTestServer(
       port: 0,
       token: TEST_TOKEN,
       cliCommand: "digital-employee",
+      contextCliCommand: "context",
       serverVersion: "0.0.0-test",
     },
     workspace: new WorkspaceState(),
@@ -88,6 +91,7 @@ export async function startTestServer(
     turnStore: new TurnStore(),
     runningTurns: new RunningTurnRegistry(),
     sessionStore: new SessionStore(),
+    contextExporter,
   };
   const server = createControlPlane(ctx);
   await new Promise<void>((resolve) => {
@@ -108,6 +112,16 @@ export async function startTestServer(
         server.close((err) => (err ? reject(err) : resolve()));
       }),
   };
+}
+
+class UnavailableTestContextAdapter implements ContextAdapterClient {
+  async ingest(): Promise<never> {
+    throw new Error("context adapter unavailable in unrelated server test");
+  }
+
+  async distill(): Promise<never> {
+    throw new Error("context adapter unavailable in unrelated server test");
+  }
 }
 
 export async function copyExampleWorkspace(): Promise<string> {

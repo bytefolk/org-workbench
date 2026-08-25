@@ -11,6 +11,8 @@ export interface ServerConfig {
   cliCommand: string;
   /** Spawn timeout (ms) for engine org apply / turn run. */
   engineTimeoutMs?: number;
+  /** Pinned context provider CLI/stdio adapter command (context main >= f63f57f). */
+  contextCliCommand: string;
   serverVersion: string;
 }
 
@@ -29,7 +31,15 @@ export function resolveServerConfig(
   const token =
     typeof envToken === "string" && envToken.length >= 16 ? envToken : createBootToken();
   const cliCommand = env.ORG_WORKBENCH_DIGITAL_EMPLOYEE_CLI ?? "digital-employee";
-  return { host: "127.0.0.1", port, token, cliCommand, serverVersion: readServerVersion() };
+  const contextCliCommand = env.ORG_WORKBENCH_CONTEXT_CLI ?? "context";
+  return {
+    host: "127.0.0.1",
+    port,
+    token,
+    cliCommand,
+    contextCliCommand,
+    serverVersion: readServerVersion(),
+  };
 }
 
 function readServerVersion(): string {
