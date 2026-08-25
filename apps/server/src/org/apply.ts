@@ -10,13 +10,24 @@ import {
 import type {
   AddPositionChange,
   ChangeManifest,
+  DeletePositionChange,
+  MovePositionChange,
   OrgApplyFailure,
   OrgApplyResult,
   OrgApplySuccess,
   OrgChange,
+  OrgLayoutFile,
   OrgRole,
+  ReorderPositionsChange,
 } from "@org-workbench/shared";
 import type { ControlPlaneContext } from "../context.js";
+import { parentKey } from "./layout.js";
+import {
+  clearUndoEntry,
+  readUndoEntry,
+  writeUndoEntryAtomic,
+} from "./undo.js";
+import type { OrgUndoEntry } from "./undo.js";
 
 export const RUNTIME_DIR = ".digital-employee";
 export const POSITIONS_DIR = "positions";
@@ -29,6 +40,7 @@ export const stagingConflictCodes = {
   ownerDelete: "org_apply_owner_delete",
   maxDepth: "org_apply_max_depth",
   destinationExists: "org_apply_destination_exists",
+  reorderSetMismatch: "org_reorder_set_mismatch",
 } as const;
 
 interface ApplyOutcome {
@@ -83,8 +95,38 @@ async function applyChangeManifestUnlocked(
 ): Promise<ApplyOutcome> {
   const ws = ctx.workspace.requireOpen();
   const manifest = validateManifest(rawBody);
+  const structural = manifest.changes.filter(
+    (change): change is AddPositionChange | MovePositionChange | DeletePositionChange =>
+      change.op !== "reorder",
+  );
+  const reorders = manifest.changes.filter(
+    (change): change is ReorderPositionsChange => change.op === "reorder",
+  );
+  const previousLayout = ctx.workspace.getLayout();
+  const previousParents = new Map(
+    ws.organization.roles.map((role): [string, string | null] => [role.id, role.reportTo]),
+  );
   const proposal = await scanProposalTree(ws.dir);
   validateProposalChanges(proposal, manifest, ws.organization.owner);
+
+  if (structural.length === 0) {
+    const order = applyReordersToLayout(ctx.workspace.getLayout(), reorders);
+    await ctx.workspace.setLayoutOrder(order);
+    await saveUndoEntry(ws.dir, { inverseMoves: [], previousLayout });
+    const version = ctx.workspace.touch();
+    ctx.bus.publish("org.updated", {
+      workspace: ws.dir,
+      version,
+      changes: reorders.map((change) => ({ op: change.op, id: change.parentId ?? "_root" })),
+    });
+    const body: OrgApplySuccess = {
+      status: "applied",
+      version: version!,
+      changesApplied: manifest.changes.length,
+    };
+    return { status: 200, body };
+  }
+
   await materializeProposal(ws.dir, manifest);
 
   const engineResult = await ctx.driver.apply(ws.dir);
@@ -99,6 +141,23 @@ async function applyChangeManifestUnlocked(
   }
 
   const version = await ctx.workspace.reloadAppliedOrganization();
+  if (reorders.length > 0) {
+    const order = applyReordersToLayout(ctx.workspace.getLayout(), reorders);
+    await ctx.workspace.setLayoutOrder(order);
+  }
+  const hasHireOrDelete = structural.some(
+    (change) => change.op === "add" || change.op === "delete",
+  );
+  if (hasHireOrDelete) {
+    await clearUndoEntry(ws.dir);
+  } else {
+    const inverseMoves = structural.map((change) => ({
+      op: "move" as const,
+      id: (change as MovePositionChange).id,
+      reportTo: previousParents.get((change as MovePositionChange).id) ?? null,
+    }));
+    await saveUndoEntry(ws.dir, { inverseMoves, previousLayout });
+  }
   ctx.bus.publish("org.updated", {
     workspace: ws.dir,
     version,
@@ -111,6 +170,63 @@ async function applyChangeManifestUnlocked(
     changesApplied: manifest.changes.length,
   };
   return { status: 200, body };
+}
+
+function applyReordersToLayout(
+  layout: OrgLayoutFile,
+  reorders: ReorderPositionsChange[],
+): Record<string, string[]> {
+  const order: Record<string, string[]> = { ...layout.order };
+  for (const reorder of reorders) {
+    order[parentKey(reorder.parentId)] = [...reorder.order];
+  }
+  return order;
+}
+
+async function saveUndoEntry(
+  workspaceDir: string,
+  entry: { inverseMoves: MovePositionChange[]; previousLayout: OrgLayoutFile },
+): Promise<void> {
+  const undoEntry: OrgUndoEntry = {
+    schemaVersion: "org-undo.v1",
+    savedAt: new Date().toISOString(),
+    inverseMoves: entry.inverseMoves,
+    previousLayout: entry.previousLayout,
+  };
+  await writeUndoEntryAtomic(workspaceDir, undoEntry);
+}
+
+/**
+ * Single-step undo (#32 AC-005): replays the inverse moves of the last drag
+ * adjustment through the engine path, then restores the previous layout
+ * overlay. Structural add/delete restores stay with BackupTray.
+ */
+export async function undoLastOrgAdjustment(
+  ctx: ControlPlaneContext,
+): Promise<ApplyOutcome | { status: number; body: import("@org-workbench/shared").OrgUndoSuccess }> {
+  const ws = ctx.workspace.requireOpen();
+  return withOrgMutationLock(ws.dir, async () => {
+    const entry = await readUndoEntry(ws.dir);
+    if (!entry) {
+      throw new OrgApiError(errorCodes.not_found, 404, "no org adjustment to undo");
+    }
+    if (entry.inverseMoves.length > 0) {
+      const outcome = await applyChangeManifestUnlocked(ctx, {
+        schemaVersion: CHANGE_MANIFEST_SCHEMA_VERSION,
+        changes: entry.inverseMoves,
+      });
+      if (outcome.status !== 200) return outcome;
+    }
+    await ctx.workspace.setLayoutOrder(entry.previousLayout.order);
+    await clearUndoEntry(ws.dir);
+    const version = ctx.workspace.touch();
+    ctx.bus.publish("org.updated", {
+      workspace: ws.dir,
+      version,
+      changes: [{ op: "undo" }],
+    });
+    return { status: 200, body: { status: "undone", version: version! } };
+  });
 }
 
 function failure(
@@ -210,7 +326,7 @@ function validateProposalChanges(
         throw conflict(stagingConflictCodes.cycle, `move would create a reporting cycle: ${change.id}`);
       }
       parents.set(change.id, change.reportTo);
-    } else {
+    } else if (change.op === "delete") {
       if (!parents.has(change.id)) {
         throw conflict(stagingConflictCodes.positionMissing, `delete: position not found: ${change.id}`);
       }
@@ -229,6 +345,30 @@ function validateProposalChanges(
         }
       }
       for (const id of removed) parents.delete(id);
+    }
+  }
+  const reorderedParents = new Set<string | null>();
+  for (const change of manifest.changes) {
+    if (change.op !== "reorder") continue;
+    if (reorderedParents.has(change.parentId)) {
+      throw new OrgApiError(
+        errorCodes.manifest_invalid,
+        400,
+        `reorder: duplicate parentId: ${String(change.parentId)}`,
+      );
+    }
+    reorderedParents.add(change.parentId);
+    if (change.parentId !== null && !parents.has(change.parentId)) {
+      throw conflict(stagingConflictCodes.positionMissing, `reorder: parent not found: ${change.parentId}`);
+    }
+    const children = new Set(
+      [...parents.entries()].filter(([, parent]) => parent === change.parentId).map(([id]) => id),
+    );
+    if (change.order.length !== children.size || change.order.some((id) => !children.has(id))) {
+      throw conflict(
+        stagingConflictCodes.reorderSetMismatch,
+        `reorder: order must be exactly the current children of ${String(change.parentId)}`,
+      );
     }
   }
   for (const id of parents.keys()) {
@@ -291,6 +431,7 @@ async function materializeProposal(
   const stamp = `${Date.now()}-${randomBytes(3).toString("hex")}`;
 
   for (const change of manifest.changes) {
+    if (change.op === "reorder") continue;
     const current = new Map(
       (await scanProposalTree(workspaceDir)).map((position) => [position.id, position]),
     );
@@ -328,9 +469,9 @@ async function assertDestinationAvailable(destination: string): Promise<void> {
 }
 
 function changeDigest(change: OrgChange): { op: string; id: string } {
-  return change.op === "add"
-    ? { op: change.op, id: change.position.id }
-    : { op: change.op, id: change.id };
+  if (change.op === "add") return { op: change.op, id: change.position.id };
+  if (change.op === "reorder") return { op: change.op, id: change.parentId ?? "_root" };
+  return { op: change.op, id: change.id };
 }
 
 function validateManifest(rawBody: unknown): ChangeManifest {
@@ -350,7 +491,8 @@ function validateManifest(rawBody: unknown): ChangeManifest {
     if (change.op === "add") validateAdd(index, change);
     else if (change.op === "move") validateMove(index, change);
     else if (change.op === "delete") validateDelete(index, change);
-    else throw invalid(`changes[${index}].op must be add | move | delete`);
+    else if (change.op === "reorder") validateReorder(index, change);
+    else throw invalid(`changes[${index}].op must be add | move | delete | reorder`);
   }
   return rawBody as ChangeManifest;
 }
@@ -391,6 +533,23 @@ function validateMove(index: number, change: Record<string, unknown>): void {
 function validateDelete(index: number, change: Record<string, unknown>): void {
   if (!isPositionId(change.id)) {
     throw new OrgApiError(errorCodes.manifest_invalid, 400, `changes[${index}]: id is invalid`);
+  }
+}
+
+function validateReorder(index: number, change: Record<string, unknown>): void {
+  const invalid = (message: string): OrgApiError =>
+    new OrgApiError(errorCodes.manifest_invalid, 400, `changes[${index}]: ${message}`);
+  if (change.parentId !== null && !isPositionId(change.parentId)) {
+    throw invalid("parentId must be a position id | null");
+  }
+  if (!Array.isArray(change.order) || change.order.length === 0) {
+    throw invalid("order must be a non-empty array");
+  }
+  const seen = new Set<string>();
+  for (const id of change.order) {
+    if (!isPositionId(id)) throw invalid("order entries must be position ids");
+    if (seen.has(id)) throw invalid(`order contains a duplicate id: ${id}`);
+    seen.add(id);
   }
 }
 

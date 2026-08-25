@@ -3,6 +3,7 @@ export * from "./errors.js";
 export * from "./org-tree.js";
 export * from "./position-id.js";
 export * from "./change-manifest.js";
+export * from "./org-layout.js";
 export * from "./health.js";
 export * from "./turns.js";
 export * from "./sessions.js";

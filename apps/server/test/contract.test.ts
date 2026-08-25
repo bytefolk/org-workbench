@@ -14,6 +14,17 @@ test("contract v0: every frozen endpoint exists with the contracted auth behavio
   const dir = await copyExampleWorkspace();
   try {
     await api(server.baseUrl, "/workspace/open", { method: "POST", token: server.token, body: { path: dir } });
+    // Seed an undo entry so POST /org/undo answers 200 (it legitimately 404s when nothing is undoable).
+    await api(server.baseUrl, "/org/apply", {
+      method: "POST",
+      token: server.token,
+      body: {
+        schemaVersion: "change-manifest.v1",
+        changes: [
+          { op: "reorder", parentId: "repo-owner", order: ["release-engineer", "community-operator", "issue-researcher"] },
+        ],
+      },
+    });
 
     // /health is the only token-exempt endpoint.
     const health = await api(server.baseUrl, routes.health);
@@ -27,6 +38,7 @@ test("contract v0: every frozen endpoint exists with the contracted auth behavio
       { path: routes.orgApply, method: "POST" },
       { path: routes.orgBackups, method: "GET" },
       { path: routes.orgRestore, method: "POST" },
+      { path: routes.orgUndo, method: "POST" },
       { path: `${routes.positions}/repo-owner`, method: "GET" },
       { path: routes.reports, method: "GET" },
       { path: `${routes.turns}?positionId=repo-owner`, method: "GET" },

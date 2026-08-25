@@ -5,6 +5,7 @@ import type {
   ChangeManifest,
   OrgBackupsResponse,
   OrgRestoreResult,
+  OrgUndoResult,
   ReportsResponse,
   TurnEngine,
   TurnHistory,
@@ -34,6 +35,7 @@ export interface OwbBridge {
   orgApply(manifest: ChangeManifest): Promise<OwbApiResponse>;
   orgBackups(): Promise<OwbApiResponse<OrgBackupsResponse>>;
   orgRestore(backupId: string): Promise<OwbApiResponse<OrgRestoreResult>>;
+  orgUndo(): Promise<OwbApiResponse<OrgUndoResult>>;
   reports(): Promise<OwbApiResponse<ReportsResponse>>;
   position(positionId: string): Promise<OwbApiResponse>;
   createTurn(request: { positionId: string; input: string; engine: TurnEngine }): Promise<OwbApiResponse<TurnRecord>>;

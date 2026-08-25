@@ -10,13 +10,27 @@ export function HirePositionDialog({
   defaultManager,
   busy,
   onHire,
+  open: controlledOpen,
+  onOpenChange,
+  hideTrigger,
 }: {
   positions: Array<{ id: string; name: string }>;
   defaultManager: string | null;
   busy: boolean;
   onHire: (position: PositionDraft) => Promise<boolean>;
+  /** Controlled open state (#32 AC-004 tree-node "+" entry); omit for self-triggered mode. */
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
+  /** Suppress the trigger button (controlled entries bring their own trigger). */
+  hideTrigger?: boolean;
 }) {
-  const [open, setOpen] = useState(false);
+  const isControlled = controlledOpen !== undefined;
+  const [internalOpen, setInternalOpen] = useState(false);
+  const open = isControlled ? controlledOpen : internalOpen;
+  const setOpen = (next: boolean) => {
+    if (isControlled) onOpenChange?.(next);
+    else setInternalOpen(next);
+  };
   const [id, setId] = useState("");
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
@@ -26,6 +40,11 @@ export function HirePositionDialog({
   const [taskIterations, setTaskIterations] = useState("");
   const [dayTokens, setDayTokens] = useState("");
   const [dayIterations, setDayIterations] = useState("");
+
+  // Both creation entries (#32 AC-004) preset the reporting line at open time.
+  useEffect(() => {
+    if (open) setReportTo(defaultManager ?? "");
+  }, [open, defaultManager]);
 
   const valid = useMemo(() =>
     /^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(id) && id.length <= 64 &&
@@ -60,18 +79,17 @@ export function HirePositionDialog({
 
   return (
     <>
-      <Button size="sm" onClick={() => setOpen(true)} disabled={busy}>
-        <Plus aria-hidden="true" size={14} /> 招聘岗位
-      </Button>
+      {!hideTrigger ? (
+        <Button size="sm" onClick={() => setOpen(true)} disabled={busy}>
+          <Plus aria-hidden="true" size={14} /> 招聘岗位
+        </Button>
+      ) : null}
       <Modal
         open={open}
         title="招聘岗位并声明预算"
         description="预算单位仅为 tokens / iterations；两个周期的 token 上限都配齐后才能提交。"
         className="owb-org-dialog"
-        onOpenChange={(next) => {
-          setOpen(next);
-          if (next) setReportTo(defaultManager ?? "");
-        }}
+        onOpenChange={setOpen}
       >
         <form onSubmit={(event) => void submit(event)}>
           <div className="owb-form-grid">

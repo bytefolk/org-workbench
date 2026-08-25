@@ -266,6 +266,8 @@ ipcMain.handle("owb:org:restore", async (_event, backupId) => {
   return apiRequest("/org/restore", { method: "POST", body: validated.request });
 });
 
+ipcMain.handle("owb:org:undo", async () => apiRequest("/org/undo", { method: "POST", body: {} }));
+
 ipcMain.handle("owb:reports:get", async () => apiRequest("/reports"));
 
 ipcMain.handle("owb:position:get", async (_event, positionId) => {
