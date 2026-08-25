@@ -26,12 +26,24 @@ import type {
 } from "@org-workbench/shared";
 import { FileChartColumn, FolderTree, History, Network } from "lucide-react";
 import type { CSSProperties } from "react";
-import { TurnPanel, adaptTurnHistory, adaptTurnRecord } from "./turns";
+import {
+  EMPTY_TURN_STREAM,
+  TurnPanel,
+  adaptTurnHistory,
+  adaptTurnRecord,
+  applyTurnEvent,
+  beginPendingTurn,
+  cancelPendingTurn,
+  resetStreamSeq,
+  settlePendingTurn,
+} from "./turns";
 import type {
   CreateTurnRequest,
   PositionMentionOption,
   TurnEngine,
   TurnRecord,
+  TurnStreamEnvelope,
+  TurnStreamState,
 } from "./turns";
 import { BackupTray, DismissPositionDialog, HirePositionDialog } from "./org/OrgControls";
 import { ReportsCenter } from "./reports/ReportsCenter";
@@ -66,6 +78,7 @@ export function App() {
   const positionNamesRef = useRef<Record<string, string>>({});
   const [turnEngine, setTurnEngine] = useState<TurnEngine>("local-mock");
   const [turns, setTurns] = useState<TurnRecord[]>([]);
+  const [turnStream, setTurnStream] = useState<TurnStreamState>(EMPTY_TURN_STREAM);
   const [mockTurns, setMockTurns] = useState<TurnRecord[]>([]);
   const mockSeqRef = useRef(0);
   const [turnBusy, setTurnBusy] = useState(false);
@@ -151,6 +164,7 @@ export function App() {
       setSelectedId(null);
       setCard({ loading: false, data: null, notFound: false });
       setTurns([]);
+      setTurnStream(EMPTY_TURN_STREAM);
       setSessions([]);
       setSelectedSessionId(null);
       selectedSessionIdRef.current = null;
@@ -255,6 +269,9 @@ export function App() {
         void refresh();
         return;
       }
+      if (typeof envelope?.type === "string" && envelope.type.startsWith("turn.")) {
+        setTurnStream((current) => applyTurnEvent(current, envelope as TurnStreamEnvelope));
+      }
       if (["turn.completed", "turn.failed", "turn.indeterminate"].includes(envelope?.type ?? "")) {
         void loadReports();
         const id = selectedIdRef.current;
@@ -267,8 +284,14 @@ export function App() {
         }
       }
     });
-    const offSse = window.owb.onSseStatus((state) => setSseState(state));
-    void window.owb.sseStatus().then((state) => setSseState(state));
+    const applySseStatus = (state: "connecting" | "connected") => {
+      setSseState(state);
+      // A reconnect restarts the server-side seq space; drop the replay guard
+      // so new events are not suppressed by a stale high-water mark.
+      if (state === "connecting") setTurnStream((current) => resetStreamSeq(current));
+    };
+    const offSse = window.owb.onSseStatus(applySseStatus);
+    void window.owb.sseStatus().then(applySseStatus);
     return () => {
       if (refreshTimer !== null) clearTimeout(refreshTimer);
       offEvent();
@@ -289,6 +312,7 @@ export function App() {
     selectedSessionIdRef.current = sessionId;
     setSelectedSessionId(sessionId);
     setTurns([]);
+    setTurnStream(EMPTY_TURN_STREAM);
     setTurnError(null);
   }, []);
 
@@ -329,6 +353,7 @@ export function App() {
       selectedSessionIdRef.current = session.sessionId;
       setSelectedSessionId(session.sessionId);
       setTurns([]);
+      setTurnStream(EMPTY_TURN_STREAM);
       await loadSessions(positionId);
     } catch {
       setTurnError("轮换会话失败：控制面不可达");
@@ -364,6 +389,13 @@ export function App() {
     }
     setTurnBusy(true);
     setTurnError(null);
+    setTurnStream((current) =>
+      beginPendingTurn(current, {
+        positionId: request.positionId,
+        engine: request.engine,
+        input: request.input,
+      }),
+    );
     try {
       const res = await window.owb.createSessionTurn({
         sessionId,
@@ -373,6 +405,7 @@ export function App() {
       if (res.status !== 200) {
         const message = apiErrorMessage(res.body, "回合创建失败");
         setTurnError(message);
+        setTurnStream((current) => cancelPendingTurn(current));
         return false;
       }
       if (selectedIdRef.current === request.positionId) {
@@ -382,9 +415,17 @@ export function App() {
         );
         setTurns((current) => replaceTurn(current, returned));
       }
+      const body = res.body as { runId?: unknown };
+      setTurnStream((current) =>
+        settlePendingTurn(current, {
+          runId: typeof body.runId === "string" ? body.runId : null,
+          positionId: request.positionId,
+        }),
+      );
       await loadTurnHistory(request.positionId);
       return true;
     } catch {
+      setTurnStream((current) => cancelPendingTurn(current));
       setTurnError("回合创建失败：控制面不可达");
       return false;
     } finally {
@@ -499,9 +540,25 @@ export function App() {
 
   const displayTurns = useMemo(() => {
     const overlay = selectedId === null ? [] : mockTurns.filter((turn) => turn.positionId === selectedId);
-    if (overlay.length === 0) return turns;
-    return [...turns, ...overlay].sort((a, b) => a.createdAt.localeCompare(b.createdAt));
-  }, [mockTurns, selectedId, turns]);
+    const historyRunIds = new Set(turns.flatMap((turn) => (turn.runId ? [turn.runId] : [])));
+    const live: TurnRecord[] = selectedId === null
+      ? []
+      : Object.entries(turnStream.runs)
+          .filter(([runId, run]) => run.positionId === selectedId && !historyRunIds.has(runId))
+          .map(([runId, run]) => ({
+            id: `live-${runId}`,
+            positionId: run.positionId,
+            positionName: positionNames[run.positionId] ?? run.positionId,
+            engine: run.engine,
+            input: run.input,
+            status: "running" as const,
+            createdAt: run.startedAt,
+            ...(run.text !== "" ? { output: run.text } : {}),
+          }));
+    const merged = [...turns, ...overlay, ...live];
+    if (overlay.length === 0 && live.length === 0) return turns;
+    return merged.sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+  }, [mockTurns, positionNames, selectedId, turnStream.runs, turns]);
 
   return (
     <AppShell
