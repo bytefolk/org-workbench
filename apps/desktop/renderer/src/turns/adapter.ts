@@ -29,6 +29,7 @@ export function adaptTurnRecord(record: ApiTurnRecord, positionName: string): Tu
     createdAt: record.createdAt,
     ...(record.status !== "running" ? { completedAt: record.updatedAt } : {}),
     ...(record.output !== undefined ? { output: renderOutput(record.output) } : {}),
+    ...(record.runId !== undefined ? { runId: record.runId } : {}),
     ...(record.error !== undefined
       ? { error: `${record.error.code}: ${record.error.message}` }
       : {}),
