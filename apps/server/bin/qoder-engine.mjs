@@ -105,14 +105,14 @@ async function orgApply(workspaceDir) {
   const budgetUpdated = [];
   for (const role of roles) {
     const before = previousById.get(role.id);
-    if (!before) hired.push(role.id);
+    if (!before) hired.push(role);
     else {
       if (before.reportTo !== role.reportTo) moved.push({ id: role.id, from: before.reportTo, to: role.reportTo });
       if (JSON.stringify(before.budget) !== JSON.stringify(role.budget)) budgetUpdated.push(role.id);
     }
   }
-  for (const [id] of previousById) {
-    if (!roles.some((role) => role.id === id)) dismissed.push(id);
+  for (const [id, before] of previousById) {
+    if (!roles.some((role) => role.id === id)) dismissed.push(before);
   }
 
   const model = {
@@ -149,7 +149,12 @@ async function orgApply(workspaceDir) {
     owner: declared.owner,
     bootstrapped,
     positions: roles.length,
-    changes: { hired, moved, dismissed, budgetUpdated },
+    changes: {
+      hired: hired.map((role) => role.id),
+      moved,
+      dismissed: dismissed.map((role) => role.id),
+      budgetUpdated,
+    },
     organization: sha256(orgText),
     audit: sha256(auditLine),
     permissions: sha256(await fs.readFile(permissionsFile, "utf8")),

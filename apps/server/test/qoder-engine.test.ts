@@ -118,6 +118,17 @@ test("qoder-engine org apply: bootstrap writes 0600 applied state and reports En
   assert.equal(docs?.name, "文档负责人", "declared role names win over raw ids");
   const audits = (await fs.readFile(path.join(runtime, "org-audit.jsonl"), "utf8")).trim().split("\n");
   assert.equal(audits.length, 1);
+  // The reports route projects org-audit.v1 hired/dismissed as full role
+  // objects; the audit line must carry them (contract mirror).
+  const audit = JSON.parse(audits[0]!) as {
+    changes: { hired: Array<{ id: string; name: string; package: { digest: string }; budget: { perTask: { tokens: number } } }>; dismissed: unknown[] };
+  };
+  const hiredIds = audit.changes.hired.map((role) => role.id).sort();
+  assert.deepEqual(hiredIds, ["docs-writer", "repo-owner"]);
+  for (const role of audit.changes.hired) {
+    assert.match(role.package.digest, /^sha256:[0-9a-f]{64}$/);
+    assert.ok(role.budget.perTask.tokens > 0);
+  }
   assert.equal((await fs.stat(path.join(runtime, "permissions.json"))).mode & 0o777, 0o600);
 });
 
