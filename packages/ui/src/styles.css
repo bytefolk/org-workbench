@@ -98,6 +98,20 @@
   color: var(--ui-foreground-muted);
 }
 
+.ui-org-tree__avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1;
+}
+
 .ui-org-tree__label {
   flex: 1;
   min-width: 0;
@@ -106,6 +120,11 @@
   white-space: nowrap;
   font-size: var(--ui-text-sm, 13px);
   line-height: 38px;
+}
+
+.ui-org-tree__name {
+  margin-right: var(--ui-space-1, 4px);
+  font-weight: 600;
 }
 
 .ui-org-tree__budget {

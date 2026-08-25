@@ -35,7 +35,6 @@ const ENGINE_LABEL: Record<TurnEngine, string> = {
   qoder: "Qoder",
   "claude-code": "Claude Code",
   "claude-local": "Claude Code · 本地登录",
-  "local-mock": "Mock · 本地演示",
 };
 
 export function engineLabel(engine: TurnEngine): string {
@@ -71,12 +70,10 @@ export function TurnPanel({
     if (!workspaceOpen) return "打开工作区后才能开始对话";
     if (positions.length === 0) return "组织中暂无可对话岗位";
     if (!selectedPosition) return "先从组织树或 @ 选择器选择岗位";
-    if (engine !== "local-mock") {
-      if (sessionMode && !selectedSession) return "请先新建或选择一个会话";
-      if (sessionMode && selectedSession?.status !== "active") return "历史会话只读；请选择当前会话";
-      if (!engineAvailability[engine].ready) {
-        return engineAvailability[engine].reason ?? `${ENGINE_LABEL[engine]} 尚未就绪`;
-      }
+    if (sessionMode && !selectedSession) return "请先新建或选择一个会话";
+    if (sessionMode && selectedSession?.status !== "active") return "历史会话只读；请选择当前会话";
+    if (!engineAvailability[engine].ready) {
+      return engineAvailability[engine].reason ?? `${ENGINE_LABEL[engine]} 尚未就绪`;
     }
     if (busy || sending || sessionBusy) return "会话或回合正在更新";
     return null;

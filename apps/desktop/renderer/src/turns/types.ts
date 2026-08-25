@@ -1,4 +1,4 @@
-export type TurnEngine = "qoder" | "claude-code" | "claude-local" | "local-mock";
+export type TurnEngine = "qoder" | "claude-code" | "claude-local";
 
 export type TurnStatus = "running" | "completed" | "failed" | "indeterminate";
 

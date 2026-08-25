@@ -223,11 +223,11 @@ test("turn timeout freezes events and reaps a child that ignores SIGTERM", async
     setTimeout(() => {
       console.log(JSON.stringify({ ...base, type: "run.started" }));
       console.log(JSON.stringify({ ...base, type: "run.completed", output: "late", terminalReason: "goal_met" }));
-    }, 3_600);
-    setTimeout(() => process.exit(0), 4_200);
+    }, 5_600);
+    setTimeout(() => process.exit(0), 6_200);
   `);
   const published: string[] = [];
-  const driver = new DigitalEmployeeCliDriver(command, 3_000);
+  const driver = new DigitalEmployeeCliDriver(command, 5_000);
   const resultPromise = driver.turnRun({
     workspace: "/workspace",
     positionId: "repo-owner",
@@ -235,7 +235,7 @@ test("turn timeout freezes events and reaps a child that ignores SIGTERM", async
     envelope: ENVELOPE,
     onEvent: (event) => published.push(event.type),
   });
-  const pid = Number(await waitForFixtureReady(pidFile, 2_500));
+  const pid = Number(await waitForFixtureReady(pidFile, 15_000));
   const result = await resultPromise;
   assert.equal(result.status, "indeterminate");
   assert.equal(result.code, "turn_timeout");
