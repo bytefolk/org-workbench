@@ -24,6 +24,8 @@ export interface TurnRecord {
   completedAt?: string;
   output?: string;
   error?: string;
+  /** Engine runId when the server record carries one; keys live-stream dedupe. */
+  runId?: string;
   envelopeDigest?: string;
   evidenceDigest?: string;
   retryOf?: string;

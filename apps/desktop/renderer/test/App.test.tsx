@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { App } from "../src/App";
 import type { OwbBridge } from "../src/owb";
@@ -377,6 +377,62 @@ describe("App runtime bridge", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "一键恢复" }));
     await waitFor(() => expect(orgRestore).toHaveBeenCalledWith("old-writer-1756000000000-abcdef"));
+  });
+
+  it("streams turn.model.delta into the running bubble, stays idempotent on replay, and settles on the authoritative record", async () => {
+    let listener: ((event: unknown) => void) | null = null;
+    const onEvent = vi.fn((callback: (event: unknown) => void) => {
+      listener = callback;
+      return () => undefined;
+    });
+    const completed = apiTurn({
+      turnId: "turn-stream",
+      runId: "run-stream",
+      input: "检查下一版发布",
+      output: "发布门禁通过",
+      createdAt: "2026-08-24T05:00:00.000Z",
+      updatedAt: "2026-08-24T05:01:00.000Z",
+      envelopeDigest: "sha256:stream",
+    });
+    const sessionTurnHistory = vi.fn()
+      .mockResolvedValueOnce({ status: 200, body: history([]) })
+      .mockResolvedValue({ status: 200, body: history([completed]) });
+    let resolveTurn: (value: { status: number; body: unknown }) => void = () => undefined;
+    const createSessionTurn = vi.fn().mockImplementation(
+      () => new Promise((resolve) => { resolveTurn = resolve; }),
+    );
+    openedBridge({ onEvent, sessionTurnHistory, createSessionTurn });
+
+    render(<App />);
+    await selectRepoOwner();
+    fireEvent.change(screen.getByRole("combobox", { name: "选择 Agent Host" }), { target: { value: "qoder" } });
+    fireEvent.change(screen.getByLabelText("交办任务"), { target: { value: "检查下一版发布" } });
+    fireEvent.click(screen.getByRole("button", { name: "发送任务" }));
+    await waitFor(() => expect(createSessionTurn).toHaveBeenCalled());
+    expect(listener).not.toBeNull();
+
+    act(() => {
+      listener!({ seq: 1, type: "turn.started", payload: { runId: "run-stream", timestamp: "2026-08-24T05:00:00.000Z", type: "run.started" } });
+      listener!({ seq: 2, type: "turn.model.delta", payload: { runId: "run-stream", timestamp: "2026-08-24T05:00:00.500Z", type: "model.delta", text: "正在分析" } });
+      listener!({ seq: 3, type: "turn.model.delta", payload: { runId: "run-stream", timestamp: "2026-08-24T05:00:01.000Z", type: "model.delta", text: "…核对完成" } });
+    });
+    expect(await screen.findByText("正在分析…核对完成")).toBeInTheDocument();
+    expect(screen.getByText("运行中")).toBeInTheDocument();
+
+    act(() => {
+      listener!({ seq: 3, type: "turn.model.delta", payload: { runId: "run-stream", timestamp: "2026-08-24T05:00:01.000Z", type: "model.delta", text: "…核对完成" } });
+    });
+    expect(screen.getAllByText("正在分析…核对完成")).toHaveLength(1);
+
+    act(() => {
+      listener!({ seq: 4, type: "turn.completed", payload: { runId: "run-stream", timestamp: "2026-08-24T05:01:00.000Z", type: "run.completed", output: "发布门禁通过", terminalReason: "goal_met" } });
+    });
+    await act(async () => {
+      resolveTurn({ status: 200, body: completed });
+    });
+    expect(await screen.findByText("发布门禁通过")).toBeInTheDocument();
+    await waitFor(() => expect(screen.queryByText("正在分析…核对完成")).not.toBeInTheDocument());
+    expect(screen.getByText("已完成")).toBeInTheDocument();
   });
 
   it("renders D4 tabs from sanitized report facts and never displays raw turn content", async () => {
