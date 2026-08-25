@@ -52,3 +52,23 @@ undo entry consumed: true
 undo feedback: 已撤销最近一次组织调整
 second undo note: 没有可撤销的组织调整
 ```
+
+## hire-entry.png（行 hover「+」创建入口，AC-004）
+
+第二个 CDP 驱动（同一实例）点击 `community-operator` 行的「+」
+（`aria-label="在 Community Operator 下招聘下属"`）：
+
+- 招聘弹窗打开，标题「招聘岗位并声明预算」；
+- 「汇报对象」预置为 `Community Operator · community-operator`（受控弹窗
+  `defaultManager` 接线生效）；
+- 点「取消」关闭弹窗：不提交任何 manifest，overlay/undo 文件零变更；
+- 空态按钮（`onHireEntry(null)`）与无回调隐藏由 `org-tree.test.tsx` 覆盖。
+
+CDP 断言时间线（节选）：
+
+```
+hire entry clicked: 在 Community Operator 下招聘下属
+dialog title: 招聘岗位并声明预算
+reportTo preset: community-operator
+dialog cancelled cleanly
+```
