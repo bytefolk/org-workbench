@@ -5,6 +5,7 @@ import type { ServerConfig } from "./config.js";
 import type { TurnStore } from "./turns/store.js";
 import type { RunningTurnRegistry } from "./turns/running.js";
 import type { SessionStore } from "./sessions/store.js";
+import type { ContextExportService } from "./context-export/exporter.js";
 
 export interface ControlPlaneContext {
   config: ServerConfig;
@@ -20,4 +21,6 @@ export interface ControlPlaneContext {
   runningTurns: RunningTurnRegistry;
   /** Explicit workspace-local session lifecycle; never a Host auth session. */
   sessionStore: SessionStore;
+  /** Server-owned durable turn exporter; never exposed to renderer/IPC. */
+  contextExporter: ContextExportService;
 }

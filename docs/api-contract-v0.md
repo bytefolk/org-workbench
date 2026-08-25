@@ -290,9 +290,21 @@ rotate 以一个 0600 position state 原子替换同时封存 source、创建 su
 
 这些端点不改变 legacy `/turns` 兼容行为。Workbench session 不是浏览器登录会话、Host-native resume、mem session 或授权凭据；本切片不实现 memory write/recall、Context 蒸馏或委派。
 
+### 2.12 Durable session turn → Context occurrence（#15 R1 加法）
+
+只有显式 session 内、严格通过 `turn-record.v1` validator 且已完成 0600 原子替换的 `completed` 回合可以进入导出。`failed`、`indeterminate`、遗留 `running`、损坏记录和 legacy `/turns` 均不导出。输入与可信 `run.completed.output` 分别生成 user/assistant 两条 `context-occurrence.v1`；不读取或解析 Qoder/Claude Code 私有 transcript。
+
+scope 全部由服务端 session 状态派生：`workspaceId=workspaceInstanceId`、`positionId`、`principal=position.<positionId>`、`conversationId=sessionId`。`occurrenceId` 使用 Context R3 冻结 tuple `(workspaceId,positionId,principal,conversationId,turnId,role)`；content 按 provider 的 64 KiB UTF-8 边界确定性截断并记录安全 `truncated` 证据。
+
+导出状态位于 `<workspace>/.digital-employee/workbench/context-exports/<sessionId>/<turnId>.json`，目录 0700、文件 0600、fsync + rename + parent fsync，拒绝 symlink、路径穿越、错 identity、额外字段、无界或损坏记录。状态只含 `pending|done|failed`、attempt、digest、occurrence ID/content digest/source audit reference 与截断标志，不含原始 user/assistant 文本、token、绝对 vault 路径或 adapter stderr。
+
+Workbench 只 spawn 钉定 `context@f63f57f`（或兼容后续 main）的公共 `context adapter ingest|distill`。子进程只从 env 取得 `CONTEXT_VAULT` / `CONTEXT_RUNTIME_TOKEN`；operator token、boot-token 与 Host 凭据不在 argv、不进入 renderer/preload/IPC/turn record/evidence。相同 occurrence replay 是幂等 no-op；部分成功后重启会重放导出并跳过 provider 已 `done` 的 occurrence。adapter failure 只把本地 export state 置 `failed`；下一次 workspace-open/restart 最多重试导出，不调用 `turnDriver`，不改变已持久的 Host 终态。
+
+`sourceLocator=context://occurrences/<occurrenceId>@1` 只是 source audit reference，不冒充 `context read` 所需的 item-unique `/artifacts/<artifactId>` locator。Workbench 不打开或共享 Context SQLite，也不做 recall/model injection/memory write。
+
 ## 3. 稳定错误码登记表
 
-控制面自产码（本契约定义）：`unauthorized`、`body_invalid`、`workspace_invalid`、`workspace_not_open`、`manifest_invalid`、`organization_invalid`、`engine_unavailable`（retryable=true）、`engine_capability_missing`、`engine_failed`、`position_missing`、`restore_invalid`、`restore_conflict`、`reports_data_invalid`、`turn_request_invalid`、`turn_engine_unsupported`、`turn_position_invalid`、`turn_storage_failed`、`session_request_invalid`、`session_missing`、`session_conflict`、`session_storage_failed`、`not_found`、`method_not_allowed`、`internal`；turn-record 内的稳定结果码包括 `turn_process_exit_1`、`turn_process_failed`、`turn_engine_unavailable`、`turn_timeout`、`turn_protocol_invalid`、`turn_driver_failure`、`turn_interrupted`；提案预检码：`org_apply_position_exists`、`org_apply_position_missing`、`org_apply_cycle`、`org_apply_owner_delete`、`org_apply_max_depth`、`org_apply_destination_exists`。
+控制面自产码（本契约定义）：`unauthorized`、`body_invalid`、`workspace_invalid`、`workspace_not_open`、`manifest_invalid`、`organization_invalid`、`engine_unavailable`（retryable=true）、`engine_capability_missing`、`engine_failed`、`position_missing`、`restore_invalid`、`restore_conflict`、`reports_data_invalid`、`turn_request_invalid`、`turn_engine_unsupported`、`turn_position_invalid`、`turn_storage_failed`、`session_request_invalid`、`session_missing`、`session_conflict`、`session_storage_failed`、`not_found`、`method_not_allowed`、`internal`；turn-record 内的稳定结果码包括 `turn_process_exit_1`、`turn_process_failed`、`turn_engine_unavailable`、`turn_timeout`、`turn_protocol_invalid`、`turn_driver_failure`、`turn_interrupted`；Context export state 的稳定失败码为 `context_adapter_failed`，不进入 HTTP 错误响应；提案预检码：`org_apply_position_exists`、`org_apply_position_missing`、`org_apply_cycle`、`org_apply_owner_delete`、`org_apply_max_depth`、`org_apply_destination_exists`。
 引擎透传码：以 digital-employee 稳定码为准（`workspace_org_*` 等），原样透传，不在本表重定义。
 
 ## 4. 安全基线（随契约冻结）
@@ -303,7 +315,8 @@ rotate 以一个 0600 position state 原子替换同时封存 source、创建 su
 4. 凭据边界：密钥只经 env 注入引擎子进程；boot-token 只经父子进程 stdout 管道，不进文件/日志。
 5. 本地回合：只持久化对话输入、严格校验后的 engine 事件与稳定结果；不持久化凭据或原始 stderr。状态路径拒绝符号链接，文件 0600、目录 0700、原子替换。
 6. 本地 session：workspace/position/principal 映射由 server 拥有；sessionId 不是授权；renderer 只拿到枚举式 session 方法和公开 DTO。
-7. 更新与分发：v1 不做静默自动更新；macOS 公证列 D4 后。
+7. Context 导出：runtime token/env 与 adapter command 只在 server；本地状态不含正文或凭据，重启不重跑 Host。
+8. 更新与分发：v1 不做静默自动更新；macOS 公证列 D4 后。
 
 ## 5. 与上游契约的映射
 
@@ -315,3 +328,4 @@ rotate 以一个 0600 position state 原子替换同时封存 source、创建 su
 | 引擎稳定错误码 | digital-employee fail-closed 码惯例（`workspace_*`） |
 | `turn.*` / `escalation.created` / `evidence.created` | 引擎 S1 回合契约（#165）＋ #157 REQ-007 升级接缝（D3/D4 点亮） |
 | `workbench-session.v1` / 显式 rotate | org-workbench #12 R2；仅本地边界，下游由 digital-employee #161 消费 |
+| `context-occurrence.v1` / CLI adapter | context #1 R3；provider pin `f63f57f7b4cb7071309561f0383683017ae79eb2` |
