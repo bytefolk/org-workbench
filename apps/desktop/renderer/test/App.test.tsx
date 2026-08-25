@@ -45,6 +45,7 @@ function installBridge(overrides: Partial<OwbBridge> = {}): OwbBridge {
     orgApply: vi.fn().mockResolvedValue({ status: 500, body: { code: "internal" } }),
     orgBackups: vi.fn().mockResolvedValue({ status: 200, body: { schemaVersion: "org-backups.v1", backups: [] } }),
     orgRestore: vi.fn().mockResolvedValue({ status: 404, body: { code: "restore_invalid" } }),
+    orgUndo: vi.fn().mockResolvedValue({ status: 404, body: { code: "not_found", message: "nothing undoable" } }),
     reports: vi.fn().mockResolvedValue({ status: 200, body: emptyReports() }),
     position: vi.fn().mockResolvedValue({ status: 404, body: { code: "position_missing" } }),
     createTurn: vi.fn().mockResolvedValue({ status: 500, body: { code: "internal", message: "unexpected" } }),
@@ -336,10 +337,56 @@ describe("App runtime bridge", () => {
     fireEvent.drop(target.closest('[role="treeitem"]')!, { dataTransfer });
     await waitFor(() => expect(orgApply).toHaveBeenCalledWith({ schemaVersion: "change-manifest.v1", changes: [{ op: "move", id: "docs-writer", reportTo: "release-engineer" }] }));
 
+    // Self-drop is refused at the component level: dropEffect=none on
+    // dragOver, and the source's dragend surfaces the light toast.
     fireEvent.dragStart(source.closest('[role="treeitem"]')!, { dataTransfer });
-    fireEvent.drop(source.closest('[role="treeitem"]')!, { dataTransfer });
-    expect(await screen.findByRole("alert")).toHaveTextContent("非法投放");
+    fireEvent.dragOver(source.closest('[role="treeitem"]')!, { dataTransfer });
+    expect(dataTransfer.dropEffect).toBe("none");
+    fireEvent.dragEnd(source.closest('[role="treeitem"]')!);
+    expect(await screen.findByText("不能移动到自身或自己的下属")).toBeInTheDocument();
     expect(orgApply).toHaveBeenCalledTimes(1);
+  });
+
+  it("⌘↑ emits a reorder manifest and the 撤销 button replays /org/undo", async () => {
+    const tree = {
+      ...snapshot,
+      positionCount: 3,
+      depth: 2,
+      tree: [{ ...snapshot.tree[0]!, children: [
+        { id: "docs-writer", reportTo: "repo-owner", budget: snapshot.tree[0]!.budget, children: [] },
+        { id: "release-engineer", reportTo: "repo-owner", budget: snapshot.tree[0]!.budget, children: [] },
+      ] }],
+    };
+    const orgApply = vi.fn().mockResolvedValue({ status: 200, body: { status: "applied" } });
+    const orgUndo = vi.fn().mockResolvedValue({
+      status: 200,
+      body: { status: "undone", version: { seq: 5, updatedAt: "2026-08-26T00:00:00.000Z" } },
+    });
+    openedBridge({
+      orgTree: vi.fn().mockResolvedValue({ status: 200, body: tree }),
+      position: vi.fn().mockImplementation(async (id: string) => ({ status: 200, body: { position: { ...position, id, name: id, reportTo: id === "repo-owner" ? null : "repo-owner" } } })),
+      orgApply,
+      orgUndo,
+      turnHistory: vi.fn().mockResolvedValue({ status: 200, body: history([]) }),
+    });
+    render(<App />);
+    fireEvent.click(await screen.findByText("release-engineer", { selector: ".ui-org-tree__label, .ui-org-tree__id" }));
+    fireEvent.keyDown(screen.getByRole("tree"), { key: "ArrowUp", metaKey: true });
+    await waitFor(() => expect(orgApply).toHaveBeenCalledWith({
+      schemaVersion: "change-manifest.v1",
+      changes: [{ op: "reorder", parentId: "repo-owner", order: ["release-engineer", "docs-writer"] }],
+    }));
+
+    fireEvent.click(screen.getByRole("button", { name: "撤销" }));
+    await waitFor(() => expect(orgUndo).toHaveBeenCalledTimes(1));
+    expect(await screen.findByText("已撤销最近一次组织调整")).toBeInTheDocument();
+  });
+
+  it("surfaces a friendly note when there is nothing to undo", async () => {
+    openedBridge({ turnHistory: vi.fn().mockResolvedValue({ status: 200, body: history([]) }) });
+    render(<App />);
+    fireEvent.click(await screen.findByRole("button", { name: "撤销" }));
+    expect(await screen.findByText("没有可撤销的组织调整")).toBeInTheDocument();
   });
 
   it("keeps hire disabled until token budgets are complete, then applies one add manifest", async () => {

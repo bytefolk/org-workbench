@@ -28,6 +28,10 @@
 - org-workbench #12 R2 显式 session：`workbench-session.v1`、create/list/get/rotate/session-turn API，server-owned principal/workspace mapping、每岗位单 active、多 session 只读历史和 zero-history-copy successor。
 - Desktop 枚举式 session IPC 与岗位会话选择器：显式新建/轮换、旧 session 只读切换、session-scoped turn/readback；不暴露 boot token、绝对路径或 mem/context 能力。
 - Session 持久化安全门禁：0700/0600、单文件原子 rotate、并发双 rotate 幂等、running-turn conflict、重启恢复、symlink/路径/损坏/错 workspace/无界状态 fail closed。
+- #32 组织树真实拖拽：body 投放生成 move 提案，上/下四分位插入线生成同级排序（`change-manifest.v1` 新增 `reorder` op，跨级插入以 move+reorder 单清单原子提交）；投放到自身/下属 dropEffect=none 拒绝并轻提示；⌘↑/⌘↓ 同级排序、⌘←/⌘→ 调级，企业负责人拦截提示。
+- #32 排序持久化：`org-layout.v1` 覆盖层（`.digital-employee/org-layout.v1.json`，0600 原子写，零迁移、引擎不触），reorder-only 清单不调引擎；快照同级顺序覆盖层优先、字母序兜底，open/reload 时自动修剪与补齐。
+- #32 单步撤销：`POST /org/undo` 回放 inverseMoves 并还原覆盖层（404 `not_found` 表示无可撤销）；renderer「撤销」按钮与树聚焦时 ⌘/Ctrl+Z。
+- #32 创建入口：组织树行 hover「+」与空态按钮打开招聘弹窗并预置汇报对象。
 
 ### Changed
 

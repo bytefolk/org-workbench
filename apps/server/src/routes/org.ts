@@ -1,7 +1,7 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import type { ControlPlaneContext } from "../context.js";
 import { readJsonBody, sendJson } from "../http.js";
-import { applyChangeManifest } from "../org/apply.js";
+import { applyChangeManifest, undoLastOrgAdjustment } from "../org/apply.js";
 import { listOrgBackups, restoreOrgBackup } from "../org/restore.js";
 
 export async function handleOrgTree(
@@ -34,5 +34,13 @@ export async function handleOrgApply(
 ): Promise<void> {
   const rawBody = await readJsonBody<unknown>(req);
   const outcome = await applyChangeManifest(ctx, rawBody);
+  sendJson(res, outcome.status, outcome.body);
+}
+
+export async function handleOrgUndo(
+  ctx: ControlPlaneContext,
+  res: ServerResponse,
+): Promise<void> {
+  const outcome = await undoLastOrgAdjustment(ctx);
   sendJson(res, outcome.status, outcome.body);
 }

@@ -10,7 +10,7 @@ import {
   Topbar,
 } from "@fullstack-ai-infra/ui";
 import { BudgetBar, OrgTree, PositionCard } from "@org-workbench/ui";
-import type { PositionCardData } from "@org-workbench/ui";
+import type { OrgDropPosition, PositionCardData } from "@org-workbench/ui";
 import type {
   AddPositionChange,
   ChangeManifest,
@@ -95,6 +95,8 @@ export function App() {
   const [reportsError, setReportsError] = useState<string | null>(null);
   const [orgBusy, setOrgBusy] = useState(false);
   const [orgFeedback, setOrgFeedback] = useState<{ tone: "info" | "warn"; text: string } | null>(null);
+  /** Tree-node "+" hire entry (#32 AC-004): undefined = closed, otherwise the preset reportTo. */
+  const [treeHireParent, setTreeHireParent] = useState<string | null | undefined>(undefined);
 
   useEffect(() => {
     selectedIdRef.current = selectedId;
@@ -491,6 +493,67 @@ export function App() {
   const dismissPosition = useCallback(async (id: string) =>
     applyOrg({ schemaVersion: "change-manifest.v1", changes: [{ op: "delete", id }] }, `已裁撤 ${id}；目录保留在恢复区`), [applyOrg]);
 
+  /** Same-level insertion from an insertion-line drop or ⌘↑/⌘↓ (#32): the
+   * reorder op carries the final sibling order; a cross-parent insertion is
+   * submitted atomically as move + reorder in one manifest. */
+  const reorderPosition = useCallback(async (drop: OrgDropPosition) => {
+    if (!snapshot) return false;
+    const source = findNodeById(snapshot.tree, drop.id);
+    if (!source) {
+      setOrgFeedback({ tone: "warn", text: `岗位 ${drop.id} 已不在当前应用态，请刷新后重试` });
+      return false;
+    }
+    if (source.reportTo === drop.parentId) {
+      const current = source.reportTo === null
+        ? snapshot.tree.map((node) => node.id)
+        : findNodeById(snapshot.tree, source.reportTo)?.children.map((node) => node.id) ?? [];
+      if (current.join("\u0000") === drop.order.join("\u0000")) {
+        setOrgFeedback({ tone: "info", text: "顺序没有变化，无需应用" });
+        return false;
+      }
+      return applyOrg(
+        { schemaVersion: "change-manifest.v1", changes: [{ op: "reorder", parentId: drop.parentId, order: drop.order }] },
+        `已调整 ${drop.id} 的同级顺序`,
+      );
+    }
+    return applyOrg(
+      {
+        schemaVersion: "change-manifest.v1",
+        changes: [
+          { op: "move", id: drop.id, reportTo: drop.parentId },
+          { op: "reorder", parentId: drop.parentId, order: drop.order },
+        ],
+      },
+      `已将 ${drop.id} 调整到 ${drop.parentId ?? "企业根"}`,
+    );
+  }, [applyOrg, snapshot]);
+
+  /** Single-step undo of the last drag adjustment (#32 AC-005). Structural
+   * add/delete restores stay with BackupTray; 404 means nothing is undoable. */
+  const undoLastAdjustment = useCallback(async () => {
+    setOrgBusy(true);
+    setOrgFeedback(null);
+    try {
+      const response = await window.owb.orgUndo();
+      if (response.status === 404) {
+        setOrgFeedback({ tone: "info", text: "没有可撤销的组织调整" });
+        return false;
+      }
+      if (response.status !== 200) {
+        setOrgFeedback({ tone: "warn", text: apiErrorMessage(response.body, "撤销被拒绝") });
+        return false;
+      }
+      setOrgFeedback({ tone: "info", text: "已撤销最近一次组织调整" });
+      await refresh();
+      return true;
+    } catch {
+      setOrgFeedback({ tone: "warn", text: "撤销状态不确定：控制面不可达；不会自动重试" });
+      return false;
+    } finally {
+      setOrgBusy(false);
+    }
+  }, [refresh]);
+
   const restorePosition = useCallback(async (backupId: string) => {
     setOrgBusy(true);
     setOrgFeedback(null);
@@ -603,7 +666,7 @@ export function App() {
       sidebar={
         <Sidebar
           label="组织目录树"
-          header={<div className="owb-sidebar-title"><span className="owb-sidebar-header">组织</span>{workspaceInfo?.open === true ? <HirePositionDialog positions={positions} defaultManager={selectedId ?? snapshot?.owner ?? null} busy={orgBusy} onHire={hirePosition} /> : null}</div>}
+          header={<div className="owb-sidebar-title"><span className="owb-sidebar-header">组织</span>{workspaceInfo?.open === true ? <><AntButton size="small" disabled={orgBusy} onClick={() => void undoLastAdjustment()} title="撤销最近一次拖拽调整（⌘Z）">撤销</AntButton><HirePositionDialog positions={positions} defaultManager={selectedId ?? snapshot?.owner ?? null} busy={orgBusy} onHire={hirePosition} /></> : null}</div>}
           footer={
             workspaceInfo?.open === true ? <BackupTray backups={backups} busy={orgBusy} onRestore={restorePosition} /> : (
               <AntButton type="primary" block onClick={() => void openWorkspace()}>
@@ -616,22 +679,46 @@ export function App() {
             treeLoading ? (
               <TreeSkeleton />
             ) : snapshot ? (
-              <OrgTree
-                snapshot={snapshot}
-                versionStamp={snapshot.updatedAt}
-                displayNames={positionNames}
-                avatarColors={positionColors}
-                selectedId={selectedId}
-                onSelect={selectPosition}
-                onMove={(id, reportTo) => void movePosition(id, reportTo)}
-                moveDisabled={orgBusy}
-              />
+              <div
+                onKeyDown={(event) => {
+                  if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "z" && !event.shiftKey) {
+                    event.preventDefault();
+                    void undoLastAdjustment();
+                  }
+                }}
+              >
+                <OrgTree
+                  snapshot={snapshot}
+                  versionStamp={snapshot.updatedAt}
+                  displayNames={positionNames}
+                  avatarColors={positionColors}
+                  selectedId={selectedId}
+                  onSelect={selectPosition}
+                  onMove={(id, reportTo) => void movePosition(id, reportTo)}
+                  onDropPosition={(drop) => void reorderPosition(drop)}
+                  onHireEntry={(parent) => setTreeHireParent(parent)}
+                  moveDisabled={orgBusy}
+                />
+              </div>
             ) : (
               <p className="owb-muted">组织数据不可用</p>
             )
           ) : (
             <p className="owb-muted">尚未打开工作区</p>
           )}
+          {workspaceInfo?.open === true ? (
+            <HirePositionDialog
+              positions={positions}
+              defaultManager={treeHireParent ?? null}
+              busy={orgBusy}
+              onHire={hirePosition}
+              open={treeHireParent !== undefined}
+              hideTrigger
+              onOpenChange={(next) => {
+                if (!next) setTreeHireParent(undefined);
+              }}
+            />
+          ) : null}
         </Sidebar>
       }
       topbar={

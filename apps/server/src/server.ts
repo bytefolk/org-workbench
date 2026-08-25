@@ -5,7 +5,7 @@ import type { ControlPlaneContext } from "./context.js";
 import { sendError, sendJson } from "./http.js";
 import { handleEvents } from "./routes/events.js";
 import { handleHealth } from "./routes/health.js";
-import { handleOrgApply, handleOrgBackups, handleOrgRestore, handleOrgTree } from "./routes/org.js";
+import { handleOrgApply, handleOrgBackups, handleOrgRestore, handleOrgTree, handleOrgUndo } from "./routes/org.js";
 import { handlePositionGet } from "./routes/positions.js";
 import { handleReports } from "./routes/reports.js";
 import {
@@ -74,6 +74,10 @@ async function dispatch(
     }
     if (pathname === routes.orgRestore && method === "POST") {
       await handleOrgRestore(ctx, req, res);
+      return;
+    }
+    if (pathname === routes.orgUndo && method === "POST") {
+      await handleOrgUndo(ctx, res);
       return;
     }
     if (pathname === routes.reports && method === "GET") {

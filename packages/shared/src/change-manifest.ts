@@ -40,7 +40,25 @@ export interface DeletePositionChange {
   id: string;
 }
 
-export type OrgChange = AddPositionChange | MovePositionChange | DeletePositionChange;
+/**
+ * Additive reorder op (#32, D-32-2): same-parent sibling ordering only.
+ * The control plane validates set identity against the parent's current
+ * children and writes the org-layout.v1 overlay; the op never reaches the
+ * engine (ordering is not an engine contract surface).
+ */
+export interface ReorderPositionsChange {
+  op: "reorder";
+  /** Parent whose children are reordered; null = top level. */
+  parentId: string | null;
+  /** Complete ordered id list of that parent's children. */
+  order: string[];
+}
+
+export type OrgChange =
+  | AddPositionChange
+  | MovePositionChange
+  | DeletePositionChange
+  | ReorderPositionsChange;
 
 export interface ChangeManifest {
   schemaVersion: typeof CHANGE_MANIFEST_SCHEMA_VERSION;

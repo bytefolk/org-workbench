@@ -19,6 +19,7 @@ export const routes = {
   orgApply: "/org/apply",
   orgBackups: "/org/backups",
   orgRestore: "/org/restore",
+  orgUndo: "/org/undo",
   positions: "/positions",
   reports: "/reports",
   sessions: "/sessions",

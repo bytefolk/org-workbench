@@ -1,6 +1,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import {
+  ORG_LAYOUT_SCHEMA_VERSION,
   ORG_TREE_SCHEMA_VERSION,
   OrgApiError,
   WORKSPACE_MANIFEST_SCHEMA_VERSION,
@@ -9,12 +10,14 @@ import {
 } from "@org-workbench/shared";
 import type {
   OrganizationFile,
+  OrgLayoutFile,
   OrgRole,
   OrgTreeNodeV1,
   OrgTreeSnapshot,
   OrgTreeVersion,
   WorkspaceManifest,
 } from "@org-workbench/shared";
+import { emptyLayout, orderChildren, parentKey, readLayout, reconcileLayout, writeLayoutAtomic } from "./org/layout.js";
 
 export const ORGANIZATION_FILE = "organization.v1alpha1.json";
 export const MANIFEST_FILE = "workspace.json";
@@ -35,6 +38,7 @@ export interface OpenWorkspace {
  */
 export class WorkspaceState {
   private current: OpenWorkspace | null = null;
+  private layout: OrgLayoutFile = emptyLayout();
   private seq = 0;
 
   /** Currently open workspace, or null. */
@@ -75,6 +79,7 @@ export class WorkspaceState {
     if (!positionsStat.isDirectory()) {
       throw new OrgApiError(errorCodes.workspace_invalid, 422, "positions/ is not a directory");
     }
+    await this.loadAndReconcileLayout(dir, organization.roles);
     this.seq += 1;
     this.current = {
       dir,
@@ -136,7 +141,9 @@ export class WorkspaceState {
       );
     }
     this.assertOrganizationStructure(organization, errorCodes.engine_failed, 500);
-    return this.replaceOrganization(organization, organization.updatedAt);
+    const version = this.replaceOrganization(organization, organization.updatedAt);
+    await this.loadAndReconcileLayout(ws.dir, organization.roles);
+    return version;
   }
 
   /** Bump version stamp without changing organization content (e.g. workspace open). */
@@ -149,11 +156,11 @@ export class WorkspaceState {
 
   /**
    * org-tree.v1 snapshot (frozen minimal shape, mirror of the engine's
-   * buildOrgTree): nested tree from applied-state roles, children sorted by
-   * id, depth from 1, updatedAt from the organization model. Budget is
-   * required on every node (REQ-006 fail-closed mirror): a budget-less
-   * position makes the org invalid rather than emitting a schema-violating
-   * tree.
+   * buildOrgTree): nested tree from applied-state roles, children ordered by
+   * the org-layout.v1 overlay (#32 D-32-1, alphabetical fallback), depth from
+   * 1, updatedAt from the organization model. Budget is required on every
+   * node (REQ-006 fail-closed mirror): a budget-less position makes the org
+   * invalid rather than emitting a schema-violating tree.
    */
   snapshot(): OrgTreeSnapshot {
     const ws = this.requireOpen();
@@ -173,8 +180,18 @@ export class WorkspaceState {
       list.push(role);
       childrenByParent.set(role.reportTo, list);
     }
-    for (const list of childrenByParent.values()) {
-      list.sort((a, b) => a.id.localeCompare(b.id, "en"));
+    const orderedChildren = new Map<string | null, OrgRole[]>();
+    for (const [parent, list] of childrenByParent) {
+      const byId = new Map(list.map((role) => [role.id, role]));
+      const orderedIds = orderChildren(
+        list.map((role) => role.id),
+        this.layout,
+        parentKey(parent),
+      );
+      orderedChildren.set(
+        parent,
+        orderedIds.map((id) => byId.get(id)!),
+      );
     }
     let depth = 0;
     const build = (role: OrgRole, level: number): OrgTreeNodeV1 => {
@@ -183,12 +200,12 @@ export class WorkspaceState {
         id: role.id,
         reportTo: role.reportTo,
         budget: role.budget,
-        children: (childrenByParent.get(role.id) ?? []).map((child) =>
+        children: (orderedChildren.get(role.id) ?? []).map((child) =>
           build(child, level + 1),
         ),
       };
     };
-    const tree = (childrenByParent.get(null) ?? []).map((root) => build(root, 1));
+    const tree = (orderedChildren.get(null) ?? []).map((root) => build(root, 1));
     return {
       schemaVersion: ORG_TREE_SCHEMA_VERSION,
       business: ws.organization.business,
@@ -198,6 +215,39 @@ export class WorkspaceState {
       depth,
       tree,
     };
+  }
+
+  /** Current org-layout overlay (in-memory; authoritative copy lives on disk). */
+  getLayout(): OrgLayoutFile {
+    return this.layout;
+  }
+
+  /** Persist a caller-validated overlay order (reorder op / undo) atomically. */
+  async setLayoutOrder(order: Record<string, string[]>): Promise<OrgLayoutFile> {
+    const ws = this.requireOpen();
+    const next: OrgLayoutFile = {
+      schemaVersion: ORG_LAYOUT_SCHEMA_VERSION,
+      updatedAt: new Date().toISOString(),
+      order,
+    };
+    await writeLayoutAtomic(ws.dir, next);
+    this.layout = next;
+    return next;
+  }
+
+  private async loadAndReconcileLayout(dir: string, roles: OrgRole[]): Promise<void> {
+    const loaded = await readLayout(dir);
+    const reconciled = reconcileLayout(roles, loaded);
+    if (!reconciled.changed) {
+      this.layout = loaded;
+      return;
+    }
+    const stamped: OrgLayoutFile = {
+      ...reconciled.layout,
+      updatedAt: new Date().toISOString(),
+    };
+    await writeLayoutAtomic(dir, stamped);
+    this.layout = stamped;
   }
 
   /**
