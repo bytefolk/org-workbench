@@ -1,6 +1,6 @@
 const { isPositionId } = require("@org-workbench/shared/position-id");
 const MAX_INPUT_BYTES = 256 * 1024;
-const TURN_ENGINES = new Set(["qoder", "claude-code"]);
+const TURN_ENGINES = new Set(["qoder", "claude-code", "claude-local"]);
 
 function invalid(message) {
   return { status: 400, body: { code: "turn_request_invalid", message, retryable: false } };
@@ -29,7 +29,7 @@ function validateCreateTurnRequest(value) {
     return { ok: false, response: invalid("input must be non-empty and no larger than 256 KiB") };
   }
   if (typeof value.engine !== "string" || !TURN_ENGINES.has(value.engine)) {
-    return { ok: false, response: invalid("engine must be qoder or claude-code") };
+    return { ok: false, response: invalid("engine must be qoder, claude-code, or claude-local") };
   }
   return {
     ok: true,

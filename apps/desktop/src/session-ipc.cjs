@@ -1,7 +1,7 @@
 const { isPositionId } = require("@org-workbench/shared/position-id");
 
 const SESSION_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
-const TURN_ENGINES = new Set(["qoder", "claude-code"]);
+const TURN_ENGINES = new Set(["qoder", "claude-code", "claude-local"]);
 const MAX_INPUT_BYTES = 256 * 1024;
 
 function invalid(code, message) {
@@ -33,7 +33,7 @@ function validateSessionTurnRequest(value) {
     return { ok: false, response: invalid("turn_request_invalid", "input must be non-empty and no larger than 256 KiB") };
   }
   if (typeof value.engine !== "string" || !TURN_ENGINES.has(value.engine)) {
-    return { ok: false, response: invalid("turn_engine_unsupported", "engine must be qoder or claude-code") };
+    return { ok: false, response: invalid("turn_engine_unsupported", "engine must be qoder, claude-code, or claude-local") };
   }
   return {
     ok: true,

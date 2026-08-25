@@ -30,6 +30,11 @@ function installBridge(overrides: Partial<OwbBridge> = {}): OwbBridge {
         hosts: {
           qoder: { configured: false, ready: false, nextStep: "设置 QODER_PERSONAL_ACCESS_TOKEN 后重启工作台" },
           "claude-code": { configured: false, ready: false, nextStep: "设置 ANTHROPIC_API_KEY 后重启工作台" },
+          "claude-local": {
+            configured: false,
+            ready: false,
+            nextStep: "安装 Claude Code 并确保 claude 在 PATH 上（或用 DIGITAL_EMPLOYEE_CLAUDE_COMMAND 指定二进制路径）",
+          },
         },
         workspace: { open: false },
       },
@@ -134,6 +139,7 @@ function openedBridge(overrides: Partial<OwbBridge> = {}): OwbBridge {
         hosts: {
           qoder: { configured: true, ready: true },
           "claude-code": { configured: false, ready: false, nextStep: "设置 ANTHROPIC_API_KEY 后重启工作台" },
+          "claude-local": { configured: true, ready: true },
         },
         workspace: { open: true, path: "/fixture/workspace" },
       },
@@ -219,6 +225,7 @@ describe("App runtime bridge", () => {
           hosts: {
             qoder: { configured: false, ready: false, nextStep: "Qoder 凭据未配置" },
             "claude-code": { configured: false, ready: false, nextStep: "Claude Code 凭据未配置" },
+            "claude-local": { configured: false, ready: false, nextStep: "Claude Code（本地登录）未安装或版本不在支持窗口内" },
           },
           workspace: { open: true, path: "/fixture/workspace" },
         },

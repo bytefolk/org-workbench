@@ -56,7 +56,7 @@ function parsePostBody(raw: unknown): TurnPostBody {
     throw new OrgApiError(
       errorCodes.turn_engine_unsupported,
       400,
-      "engine must be qoder or claude-code",
+      `engine must be ${turnEngines.join(" or ")}`,
     );
   }
   return { positionId, input: raw.input, engine: raw.engine as TurnEngine };

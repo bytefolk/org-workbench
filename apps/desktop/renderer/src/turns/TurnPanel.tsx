@@ -34,6 +34,7 @@ export interface TurnPanelProps {
 const ENGINE_LABEL: Record<TurnEngine, string> = {
   qoder: "Qoder",
   "claude-code": "Claude Code",
+  "claude-local": "Claude Code · 本地登录",
   "local-mock": "Mock · 本地演示",
 };
 
