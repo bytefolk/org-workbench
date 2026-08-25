@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import { Empty } from "antd";
 import { AlertTriangle, Check, Clock3, RotateCcw, ShieldQuestion } from "lucide-react";
 import { engineLabel } from "./TurnPanel";
@@ -27,6 +28,34 @@ function StatusIcon({ status }: { status: TurnStatus }) {
 function shortDigest(value: string): string {
   if (value.length <= 24) return value;
   return `${value.slice(0, 12)}…${value.slice(-8)}`;
+}
+
+function Elapsed({ since }: { since: string }) {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), 1_000);
+    return () => clearInterval(timer);
+  }, []);
+  const seconds = Math.max(0, Math.floor((now - new Date(since).getTime()) / 1_000));
+  const minutes = Math.floor(seconds / 60);
+  const padded = String(seconds % 60).padStart(2, "0");
+  return <>{minutes}:{padded}</>;
+}
+
+function StatusLine({ turn }: { turn: TurnRecord }) {
+  return (
+    <p className="owb-turn__statusline">
+      <span className="owb-turn__statusline-engine">{engineLabel(turn.engine)}</span>
+      <span aria-hidden="true">·</span>
+      <Elapsed since={turn.createdAt} />
+      {turn.totalTokens !== undefined ? (
+        <>
+          <span aria-hidden="true">·</span>
+          <span>{turn.totalTokens} tokens</span>
+        </>
+      ) : null}
+    </p>
+  );
 }
 
 /** Local, append-only turn history. It never infers recall or delegation. */
@@ -70,6 +99,7 @@ export function TurnThread({ turns, retrying = false, canRetry, onRetry }: TurnT
                 </span>
                 <code title={turn.id}>{turn.id}</code>
               </header>
+              {turn.status === "running" ? <StatusLine turn={turn} /> : null}
               {turn.output ? <p className="owb-turn__output owb-clamp-2" title={turn.output}>{turn.output}</p> : null}
               {turn.status === "running" && !turn.output ? (
                 <p className="owb-turn__pending owb-clamp-2" title="正在等待岗位完成本回合…">正在等待岗位完成本回合…</p>

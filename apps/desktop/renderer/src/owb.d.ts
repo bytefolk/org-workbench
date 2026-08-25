@@ -37,6 +37,7 @@ export interface OwbBridge {
   reports(): Promise<OwbApiResponse<ReportsResponse>>;
   position(positionId: string): Promise<OwbApiResponse>;
   createTurn(request: { positionId: string; input: string; engine: TurnEngine }): Promise<OwbApiResponse<TurnRecord>>;
+  cancelTurn(positionId: string): Promise<OwbApiResponse<{ cancelled: boolean; positionId: string }>>;
   turnHistory(positionId: string): Promise<OwbApiResponse<TurnHistory>>;
   createSession(request: { positionId: string }): Promise<OwbApiResponse<WorkbenchSession>>;
   sessions(positionId: string): Promise<OwbApiResponse<WorkbenchSessionList>>;

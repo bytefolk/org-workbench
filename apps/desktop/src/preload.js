@@ -12,6 +12,7 @@ contextBridge.exposeInMainWorld("owb", {
   reports: () => ipcRenderer.invoke("owb:reports:get"),
   position: (positionId) => ipcRenderer.invoke("owb:position:get", positionId),
   createTurn: (request) => ipcRenderer.invoke("owb:turn:create", request),
+  cancelTurn: (positionId) => ipcRenderer.invoke("owb:turn:cancel", { positionId }),
   turnHistory: (positionId) => ipcRenderer.invoke("owb:turn:history", positionId),
   createSession: (request) => ipcRenderer.invoke("owb:session:create", request),
   sessions: (positionId) => ipcRenderer.invoke("owb:session:list", positionId),

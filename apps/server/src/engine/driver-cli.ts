@@ -364,6 +364,14 @@ export class DigitalEmployeeCliDriver implements OrgApplyDriver, TurnRunDriver {
         }, PROCESS_KILL_GRACE_MS);
         forceKillTimer.unref();
       };
+      let aborted = false;
+      request.setAbort?.(() => {
+        if (settled || aborted) return;
+        aborted = true;
+        acceptingOutput = false;
+        stdoutBuffer = "";
+        terminateChild();
+      });
       const failProtocol = (message: string): void => {
         if (protocolError !== null) return;
         protocolError = message;
@@ -479,6 +487,15 @@ export class DigitalEmployeeCliDriver implements OrgApplyDriver, TurnRunDriver {
         clearTimeout(timer);
         if (forceKillTimer !== undefined) clearTimeout(forceKillTimer);
         if (settled) return;
+        if (aborted) {
+          finish({
+            status: "indeterminate",
+            events,
+            diagnostic,
+            code: "turn_cancelled",
+          });
+          return;
+        }
         if (timedOut) {
           finish({
             status: "indeterminate",

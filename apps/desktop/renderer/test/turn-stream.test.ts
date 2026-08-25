@@ -83,7 +83,7 @@ describe("turn stream reducer", () => {
       ...state,
       runs: {
         ...state.runs,
-        "run-2": { positionId: "docs-writer", engine: "qoder", input: "其他岗位", text: "别处", startedAt: "2026-08-24T05:00:00.000Z" },
+        "run-2": { positionId: "docs-writer", engine: "qoder", input: "其他岗位", text: "别处", startedAt: "2026-08-24T05:00:00.000Z", totalTokens: null },
       },
     };
     state = applyTurnEvent(state, {
@@ -110,5 +110,40 @@ describe("turn stream reducer", () => {
   it("cancel clears only the pending marker", () => {
     const state = beginPendingTurn(EMPTY_TURN_STREAM, pending);
     expect(cancelPendingTurn(state).pending).toBeNull();
+  });
+
+  it("records turn.usage totals on the attributed live run", () => {
+    let state = beginPendingTurn(EMPTY_TURN_STREAM, pending);
+    state = applyTurnEvent(state, started(1, "run-1"));
+    expect(state.runs["run-1"]?.totalTokens).toBeNull();
+    state = applyTurnEvent(state, {
+      seq: 2,
+      type: "turn.usage",
+      payload: { runId: "run-1", timestamp: "2026-08-24T05:00:01.500Z", type: "usage", inputTokens: 120, outputTokens: 80, totalTokens: 200 },
+    });
+    expect(state.runs["run-1"]?.totalTokens).toBe(200);
+    state = applyTurnEvent(state, {
+      seq: 3,
+      type: "turn.usage",
+      payload: { runId: "run-1", timestamp: "2026-08-24T05:00:02.500Z", type: "usage", totalTokens: 480 },
+    });
+    expect(state.runs["run-1"]?.totalTokens).toBe(480);
+  });
+
+  it("ignores turn.usage for unattributed runs and non-numeric totals", () => {
+    let state = beginPendingTurn(EMPTY_TURN_STREAM, pending);
+    state = applyTurnEvent(state, started(1, "run-1"));
+    const unknownRun = applyTurnEvent(state, {
+      seq: 2,
+      type: "turn.usage",
+      payload: { runId: "run-9", timestamp: "2026-08-24T05:00:01.500Z", type: "usage", totalTokens: 999 },
+    });
+    expect(unknownRun.runs).toEqual(state.runs);
+    const invalid = applyTurnEvent(state, {
+      seq: 3,
+      type: "turn.usage",
+      payload: { runId: "run-1", timestamp: "2026-08-24T05:00:01.500Z", type: "usage", totalTokens: "many" },
+    });
+    expect(invalid.runs["run-1"]?.totalTokens).toBeNull();
   });
 });

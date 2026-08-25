@@ -16,7 +16,7 @@ import {
   handleSessionTurnHistory,
   handleSessionTurnPost,
 } from "./routes/sessions.js";
-import { handleTurnHistory, handleTurnPost } from "./routes/turns.js";
+import { handleTurnCancel, handleTurnHistory, handleTurnPost } from "./routes/turns.js";
 import { handleWorkspaceGet, handleWorkspaceOpen } from "./routes/workspace.js";
 
 /**
@@ -118,6 +118,10 @@ async function dispatch(
         405,
         new OrgApiError(errorCodes.method_not_allowed, 405, `method ${method} not allowed`).toBody(),
       );
+      return;
+    }
+    if (pathname === routes.turnsCancel && method === "POST") {
+      await handleTurnCancel(ctx, req, res);
       return;
     }
     if (pathname === routes.turns && method === "POST") {

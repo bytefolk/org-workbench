@@ -260,6 +260,17 @@ Electron renderer 只通过枚举式 `createTurn({positionId,input,engine})` 与
 
 重连补拉：客户端带 `Last-Event-ID: <seq>` 重连，服务端从环形缓冲（≥256 条）回放该版本戳之后的事件；新连接不回放历史。心跳：每 15 秒注释帧 `: ping`。
 
+#### 2.10.1 `POST /turns/cancel` — 中断在途回合（#25 加法修订）
+
+```json
+{ "positionId": "repo-owner" }
+```
+
+- 请求只允许 `positionId` 一个字段；该岗位没有正在运行的回合时返回 404 `not_found`（不新增错误码）。
+- 命中时控制面终止引擎子进程（SIGTERM，250ms 后 SIGKILL），回合经既有路径落为 `indeterminate`，诊断码 `turn_cancelled`（与 `turn_timeout` 同类的本地诊断码，不属于 `errorCodes` 稳定码表），并复用冻结的 `turn.indeterminate` SSE 词汇广播；不新增 SSE 事件类型。
+- 响应 200：`{ "cancelled": true, "positionId": "<id>" }`。
+- 同一 `POST /turns` 请求语义不变：被中断的回合仍以完整 `turn-record.v1`（status `indeterminate`）作为该请求的 200 响应返回。
+
 ### 2.11 `/sessions` — 显式 Workbench session（#12 R2 加法）
 
 ```text

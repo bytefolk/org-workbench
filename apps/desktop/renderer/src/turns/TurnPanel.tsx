@@ -1,6 +1,6 @@
-import { useMemo, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { Button as AntButton, Input, Tag } from "antd";
-import { ArrowUp, Database, GitBranch, MessagesSquare, Plus, RefreshCw } from "lucide-react";
+import { ArrowUp, Database, GitBranch, MessagesSquare, Plus, RefreshCw, Square } from "lucide-react";
 import type { WorkbenchSession } from "@org-workbench/shared";
 import { PositionMention } from "./PositionMention";
 import { TurnThread } from "./TurnThread";
@@ -20,12 +20,15 @@ export interface TurnPanelProps {
   engineAvailability: Record<TurnEngine, TurnEngineAvailability>;
   turns: TurnRecord[];
   busy?: boolean;
+  cancelling?: boolean;
   sessions?: WorkbenchSession[];
   selectedSessionId?: string | null;
   sessionBusy?: boolean;
   onSelectPosition: (positionId: string) => void;
   onSelectEngine: (engine: TurnEngine) => void;
   onCreateTurn: (request: CreateTurnRequest) => void | boolean | Promise<void | boolean>;
+  /** Operator interrupt for the in-flight turn of the selected position. */
+  onCancelTurn?: (positionId: string) => void | Promise<void>;
   onSelectSession?: (sessionId: string) => void;
   onCreateSession?: () => void | Promise<void>;
   onRotateSession?: (sessionId: string) => void | Promise<void>;
@@ -49,12 +52,14 @@ export function TurnPanel({
   engineAvailability,
   turns,
   busy = false,
+  cancelling = false,
   sessions,
   selectedSessionId = null,
   sessionBusy = false,
   onSelectPosition,
   onSelectEngine,
   onCreateTurn,
+  onCancelTurn,
   onSelectSession,
   onCreateSession,
   onRotateSession,
@@ -62,6 +67,21 @@ export function TurnPanel({
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
   const selectedPosition = positions.find((position) => position.id === selectedPositionId) ?? null;
+  const runningTurn = selectedPositionId !== null && turns.some(
+    (turn) => turn.positionId === selectedPositionId && turn.status === "running",
+  );
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (!event.metaKey || event.key !== ".") return;
+      if (!runningTurn || cancelling || !selectedPosition) return;
+      event.preventDefault();
+      void onCancelTurn?.(selectedPosition.id);
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [cancelling, onCancelTurn, runningTurn, selectedPosition]);
+
   const sessionMode = sessions !== undefined;
   const selectedSession = sessions?.find((session) => session.sessionId === selectedSessionId) ?? null;
   const activeSession = sessions?.find((session) => session.status === "active") ?? null;
@@ -214,16 +234,33 @@ export function TurnPanel({
             disabled={disabledReason !== null}
             onChange={(event) => setInput(event.target.value)}
           />
-          <AntButton
-            type="primary"
-            htmlType="submit"
-            disabled={disabledReason !== null || input.trim().length === 0}
-            aria-label="发送任务"
-            icon={<ArrowUp aria-hidden="true" size={15} />}
-          />
+          {runningTurn ? (
+            <AntButton
+              danger
+              disabled={cancelling || !selectedPosition}
+              aria-label="中断回合"
+              title="中断回合（⌘.）"
+              icon={<Square aria-hidden="true" size={15} />}
+              onClick={() => {
+                if (selectedPosition) void onCancelTurn?.(selectedPosition.id);
+              }}
+            />
+          ) : (
+            <AntButton
+              type="primary"
+              htmlType="submit"
+              disabled={disabledReason !== null || input.trim().length === 0}
+              aria-label="发送任务"
+              icon={<ArrowUp aria-hidden="true" size={15} />}
+            />
+          )}
         </div>
         <p className="owb-turn-composer__hint" role="status">
-          {disabledReason ?? `将通过 ${ENGINE_LABEL[engine]} 创建一个新回合`}
+          {runningTurn
+            ? cancelling
+              ? "正在请求控制面中断引擎进程…"
+              : "回合运行中：点击中断或按 ⌘. 终止该岗位的在途回合"
+            : disabledReason ?? `将通过 ${ENGINE_LABEL[engine]} 创建一个新回合`}
         </p>
       </form>
     </section>

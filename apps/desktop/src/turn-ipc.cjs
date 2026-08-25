@@ -42,4 +42,18 @@ function turnHistoryPath(positionId) {
   return `/turns?positionId=${encodeURIComponent(positionId)}`;
 }
 
-module.exports = { turnHistoryPath, validateCreateTurnRequest };
+function validateCancelRequest(value) {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) {
+    return { ok: false, response: invalid("cancel request must be an object") };
+  }
+  const keys = Object.keys(value);
+  if (keys.length !== 1 || keys[0] !== "positionId") {
+    return { ok: false, response: invalid("cancel request accepts exactly {positionId}") };
+  }
+  if (!validatePositionId(value.positionId)) {
+    return { ok: false, response: invalid("positionId is invalid") };
+  }
+  return { ok: true, request: { positionId: value.positionId } };
+}
+
+module.exports = { turnHistoryPath, validateCancelRequest, validateCreateTurnRequest };

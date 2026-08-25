@@ -21,6 +21,8 @@ export interface LiveRunState {
   input: string;
   text: string;
   startedAt: string;
+  /** Latest engine-reported usage; feeds the compact status line only. */
+  totalTokens: number | null;
 }
 
 export interface TurnStreamState {
@@ -136,8 +138,21 @@ export function applyTurnEvent(
             input: pending.input,
             text: delta,
             startedAt,
+            totalTokens: null,
           },
         }),
+      };
+    }
+    case "turn.usage": {
+      if (runId === null) return { ...state, seq: nextSeq };
+      const existing = state.runs[runId];
+      if (existing === undefined) return { ...state, seq: nextSeq };
+      const rawTotal = payload?.totalTokens;
+      const totalTokens = typeof rawTotal === "number" && Number.isFinite(rawTotal) ? rawTotal : existing.totalTokens;
+      return {
+        ...state,
+        seq: nextSeq,
+        runs: { ...state.runs, [runId]: { ...existing, totalTokens } },
       };
     }
     case "turn.completed":

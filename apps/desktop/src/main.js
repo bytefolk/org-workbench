@@ -17,7 +17,7 @@ const os = require("node:os");
 const path = require("node:path");
 const { rendererEntryPath } = require("./runtime-paths.cjs");
 const { validateRestoreRequest } = require("./org-ipc.cjs");
-const { turnHistoryPath, validateCreateTurnRequest } = require("./turn-ipc.cjs");
+const { turnHistoryPath, validateCancelRequest, validateCreateTurnRequest } = require("./turn-ipc.cjs");
 const {
   sessionListPath,
   sessionPath,
@@ -287,6 +287,12 @@ ipcMain.handle("owb:turn:history", async (_event, positionId) => {
     return { status: 400, body: { code: "turn_position_invalid", message: "positionId is invalid", retryable: false } };
   }
   return apiRequest(pathname);
+});
+
+ipcMain.handle("owb:turn:cancel", async (_event, request) => {
+  const validated = validateCancelRequest(request);
+  if (!validated.ok) return validated.response;
+  return apiRequest("/turns/cancel", { method: "POST", body: validated.request });
 });
 
 ipcMain.handle("owb:session:create", async (_event, request) => {
