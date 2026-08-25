@@ -12,6 +12,7 @@ const positions = [
 const availability: TurnPanelProps["engineAvailability"] = {
   qoder: { configured: true, ready: true },
   "claude-code": { configured: true, ready: true },
+  "claude-local": { configured: true, ready: true },
   "local-mock": { configured: true, ready: true, reason: "本地 mock host：仅原型演示，非真实执行" },
 };
 
@@ -48,7 +49,7 @@ function turn(overrides: Partial<TurnRecord>): TurnRecord {
 }
 
 describe("TurnPanel Issue #5 D3 behavior", () => {
-  it("addresses a position, switches between the two supported Hosts, and creates a turn", async () => {
+  it("addresses a position, switches between the contracted Hosts, and creates a turn", async () => {
     const createTurn = vi.fn();
     render(<ControlledPanel onCreateTurn={createTurn} />);
 
@@ -57,7 +58,8 @@ describe("TurnPanel Issue #5 D3 behavior", () => {
     expect(screen.getByRole("heading", { name: "@发布负责人" })).toBeInTheDocument();
 
     const hostSelect = screen.getByRole("combobox", { name: "选择 Agent Host" });
-    expect(within(hostSelect).getAllByRole("option")).toHaveLength(3);
+    expect(within(hostSelect).getAllByRole("option")).toHaveLength(4);
+    expect(within(hostSelect).getByRole("option", { name: /Claude Code · 本地登录/ })).toBeInTheDocument();
     fireEvent.change(hostSelect, { target: { value: "claude-code" } });
 
     fireEvent.change(screen.getByLabelText("交办任务"), { target: { value: "准备发布说明" } });
@@ -68,6 +70,18 @@ describe("TurnPanel Issue #5 D3 behavior", () => {
         positionId: "release-manager",
         engine: "claude-code",
         input: "准备发布说明",
+      });
+    });
+
+    fireEvent.change(hostSelect, { target: { value: "claude-local" } });
+    fireEvent.change(screen.getByLabelText("交办任务"), { target: { value: "用本地登录复查一遍" } });
+    fireEvent.click(screen.getByRole("button", { name: "发送任务" }));
+
+    await waitFor(() => {
+      expect(createTurn).toHaveBeenCalledWith({
+        positionId: "release-manager",
+        engine: "claude-local",
+        input: "用本地登录复查一遍",
       });
     });
   });

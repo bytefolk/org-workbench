@@ -531,6 +531,11 @@ export function App() {
       ready: health?.hosts?.["claude-code"].ready === true,
       reason: health?.hosts?.["claude-code"].nextStep ?? "Claude Code Host 配置状态不可用",
     },
+    "claude-local": {
+      configured: health?.hosts?.["claude-local"]?.configured === true,
+      ready: health?.hosts?.["claude-local"]?.ready === true,
+      reason: health?.hosts?.["claude-local"]?.nextStep ?? "Claude Code（本地登录）Host 探测状态不可用",
+    },
     "local-mock": {
       configured: true,
       ready: true,

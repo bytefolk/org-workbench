@@ -191,7 +191,6 @@ function parseEngineEvent(line: string): EngineEvent {
 
 function turnEnvironment(engine: TurnEngine): NodeJS.ProcessEnv {
   const source = process.env;
-  const credential = engine === "qoder" ? "QODER_PERSONAL_ACCESS_TOKEN" : "ANTHROPIC_API_KEY";
   const allowed = ["PATH", "HOME", "USER", "TMPDIR", "LANG", "LC_ALL", "SHELL"] as const;
   const environment: NodeJS.ProcessEnv = {
     DIGITAL_EMPLOYEE_ENGINE_MODEL: engine,
@@ -199,7 +198,18 @@ function turnEnvironment(engine: TurnEngine): NodeJS.ProcessEnv {
   for (const key of allowed) {
     if (source[key] !== undefined) environment[key] = source[key];
   }
-  if (source[credential] !== undefined) environment[credential] = source[credential];
+  if (engine === "qoder") {
+    if (source.QODER_PERSONAL_ACCESS_TOKEN !== undefined) environment.QODER_PERSONAL_ACCESS_TOKEN = source.QODER_PERSONAL_ACCESS_TOKEN;
+  } else if (engine === "claude-code") {
+    if (source.ANTHROPIC_API_KEY !== undefined) environment.ANTHROPIC_API_KEY = source.ANTHROPIC_API_KEY;
+  } else {
+    // claude-local runs on the operator's logged-in Claude Code; it must not
+    // receive a service credential. DIGITAL_EMPLOYEE_CLAUDE_COMMAND only
+    // overrides which local binary the engine port spawns.
+    if (source.DIGITAL_EMPLOYEE_CLAUDE_COMMAND !== undefined) {
+      environment.DIGITAL_EMPLOYEE_CLAUDE_COMMAND = source.DIGITAL_EMPLOYEE_CLAUDE_COMMAND;
+    }
+  }
   return environment;
 }
 

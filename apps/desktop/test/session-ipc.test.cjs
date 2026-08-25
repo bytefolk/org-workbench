@@ -20,6 +20,7 @@ test("session IPC accepts exact typed fields and never accepts authority data", 
     sessionId,
     request: { input: "ship", engine: "qoder" },
   });
+  assert.equal(validateSessionTurnRequest({ sessionId, input: "ship", engine: "claude-local" }).ok, true);
   assert.equal(validateSessionTurnRequest({ sessionId, input: "ship", engine: "openai" }).ok, false);
   assert.equal(validateSessionTurnRequest({ sessionId, input: "ship", engine: "qoder", token: "secret" }).ok, false);
 });

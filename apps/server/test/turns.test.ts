@@ -184,6 +184,14 @@ test("POST /turns only accepts qoder and claude-code and remains bearer protecte
     });
     assert.equal(accepted.status, 200);
     assert.equal((accepted.body as { engine: TurnEngine }).engine, "claude-code");
+
+    const acceptedLocal = await api(server.baseUrl, "/turns", {
+      method: "POST",
+      token: server.token,
+      body: { positionId: "repo-owner", input: "hello", engine: "claude-local" },
+    });
+    assert.equal(acceptedLocal.status, 200);
+    assert.equal((acceptedLocal.body as { engine: TurnEngine }).engine, "claude-local");
   } finally {
     await server.close();
   }

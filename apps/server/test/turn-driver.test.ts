@@ -59,6 +59,46 @@ test("turn driver uses stdin, exact turn argv, and the selected engine environme
   assert.equal(result.events.length, 2);
 });
 
+test("claude-local turn env forwards the binary override and never a service credential", async () => {
+  const saved = {
+    model: process.env.DIGITAL_EMPLOYEE_CLAUDE_COMMAND,
+    anthropic: process.env.ANTHROPIC_API_KEY,
+    qoder: process.env.QODER_PERSONAL_ACCESS_TOKEN,
+  };
+  process.env.DIGITAL_EMPLOYEE_CLAUDE_COMMAND = "/opt/claude-local/bin";
+  process.env.ANTHROPIC_API_KEY = "sk-must-not-leak";
+  process.env.QODER_PERSONAL_ACCESS_TOKEN = "qoder-must-not-leak";
+  try {
+    const command = await fixtureCli(`
+      let input = "";
+      process.stdin.setEncoding("utf8");
+      for await (const chunk of process.stdin) input += chunk;
+      if (process.env.DIGITAL_EMPLOYEE_ENGINE_MODEL !== "claude-local") process.exit(8);
+      if (process.env.ANTHROPIC_API_KEY !== undefined) process.exit(6);
+      if (process.env.QODER_PERSONAL_ACCESS_TOKEN !== undefined) process.exit(5);
+      if (process.env.DIGITAL_EMPLOYEE_CLAUDE_COMMAND !== "/opt/claude-local/bin") process.exit(4);
+      const base = { runId: "run-1", timestamp: "2026-08-24T00:00:00.000Z" };
+      console.log(JSON.stringify({ ...base, type: "run.started" }));
+      console.log(JSON.stringify({ ...base, type: "run.completed", output: "ok", terminalReason: "goal_met" }));
+    `);
+    const driver = new DigitalEmployeeCliDriver(command);
+    const result = await driver.turnRun({
+      workspace: "/workspace",
+      positionId: "repo-owner",
+      engine: "claude-local",
+      envelope: ENVELOPE,
+    });
+    assert.equal(result.status, "trusted");
+  } finally {
+    if (saved.model === undefined) delete process.env.DIGITAL_EMPLOYEE_CLAUDE_COMMAND;
+    else process.env.DIGITAL_EMPLOYEE_CLAUDE_COMMAND = saved.model;
+    if (saved.anthropic === undefined) delete process.env.ANTHROPIC_API_KEY;
+    else process.env.ANTHROPIC_API_KEY = saved.anthropic;
+    if (saved.qoder === undefined) delete process.env.QODER_PERSONAL_ACCESS_TOKEN;
+    else process.env.QODER_PERSONAL_ACCESS_TOKEN = saved.qoder;
+  }
+});
+
 test("turn driver rejects malformed or multi-terminal engine.v1 streams", async () => {
   const command = await fixtureCli(`
     process.stdin.resume();

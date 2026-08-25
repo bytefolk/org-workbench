@@ -56,7 +56,7 @@ function parseSessionTurn(raw: unknown): { input: string; engine: TurnEngine } {
     );
   }
   if (typeof raw.engine !== "string" || !turnEngines.includes(raw.engine as TurnEngine)) {
-    throw new OrgApiError(errorCodes.turn_engine_unsupported, 400, "engine must be qoder or claude-code");
+    throw new OrgApiError(errorCodes.turn_engine_unsupported, 400, `engine must be ${turnEngines.join(" or ")}`);
   }
   return { input: raw.input, engine: raw.engine as TurnEngine };
 }

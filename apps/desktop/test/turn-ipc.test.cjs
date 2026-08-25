@@ -2,7 +2,7 @@ const assert = require("node:assert/strict");
 const test = require("node:test");
 const { turnHistoryPath, validateCreateTurnRequest } = require("../src/turn-ipc.cjs");
 
-test("turn IPC accepts only the two contracted Hosts and exact request fields", () => {
+test("turn IPC accepts only the three contracted Hosts and exact request fields", () => {
   assert.deepEqual(validateCreateTurnRequest({
     positionId: "repo-owner",
     input: "ship the release",
@@ -15,6 +15,11 @@ test("turn IPC accepts only the two contracted Hosts and exact request fields", 
     positionId: "repo-owner",
     input: "ship",
     engine: "claude-code",
+  }).ok, true);
+  assert.equal(validateCreateTurnRequest({
+    positionId: "repo-owner",
+    input: "ship",
+    engine: "claude-local",
   }).ok, true);
   assert.equal(validateCreateTurnRequest({
     positionId: "repo-owner",
