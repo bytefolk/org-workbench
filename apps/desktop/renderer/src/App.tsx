@@ -82,6 +82,7 @@ export function App() {
   const [turns, setTurns] = useState<TurnRecord[]>([]);
   const [turnStream, setTurnStream] = useState<TurnStreamState>(EMPTY_TURN_STREAM);
   const [turnBusy, setTurnBusy] = useState(false);
+  const [turnCancelling, setTurnCancelling] = useState(false);
   const [turnError, setTurnError] = useState<string | null>(null);
   const [sessions, setSessions] = useState<WorkbenchSession[]>([]);
   const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
@@ -419,6 +420,24 @@ export function App() {
     }
   }, [loadTurnHistory]);
 
+  /** Operator cancel (issue #25 Slice A): the control plane settles the turn
+   * as indeterminate/turn_cancelled; the in-flight POST readback and the
+   * history reload remain the only authorities for the final record. */
+  const cancelTurn = useCallback(async (positionId: string) => {
+    setTurnCancelling(true);
+    setTurnError(null);
+    try {
+      const res = await window.owb.cancelTurn(positionId);
+      if (res.status !== 200) {
+        setTurnError(apiErrorMessage(res.body, "中断请求被拒绝"));
+      }
+    } catch {
+      setTurnError("中断请求失败：控制面不可达");
+    } finally {
+      setTurnCancelling(false);
+    }
+  }, []);
+
   const openWorkspace = useCallback(async () => {
     await window.owb.openWorkspace();
     await refresh();
@@ -539,6 +558,7 @@ export function App() {
             status: "running" as const,
             createdAt: run.startedAt,
             ...(run.text !== "" ? { output: run.text } : {}),
+            ...(run.totalTokens !== null ? { totalTokens: run.totalTokens } : {}),
           }));
     if (live.length === 0) return turns;
     return [...turns, ...live].sort((a, b) => a.createdAt.localeCompare(b.createdAt));
@@ -677,6 +697,8 @@ export function App() {
             onSelectPosition={selectPosition}
             onSelectEngine={setTurnEngine}
             onCreateTurn={createTurn}
+            onCancelTurn={cancelTurn}
+            cancelling={turnCancelling}
             onSelectSession={selectSession}
             onCreateSession={createSession}
             onRotateSession={rotateSession}

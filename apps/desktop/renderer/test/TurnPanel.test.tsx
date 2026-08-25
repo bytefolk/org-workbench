@@ -205,3 +205,99 @@ describe("TurnPanel Issue #5 D3 behavior", () => {
     expect(screen.getByText("turn-uncertain")).toBeInTheDocument();
   });
 });
+
+describe("TurnPanel Issue #25 Slice A — operator interrupt", () => {
+  it("replaces the send button with an interrupt while a turn is running", async () => {
+    const cancelTurn = vi.fn();
+    render(
+      <TurnPanel
+        workspaceOpen
+        positions={positions}
+        selectedPositionId="repo-owner"
+        engine="qoder"
+        engineAvailability={availability}
+        turns={[turn({ id: "turn-live", status: "running", output: undefined })]}
+        onSelectPosition={vi.fn()}
+        onSelectEngine={vi.fn()}
+        onCreateTurn={vi.fn()}
+        onCancelTurn={cancelTurn}
+      />,
+    );
+
+    expect(screen.queryByRole("button", { name: "发送任务" })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "中断回合" }));
+    await waitFor(() => {
+      expect(cancelTurn).toHaveBeenCalledWith("repo-owner");
+    });
+  });
+
+  it("triggers the same cancel via the ⌘. shortcut and disables while cancelling", () => {
+    const cancelTurn = vi.fn();
+    render(
+      <TurnPanel
+        workspaceOpen
+        positions={positions}
+        selectedPositionId="repo-owner"
+        engine="qoder"
+        engineAvailability={availability}
+        turns={[turn({ id: "turn-live", status: "running", output: undefined })]}
+        cancelling
+        onSelectPosition={vi.fn()}
+        onSelectEngine={vi.fn()}
+        onCreateTurn={vi.fn()}
+        onCancelTurn={cancelTurn}
+      />,
+    );
+
+    expect(screen.getByText("正在请求控制面中断引擎进程…")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "中断回合" })).toBeDisabled();
+    fireEvent.keyDown(window, { key: ".", metaKey: true });
+    expect(cancelTurn).not.toHaveBeenCalled();
+  });
+
+  it("fires the cancel from ⌘. when a turn is running", () => {
+    const cancelTurn = vi.fn();
+    render(
+      <TurnPanel
+        workspaceOpen
+        positions={positions}
+        selectedPositionId="repo-owner"
+        engine="qoder"
+        engineAvailability={availability}
+        turns={[turn({ id: "turn-live", status: "running", output: undefined })]}
+        onSelectPosition={vi.fn()}
+        onSelectEngine={vi.fn()}
+        onCreateTurn={vi.fn()}
+        onCancelTurn={cancelTurn}
+      />,
+    );
+
+    fireEvent.keyDown(window, { key: ".", metaKey: true });
+    expect(cancelTurn).toHaveBeenCalledWith("repo-owner");
+  });
+
+  it("shows the compact status line with engine badge and token usage only while running", () => {
+    render(
+      <TurnPanel
+        workspaceOpen
+        positions={positions}
+        selectedPositionId="repo-owner"
+        engine="qoder"
+        engineAvailability={availability}
+        turns={[
+          turn({ id: "turn-live", status: "running", output: undefined, totalTokens: 1280 }),
+          turn({ id: "turn-done", status: "completed", totalTokens: 999 }),
+        ]}
+        onSelectPosition={vi.fn()}
+        onSelectEngine={vi.fn()}
+        onCreateTurn={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText("回合运行中：点击中断或按 ⌘. 终止该岗位的在途回合")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "发送任务" })).not.toBeInTheDocument();
+    const statusLine = screen.getByText("1280 tokens").closest("p");
+    expect(statusLine).toHaveClass("owb-turn__statusline");
+    expect(screen.queryByText("999 tokens")).not.toBeInTheDocument();
+  });
+});

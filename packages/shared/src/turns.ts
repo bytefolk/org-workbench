@@ -67,6 +67,8 @@ export interface TurnRunRequest {
   envelope: TurnEnvelope;
   /** Called once for each strictly validated engine.v1 event. */
   onEvent?: (event: EngineEvent) => void;
+  /** Registers a control-plane hook that terminates the engine process. */
+  setAbort?: (abort: () => void) => void;
 }
 
 export type TurnRunResult =

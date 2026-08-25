@@ -138,6 +138,7 @@ export async function executeTurn(
           ctx.bus.publish(eventType(event), event);
         }
       },
+      setAbort: (abort) => ctx.runningTurns.register(body.positionId, abort),
     });
   } catch {
     result = {
@@ -146,6 +147,8 @@ export async function executeTurn(
       diagnostic: "",
       code: "turn_driver_failure",
     };
+  } finally {
+    ctx.runningTurns.unregister(body.positionId);
   }
 
   const updatedAt = new Date().toISOString();
@@ -229,4 +232,27 @@ export async function handleTurnHistory(
   assertPositionExists(ctx, positionId);
   const history = await ctx.turnStore.history(workspace.dir, positionId, new Date().toISOString());
   sendJson(res, 200, history);
+}
+
+/** Additive v0 route (issue #25): aborts the in-flight turn for a position.
+ * The driver settles the turn as indeterminate/turn_cancelled through the
+ * frozen turn.indeterminate vocabulary; no new SSE event is introduced. */
+export async function handleTurnCancel(
+  ctx: ControlPlaneContext,
+  req: IncomingMessage,
+  res: ServerResponse,
+): Promise<void> {
+  const raw = await readJsonBody<unknown>(req);
+  if (!isRecord(raw) || Object.keys(raw).length !== 1 || typeof raw.positionId !== "string") {
+    throw new OrgApiError(
+      errorCodes.turn_request_invalid,
+      400,
+      "cancel request accepts exactly {positionId}",
+    );
+  }
+  const positionId = assertPositionId(raw.positionId);
+  if (!ctx.runningTurns.cancel(positionId)) {
+    throw new OrgApiError(errorCodes.not_found, 404, `no running turn: ${positionId}`);
+  }
+  sendJson(res, 200, { cancelled: true, positionId });
 }

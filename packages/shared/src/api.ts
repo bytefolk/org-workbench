@@ -23,6 +23,7 @@ export const routes = {
   reports: "/reports",
   sessions: "/sessions",
   turns: "/turns",
+  turnsCancel: "/turns/cancel",
   events: "/events",
 } as const;
 

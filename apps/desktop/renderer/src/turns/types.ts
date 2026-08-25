@@ -26,6 +26,8 @@ export interface TurnRecord {
   error?: string;
   /** Engine runId when the server record carries one; keys live-stream dedupe. */
   runId?: string;
+  /** Live engine-reported usage; present only on provisional live rows. */
+  totalTokens?: number;
   envelopeDigest?: string;
   evidenceDigest?: string;
   retryOf?: string;

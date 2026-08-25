@@ -14,6 +14,7 @@ import { DigitalEmployeeCliDriver } from "./engine/driver-cli.js";
 import { WorkspaceState } from "./workspace-state.js";
 import { createControlPlane } from "./server.js";
 import { TurnStore } from "./turns/store.js";
+import { RunningTurnRegistry } from "./turns/running.js";
 import { SessionStore } from "./sessions/store.js";
 
 const config = resolveServerConfig(process.env, process.argv.slice(2));
@@ -25,6 +26,7 @@ const ctx: ControlPlaneContext = {
   driver,
   turnDriver: driver,
   turnStore: new TurnStore(),
+  runningTurns: new RunningTurnRegistry(),
   sessionStore: new SessionStore(),
 };
 const server = createControlPlane(ctx);
