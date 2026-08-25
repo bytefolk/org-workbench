@@ -87,7 +87,7 @@ export function HirePositionDialog({
       <Modal
         open={open}
         title="招聘岗位并声明预算"
-        description="预算单位仅为 tokens / iterations；两个周期的 token 上限都配齐后才能提交。"
+        description="预算单位仅为 tokens / iterations；两个周期的 token 上限都配齐后才能提交。当前为直连应用（beta）过渡入口，hire 契约面（digital-employee #194）合入后切换。"
         className="owb-org-dialog"
         onOpenChange={setOpen}
       >
