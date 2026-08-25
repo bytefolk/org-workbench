@@ -160,7 +160,7 @@ function emptyReports(): ReportsResponse {
 
 async function selectRepoOwner(): Promise<void> {
   await screen.findByRole("treeitem", { name: /repo-owner/ });
-  fireEvent.click(screen.getByText("repo-owner", { selector: ".ui-org-tree__label" }));
+  fireEvent.click(screen.getByText("repo-owner", { selector: ".ui-org-tree__label, .ui-org-tree__id" }));
   expect(await screen.findByRole("heading", { name: "@代码库负责人" })).toBeInTheDocument();
 }
 
@@ -328,8 +328,8 @@ describe("App runtime bridge", () => {
       turnHistory: vi.fn().mockResolvedValue({ status: 200, body: history([]) }),
     });
     render(<App />);
-    const source = await screen.findByText("docs-writer", { selector: ".ui-org-tree__label" });
-    const target = screen.getByText("release-engineer", { selector: ".ui-org-tree__label" });
+    const source = await screen.findByText("docs-writer", { selector: ".ui-org-tree__label, .ui-org-tree__id" });
+    const target = screen.getByText("release-engineer", { selector: ".ui-org-tree__label, .ui-org-tree__id" });
     const data = new Map<string, string>();
     const dataTransfer = { effectAllowed: "move", dropEffect: "move", setData: (type: string, value: string) => data.set(type, value), getData: (type: string) => data.get(type) ?? "" };
     fireEvent.dragStart(source.closest('[role="treeitem"]')!, { dataTransfer });
@@ -374,7 +374,7 @@ describe("App runtime bridge", () => {
       turnHistory: vi.fn().mockResolvedValue({ status: 200, body: history([]) }),
     });
     render(<App />);
-    fireEvent.click(await screen.findByText("docs-writer", { selector: ".ui-org-tree__label" }));
+    fireEvent.click(await screen.findByText("docs-writer", { selector: ".ui-org-tree__label, .ui-org-tree__id" }));
     fireEvent.click(await screen.findByRole("button", { name: "裁撤" }));
     fireEvent.click(screen.getByRole("button", { name: /取\s*消/ }));
     expect(orgApply).not.toHaveBeenCalled();

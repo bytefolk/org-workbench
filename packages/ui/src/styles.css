@@ -25,7 +25,7 @@
 .ui-org-tree__row {
   display: flex;
   align-items: center;
-  gap: var(--ui-space-2, 8px);
+  gap: 4px;
   min-height: 38px;
   padding-right: var(--ui-space-2, 8px);
   border-radius: var(--ui-radius-md, 10px);
@@ -88,7 +88,7 @@
 }
 
 .ui-org-tree__spacer {
-  width: 20px;
+  width: 14px;
   flex: none;
 }
 
@@ -96,6 +96,10 @@
   display: inline-flex;
   flex: none;
   color: var(--ui-foreground-muted);
+}
+
+.ui-org-tree__row:not(.ui-org-tree__row--enterprise) .ui-org-tree__icon {
+  display: none;
 }
 
 .ui-org-tree__avatar {
@@ -113,18 +117,29 @@
 }
 
 .ui-org-tree__label {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
   flex: 1;
   min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
   font-size: var(--ui-text-sm, 13px);
-  line-height: 38px;
+  line-height: 1.25;
 }
 
 .ui-org-tree__name {
-  margin-right: var(--ui-space-1, 4px);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
   font-weight: 600;
+}
+
+.ui-org-tree__id {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+  color: var(--ui-foreground-muted);
 }
 
 .ui-org-tree__budget {
@@ -177,7 +192,7 @@
 }
 
 .ui-org-budget.is-compact {
-  width: 72px;
+  width: 48px;
   gap: 0;
 }
 
