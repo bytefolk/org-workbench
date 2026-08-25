@@ -4,7 +4,7 @@
 // breaks hooks at runtime/test time, so repoint design-system's react
 // and react-dom at this workspace's copies. Idempotent; no-ops when
 // either tree is missing.
-import { existsSync, lstatSync, mkdirSync, realpathSync, rmSync, symlinkSync } from "node:fs";
+import { existsSync, lstatSync, mkdirSync, realpathSync, rmSync, symlinkSync, unlinkSync } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -18,7 +18,7 @@ for (const name of ["react", "react-dom"]) {
   if (!existsSync(canonical) || !existsSync(sibling)) continue;
   if (realpathSync(sibling) === realpathSync(canonical)) continue;
   if (lstatSync(sibling).isSymbolicLink()) {
-    rmSync(sibling);
+    unlinkSync(sibling);
   } else {
     rmSync(sibling, { recursive: true, force: true });
   }
