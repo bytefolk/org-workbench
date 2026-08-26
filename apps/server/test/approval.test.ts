@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import fs from "node:fs/promises";
+import { createRequire } from "node:module";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -10,6 +11,7 @@ import type {
   TurnRunRequest,
   TurnRunResult,
 } from "@org-workbench/shared";
+import { validatePendingApproval } from "@org-workbench/shared";
 import { DigitalEmployeeCliDriver } from "../src/engine/driver-cli.js";
 import { createTurnEnvelope } from "../src/turns/envelope.js";
 import { api, connectSse, copyExampleWorkspace, startTestServer } from "./helpers.js";
@@ -435,5 +437,42 @@ test("session turn accepts the same mirrored pendingApproval and rejects violati
     assert.equal(turnDriver.calls.length, 1, "no engine spawn on session verdict violation");
   } finally {
     await server.close();
+  }
+});
+
+test("shared pendingApproval validator is the single source for both boundaries (#46)", () => {
+  // The ESM surface must delegate to the same CJS contract the IPC boundary
+  // requires, so upstream bound changes touch exactly one module.
+  const accepted = validatePendingApproval(VERDICT);
+  assert.deepEqual(accepted, { ok: true, value: VERDICT });
+
+  const cjsSurface = createRequire(import.meta.url)("@org-workbench/shared/pending-approval");
+  assert.equal(validatePendingApproval, cjsSurface.validatePendingApproval, "ESM wrapper must re-export the CJS contract function identity");
+
+  const deniedWithReason = validatePendingApproval({
+    approvalId: "appr-2",
+    decision: "denied",
+    decidedBy: "operator",
+    reason: "超出岗位授权",
+  });
+  assert.equal(deniedWithReason.ok, true);
+
+  for (const bad of [
+    null,
+    "granted",
+    { approvalId: "", decision: "granted", decidedBy: "operator" },
+    { approvalId: "a".repeat(257), decision: "granted", decidedBy: "operator" },
+    { approvalId: "appr-1", decision: "maybe", decidedBy: "operator" },
+    { approvalId: "appr-1", decision: "granted", decidedBy: "model" },
+    { approvalId: "appr-1", decision: "granted" },
+    { ...VERDICT, scope: "always" },
+    { ...VERDICT, reason: "   " },
+    { ...VERDICT, reason: "字".repeat(342) },
+    { ...VERDICT, expiresAt: "yesterday" },
+    { ...VERDICT, note: "side channel" },
+  ]) {
+    const result = validatePendingApproval(bad);
+    assert.equal(result.ok, false, JSON.stringify(bad));
+    if (!result.ok) assert.ok(result.message.length > 0);
   }
 });
