@@ -153,12 +153,19 @@ export function applyTurnEvent(
           runs: { ...state.runs, [runId]: { ...existing, text: existing.text + delta } },
         };
       }
-      if (stringField(payload, "groupRef") !== null) {
-        // Group runs (#52) are seeded by beginGroupRun under the pre-assigned
-        // turnId; the first engine event re-keys the buffer under the engine
-        // runId so delta/usage/completed all resolve through the normal path.
-        const seedId = stringField(payload, "turnId");
-        const seeded = seedId !== null ? state.runs[seedId] : undefined;
+      // Group runs (#52) are seeded by beginGroupRun under the pre-assigned
+      // turnId; the first engine event re-keys the buffer under the engine
+      // runId so delta/usage/completed all resolve through the normal path.
+      // #63: the contract-level back-link (de#205 echo) is the authoritative
+      // grouping key; the local groupRef tag remains the gray fallback. A
+      // back-link-only event is adopted only when its spawn seed exists, so
+      // personal session turns (never seeded) stay on the pending path.
+      const seedId = stringField(payload, "turnId");
+      const seeded = seedId !== null ? state.runs[seedId] : undefined;
+      const groupingRef =
+        stringField(payload, "groupRef") ??
+        (seeded !== undefined ? stringField(payload, "conversationRef") : null);
+      if (groupingRef !== null) {
         if (seeded === undefined || runId === null) return { ...state, seq: nextSeq };
         const runs = { ...state.runs };
         if (seedId !== null && seedId !== runId) delete runs[seedId];
@@ -167,7 +174,7 @@ export function applyTurnEvent(
           seq: nextSeq,
           runs: evictIfOverCap({
             ...runs,
-            [runId]: { ...seeded, text: seeded.text + delta },
+            [runId]: { ...seeded, groupRef: groupingRef, text: seeded.text + delta },
           }),
         };
       }

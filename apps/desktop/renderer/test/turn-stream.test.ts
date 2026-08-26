@@ -234,3 +234,64 @@ describe("personal dialog baseline regression (#51)", () => {
     expect(state.pending?.runId).toBe("run-1");
   });
 });
+
+// #63: contract-level back-link (de#205 echo) grouping — authoritative when
+// present on a seeded spawn; legacy groupRef stays the gray fallback; events
+// without a seed (personal session turns) never get adopted by it.
+describe("conversationRef back-link grouping (#63)", () => {
+  function backlinkDelta(seq: number, runId: string, text: string, extra: Record<string, string>) {
+    return {
+      seq,
+      type: "turn.model.delta",
+      payload: { runId, timestamp: "2026-08-26T05:00:01.000Z", type: "model.delta", text, ...extra },
+    };
+  }
+
+  it("groups a seeded spawn via conversationRef alone and tags the run", () => {
+    let state = beginGroupRun(EMPTY_TURN_STREAM, {
+      groupRef: "conv-1",
+      turnId: "g-turn-1",
+      positionId: "docs-writer",
+      engine: "qoder",
+      input: "群聊任务",
+    });
+    state = applyTurnEvent(
+      state,
+      backlinkDelta(1, "g-run-1", "群成员增量", { conversationRef: "conv-1", turnId: "g-turn-1" }),
+    );
+    expect(state.runs["g-run-1"]?.text).toBe("群成员增量");
+    expect(state.runs["g-run-1"]?.groupRef).toBe("conv-1");
+    expect(state.runs["g-turn-1"]).toBeUndefined();
+  });
+
+  it("keeps the legacy groupRef tag authoritative when both refs ride the event", () => {
+    let state = beginGroupRun(EMPTY_TURN_STREAM, {
+      groupRef: "conv-1",
+      turnId: "g-turn-1",
+      positionId: "docs-writer",
+      engine: "qoder",
+      input: "群聊任务",
+    });
+    state = applyTurnEvent(
+      state,
+      backlinkDelta(1, "g-run-1", "增量", {
+        conversationRef: "conv-1",
+        groupRef: "conv-1",
+        turnId: "g-turn-1",
+      }),
+    );
+    expect(state.runs["g-run-1"]?.groupRef).toBe("conv-1");
+  });
+
+  it("does not adopt a back-link event with no spawn seed (personal session path)", () => {
+    let state = beginPendingTurn(EMPTY_TURN_STREAM, pending);
+    state = applyTurnEvent(state, started(1, "run-1"));
+    state = applyTurnEvent(
+      state,
+      backlinkDelta(2, "run-1", "会话增量", { conversationRef: "session-1", turnId: "g-turn-9" }),
+    );
+    expect(state.runs["run-1"]?.text).toBe("会话增量");
+    expect(state.runs["run-1"]?.groupRef).toBeUndefined();
+    expect(state.pending?.runId).toBe("run-1");
+  });
+});
