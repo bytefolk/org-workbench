@@ -24,7 +24,7 @@ import type {
   WorkbenchSessionList,
   WorkspaceInfoResponse,
 } from "@org-workbench/shared";
-import { FileChartColumn, FolderTree, History, Network } from "lucide-react";
+import { FileChartColumn, FolderTree, History, Network, UsersRound } from "lucide-react";
 import type { CSSProperties } from "react";
 import {
   EMPTY_TURN_STREAM,
@@ -33,6 +33,7 @@ import {
   adaptTurnRecord,
   applyTurnEvent,
   approvalResumeInput,
+  beginGroupRun,
   beginPendingTurn,
   cancelPendingTurn,
   resetStreamSeq,
@@ -48,6 +49,7 @@ import type {
 } from "./turns";
 import { BackupTray, DismissPositionDialog } from "./org/OrgControls";
 import { HireDrawer } from "./org/HireDrawer";
+import { GroupsPanel } from "./groups/GroupsPanel";
 import { ReportsCenter } from "./reports/ReportsCenter";
 
 interface PositionCardState {
@@ -64,7 +66,7 @@ interface PositionCardState {
  * (org.updated drives refresh; the UI never polls).
  */
 export function App() {
-  const [activeModule, setActiveModule] = useState<"org" | "reports">("org");
+  const [activeModule, setActiveModule] = useState<"org" | "groups" | "reports">("org");
   const [health, setHealth] = useState<HealthResponse | null>(null);
   const [workspaceInfo, setWorkspaceInfo] = useState<WorkspaceInfoResponse | null>(null);
   const [snapshot, setSnapshot] = useState<OrgTreeSnapshot | null>(null);
@@ -431,6 +433,26 @@ export function App() {
     }
   }, [loadTurnHistory]);
 
+  /** Group spawn (#52): the 202 spawn list carries pre-assigned turnIds; seed
+   * one live buffer per mentioned member so SSE deltas aggregate per member. */
+  const spawnGroupRuns = useCallback(
+    (
+      groupRef: string,
+      spawns: Array<{ turnId: string; positionId: string }>,
+      input: string,
+      engine: TurnEngine,
+    ) => {
+      setTurnStream((current) =>
+        spawns.reduce(
+          (state, spawn) =>
+            beginGroupRun(state, { groupRef, turnId: spawn.turnId, positionId: spawn.positionId, engine, input }),
+          current,
+        ),
+      );
+    },
+    [],
+  );
+
   /** Operator cancel (issue #25 Slice A): the control plane settles the turn
    * as indeterminate/turn_cancelled; the in-flight POST readback and the
    * history reload remain the only authorities for the final record. */
@@ -653,7 +675,7 @@ export function App() {
     const live: TurnRecord[] = selectedId === null
       ? []
       : Object.entries(turnStream.runs)
-          .filter(([runId, run]) => run.positionId === selectedId && !historyRunIds.has(runId))
+          .filter(([runId, run]) => run.groupRef === undefined && run.positionId === selectedId && !historyRunIds.has(runId))
           .map(([runId, run]) => ({
             id: `live-${runId}`,
             positionId: run.positionId,
@@ -699,6 +721,7 @@ export function App() {
           brand={<span className="owb-rail-brand">owb</span>}
           items={[
             { id: "org", label: "组织", icon: <Network aria-hidden="true" size={16} />, active: activeModule === "org", onSelect: () => setActiveModule("org") },
+            { id: "groups", label: "群聊", icon: <UsersRound aria-hidden="true" size={16} />, active: activeModule === "groups", onSelect: () => setActiveModule("groups") },
             { id: "reports", label: "上报", icon: <FileChartColumn aria-hidden="true" size={16} />, active: activeModule === "reports", onSelect: () => { setActiveModule("reports"); void loadReports(); } },
             { id: "memory", label: "记忆", icon: <History aria-hidden="true" size={16} /> },
             { id: "docs", label: "文档", icon: <FolderTree aria-hidden="true" size={16} /> },
@@ -798,7 +821,18 @@ export function App() {
           <Alert type={orgFeedback.tone === "warn" ? "warning" : "info"} showIcon role={orgFeedback.tone === "warn" ? "alert" : "status"} title={orgFeedback.text} />
         ) : null}
         {reportsError ? <Alert type="warning" showIcon role="alert" title={reportsError} /> : null}
-        {activeModule === "reports" ? <ReportsCenter reports={reports} loading={reportsLoading} /> : <div className="owb-workspace-grid">
+        {activeModule === "reports" ? <ReportsCenter reports={reports} loading={reportsLoading} /> : activeModule === "groups" ? (
+          <GroupsPanel
+            workspaceOpen={workspaceInfo?.open === true}
+            positions={positions}
+            positionNames={positionNames}
+            engine={turnEngine}
+            engineAvailability={engineAvailability}
+            liveRuns={turnStream.runs}
+            onSelectEngine={setTurnEngine}
+            onSpawnRuns={spawnGroupRuns}
+          />
+        ) : <div className="owb-workspace-grid">
           <div className="owb-position-column">
             <PositionCard
               position={card.data}

@@ -4,6 +4,14 @@ import { bearerAuthorized } from "./auth.js";
 import type { ControlPlaneContext } from "./context.js";
 import { sendError, sendJson } from "./http.js";
 import { handleEvents } from "./routes/events.js";
+import {
+  handleGroupAddMember,
+  handleGroupCreate,
+  handleGroupGet,
+  handleGroupList,
+  handleGroupTimeline,
+  handleGroupTurnPost,
+} from "./routes/groups.js";
 import { handleHealth } from "./routes/health.js";
 import { handleHirePost } from "./routes/hire.js";
 import { handleOrgApply, handleOrgBackups, handleOrgRestore, handleOrgTree, handleOrgUndo } from "./routes/org.js";
@@ -120,6 +128,46 @@ async function dispatch(
       }
       if (operation === "turns" && method === "GET") {
         await handleSessionTurnHistory(ctx, res, sessionId);
+        return;
+      }
+      sendJson(
+        res,
+        405,
+        new OrgApiError(errorCodes.method_not_allowed, 405, `method ${method} not allowed`).toBody(),
+      );
+      return;
+    }
+    if (pathname === routes.groups && method === "POST") {
+      await handleGroupCreate(ctx, req, res);
+      return;
+    }
+    if (pathname === routes.groups && method === "GET") {
+      await handleGroupList(ctx, res);
+      return;
+    }
+    const groupMatch = pathname.match(/^\/groups\/([^/]+)(?:\/(members|turns))?$/);
+    if (groupMatch) {
+      let conversationRef: string;
+      try {
+        conversationRef = decodeURIComponent(groupMatch[1]!);
+      } catch {
+        throw new OrgApiError(errorCodes.group_request_invalid, 400, "malformed conversationRef");
+      }
+      const operation = groupMatch[2];
+      if (operation === undefined && method === "GET") {
+        await handleGroupGet(ctx, res, conversationRef);
+        return;
+      }
+      if (operation === "members" && method === "POST") {
+        await handleGroupAddMember(ctx, req, res, conversationRef);
+        return;
+      }
+      if (operation === "turns" && method === "POST") {
+        await handleGroupTurnPost(ctx, req, res, conversationRef);
+        return;
+      }
+      if (operation === "turns" && method === "GET") {
+        await handleGroupTimeline(ctx, res, conversationRef);
         return;
       }
       sendJson(

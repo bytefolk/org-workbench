@@ -374,9 +374,31 @@ Workbench 只 spawn 钉定 `context@f63f57f`（或兼容后续 main）的公共 
 
 失败响应 400/409/422/503 遵循 §1 统一错误体；上游稳定码原样透传，客户端不重命名。执行中不可取消（上游静态面无中止语义）；renderer 四态机（发起/执行/审批/结果）中审批相位为保留位——hire 通道上游无 approval 语义，永不触发，turn 内审批归 #25 Slice B。
 
+### 2.15 `/groups` — S2 群聊面（#52 加法，DS-34-001 rev-1 §1.2）
+
+```text
+POST /groups                                  {"memberPositionIds":["repo-owner","release-engineer"]}
+GET  /groups
+GET  /groups/:conversationRef
+POST /groups/:conversationRef/members         {"positionId":"issue-researcher"}
+POST /groups/:conversationRef/turns           {"input":"...","engine":"qoder|claude-code|claude-local","mentions":["repo-owner"]}
+GET  /groups/:conversationRef/turns
+```
+
+显式路由、禁广播：群回合只按 `mentions` 逐成员 spawn，每个被 @ 的成员生成一个独立的 `turn-envelope.v1`；`mentions` 为空或含非成员一律 400。
+
+- `POST /groups` 返回 201 `conversation-group.v1`：`memberPositionIds` 恰为 2–32 个唯一合法 positionId，额外字段拒绝（400 `group_request_invalid`）。每个群同时绑定一个真实 #12 session（`sessionId` 服务端生成，锚定首个成员的岗位生命周期，AC-004 双形态召回）；`conversationRef` 是服务端生成的本地 uuid，满足 `[a-z0-9]+(?:-[a-z0-9]+)*`。**过渡债登记**：conversationRef 为工作台侧本地映射，缺口① v1alpha2 契约级回链合入后切换并清账。
+- `GET /groups` 返回 `conversation-group-list.v1`（按 `updatedAt` 倒序）；`GET /groups/:conversationRef` 返回单群；不存在 404 `group_missing`，非法 ref 400 `group_request_invalid`。
+- `POST /groups/:conversationRef/members` 追加成员（已存在 409 `group_conflict`，达到 32 上限 409），返回更新后的群记录。
+- `POST /groups/:conversationRef/turns`：先持久化 `group-message.v1` 用户消息回显，再以 202 应答 `{"conversationRef","messageId","spawns":[{"turnId","positionId"}]}`；`turnId` 由服务端预分配，spawn 在后台顺序执行，逐成员记录经既有 position conversation store 持久化，`turn-record.v1` 只增一个可选字段 `groupRef`（不影响既有记录逐字节兼容）。
+- 事件面：同一条 `/events` SSE 通道新增 `group.turn.spawned`（每个被 @ 成员一条，payload `{groupRef,turnId,positionId}`）；群内成员的 `turn.*` 事件 payload 附加 `groupRef/turnId/positionId` 供 renderer 按 turnId 分流聚合。不新增独立 SSE 通道、不新增广播语义。
+- `GET /groups/:conversationRef/turns` 返回 `group-timeline.v1`：用户消息（`kind:"user"`）与成员回合（`kind:"member"`，内嵌完整 `turn-record.v1`）按 `createdAt` 归并排序。
+- 持久化位于 `<workspace>/.digital-employee/workbench/groups/<conversationRef>/`（`group.json` + `messages/<messageId>.json`）：目录 0700、文件 0600、原子替换，拒绝 symlink/路径穿越/损坏或无界记录；群数上限 64、单群消息上限 256、`input` ≤256 KiB。存储失败 500 `group_storage_failed`，不回显记录内容。
+- 1:1 面不变：legacy `/turns` 与 session turn 的请求键集校验拒绝任何 wire 侧 `groupRef`；群回合不进入 1:1 展示面，反之亦然。
+
 ## 3. 稳定错误码登记表
 
-控制面自产码（本契约定义）：`unauthorized`、`body_invalid`、`workspace_invalid`、`workspace_not_open`、`manifest_invalid`、`organization_invalid`、`engine_unavailable`（retryable=true）、`engine_capability_missing`、`engine_failed`、`position_missing`、`restore_invalid`、`restore_conflict`、`reports_data_invalid`、`turn_request_invalid`、`turn_engine_unsupported`、`turn_position_invalid`、`turn_storage_failed`、`session_request_invalid`、`session_missing`、`session_conflict`、`session_storage_failed`、`not_found`、`method_not_allowed`、`internal`；turn-record 内的稳定结果码包括 `turn_process_exit_1`、`turn_process_failed`、`turn_engine_unavailable`、`turn_timeout`、`turn_protocol_invalid`、`turn_driver_failure`、`turn_interrupted`；Context export state 的稳定失败码为 `context_adapter_failed`，不进入 HTTP 错误响应；提案预检码：`org_apply_position_exists`、`org_apply_position_missing`、`org_apply_cycle`、`org_apply_owner_delete`、`org_apply_max_depth`、`org_apply_destination_exists`、`org_reorder_set_mismatch`（#32 加法）；hire 通道码（#33 加法）：`hire_request_invalid`（400 形状级）、`hire_position_exists`（409 重名）。
+控制面自产码（本契约定义）：`unauthorized`、`body_invalid`、`workspace_invalid`、`workspace_not_open`、`manifest_invalid`、`organization_invalid`、`engine_unavailable`（retryable=true）、`engine_capability_missing`、`engine_failed`、`position_missing`、`restore_invalid`、`restore_conflict`、`reports_data_invalid`、`turn_request_invalid`、`turn_engine_unsupported`、`turn_position_invalid`、`turn_storage_failed`、`session_request_invalid`、`session_missing`、`session_conflict`、`session_storage_failed`、`not_found`、`method_not_allowed`、`internal`；turn-record 内的稳定结果码包括 `turn_process_exit_1`、`turn_process_failed`、`turn_engine_unavailable`、`turn_timeout`、`turn_protocol_invalid`、`turn_driver_failure`、`turn_interrupted`；Context export state 的稳定失败码为 `context_adapter_failed`，不进入 HTTP 错误响应；提案预检码：`org_apply_position_exists`、`org_apply_position_missing`、`org_apply_cycle`、`org_apply_owner_delete`、`org_apply_max_depth`、`org_apply_destination_exists`、`org_reorder_set_mismatch`（#32 加法）；hire 通道码（#33 加法）：`hire_request_invalid`（400 形状级）、`hire_position_exists`（409 重名）；群聊通道码（#52 加法）：`group_request_invalid`（400 形状级）、`group_missing`（404）、`group_conflict`（409 重复成员/成员上限）、`group_storage_failed`（500 fail-closed）。
 引擎透传码：以 digital-employee 稳定码为准（`workspace_org_*` 等），原样透传，不在本表重定义。
 
 ## 4. 安全基线（随契约冻结）

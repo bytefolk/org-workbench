@@ -30,6 +30,8 @@ export interface TurnPostBody {
   engine: TurnEngine;
   /** Operator verdict for a resume turn (#193); optional, additive. */
   pendingApproval?: TurnPendingApproval;
+  /** Additive #52: set only by the group spawn path, never by a route body. */
+  groupRef?: string;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -146,6 +148,18 @@ export function assertPositionExists(ctx: ControlPlaneContext, positionId: strin
   }
 }
 
+/** Additive #52: attribution fields attached to group-turn SSE payloads so
+ * the renderer can split one SSE channel by turn and aggregate per group. */
+export interface GroupEventAttribution {
+  groupRef: string;
+  turnId: string;
+  positionId: string;
+}
+
+function groupTag(event: EngineEvent, group?: GroupEventAttribution): EngineEvent | (EngineEvent & GroupEventAttribution) {
+  return group === undefined ? event : { ...event, ...group };
+}
+
 function eventType(event: EngineEvent): SseEventType {
   switch (event.type) {
     case "run.started":
@@ -184,9 +198,12 @@ export async function executeTurn(
   res: ServerResponse,
   body: TurnPostBody,
   session?: WorkbenchSession,
+  group?: GroupEventAttribution,
 ): Promise<void> {
   const workspace = ctx.workspace.requireOpen();
-  const turnId = crypto.randomUUID();
+  // Group spawns carry a pre-assigned turnId so the 202 spawn list and the
+  // executed envelope share one identity; personal turns keep server-random.
+  const turnId = group !== undefined ? group.turnId : crypto.randomUUID();
   const createdAt = new Date().toISOString();
   const envelope = createTurnEnvelope({
     workspaceRef: workspace.dir,
@@ -205,6 +222,9 @@ export async function executeTurn(
     message: body.input,
     envelopeDigest: envelope.envelopeDigest,
     now: createdAt,
+    // Additive #52: group spawns persist through the position store tagged
+    // with the local conversationRef (session arg stays undefined).
+    ...(group !== undefined ? { groupRef: group.groupRef } : {}),
   };
   const running = session === undefined
     ? await ctx.turnStore.begin(beginInput)
@@ -221,7 +241,7 @@ export async function executeTurn(
       // turn record has been durably replaced below.
       onEvent: (event) => {
         if (event.type !== "run.completed" && event.type !== "run.failed") {
-          ctx.bus.publish(eventType(event), event);
+          ctx.bus.publish(eventType(event), groupTag(event, group));
         }
       },
       setAbort: (abort) => ctx.runningTurns.register(body.positionId, abort),
@@ -307,11 +327,12 @@ export async function executeTurn(
       positionId: body.positionId,
       code: record.error?.code ?? "turn_protocol_invalid",
       envelopeDigest: envelope.envelopeDigest,
+      ...(group !== undefined ? { groupRef: group.groupRef } : {}),
     });
   } else {
     const terminal = result.events[result.events.length - 1];
     if (terminal?.type === "run.completed" || terminal?.type === "run.failed") {
-      ctx.bus.publish(eventType(terminal), terminal);
+      ctx.bus.publish(eventType(terminal), groupTag(terminal, group));
     }
   }
   sendJson(res, 200, record);

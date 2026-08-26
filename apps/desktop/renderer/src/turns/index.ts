@@ -6,6 +6,7 @@ export { approvalResumeInput } from "./approval";
 export {
   EMPTY_TURN_STREAM,
   applyTurnEvent,
+  beginGroupRun,
   beginPendingTurn,
   cancelPendingTurn,
   resetStreamSeq,

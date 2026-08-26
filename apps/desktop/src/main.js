@@ -26,6 +26,13 @@ const {
   validateSessionId,
   validateSessionTurnRequest,
 } = require("./session-ipc.cjs");
+const {
+  groupPath,
+  validateConversationRef,
+  validateGroupAddMemberRequest,
+  validateGroupCreateRequest,
+  validateGroupTurnRequest,
+} = require("./group-ipc.cjs");
 
 const SERVER_ENTRY = path.join(__dirname, "..", "..", "server", "dist", "src", "index.js");
 const READY_TIMEOUT_MS = 15000;
@@ -345,6 +352,42 @@ ipcMain.handle("owb:session:turn:history", async (_event, sessionId) => {
     return { status: 400, body: { code: "session_request_invalid", message: "sessionId is invalid", retryable: false } };
   }
   return apiRequest(`/sessions/${sessionId}/turns`);
+});
+
+// Additive #52: S2 group-chat surface (DS-34-001 rev-1 §1.2).
+ipcMain.handle("owb:group:create", async (_event, request) => {
+  const validated = validateGroupCreateRequest(request);
+  if (!validated.ok) return validated.response;
+  return apiRequest("/groups", { method: "POST", body: validated.request });
+});
+
+ipcMain.handle("owb:group:list", async () => apiRequest("/groups"));
+
+ipcMain.handle("owb:group:get", async (_event, conversationRef) => {
+  const pathname = groupPath(conversationRef);
+  if (pathname === null) {
+    return { status: 400, body: { code: "group_request_invalid", message: "conversationRef is invalid", retryable: false } };
+  }
+  return apiRequest(pathname);
+});
+
+ipcMain.handle("owb:group:member:add", async (_event, request) => {
+  const validated = validateGroupAddMemberRequest(request);
+  if (!validated.ok) return validated.response;
+  return apiRequest(groupPath(validated.conversationRef, "/members"), { method: "POST", body: validated.request });
+});
+
+ipcMain.handle("owb:group:turn:create", async (_event, request) => {
+  const validated = validateGroupTurnRequest(request);
+  if (!validated.ok) return validated.response;
+  return apiRequest(groupPath(validated.conversationRef, "/turns"), { method: "POST", body: validated.request });
+});
+
+ipcMain.handle("owb:group:timeline", async (_event, conversationRef) => {
+  if (!validateConversationRef(conversationRef)) {
+    return { status: 400, body: { code: "group_request_invalid", message: "conversationRef is invalid", retryable: false } };
+  }
+  return apiRequest(`/groups/${encodeURIComponent(conversationRef)}/turns`);
 });
 
 ipcMain.handle("owb:sse-status:get", async () => currentSseStatus);

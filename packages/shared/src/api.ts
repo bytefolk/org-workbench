@@ -26,6 +26,8 @@ export const routes = {
   sessions: "/sessions",
   turns: "/turns",
   turnsCancel: "/turns/cancel",
+  /** Additive S2 group-chat surface (#52, DS-34-001 rev-1 §1.2). */
+  groups: "/groups",
   events: "/events",
 } as const;
 
@@ -51,6 +53,10 @@ export const sseEventTypes = [
   "escalation.created",
   "evidence.created",
   "hire.progress",
+  // Additive S2 group-chat routing event (#52, DS-34-001 rev-1 §1.2): one per
+  // @mentioned member spawn; group turn.* payloads additionally carry
+  // additive groupRef/turnId/positionId fields for renderer attribution.
+  "group.turn.spawned",
 ] as const;
 
 export type SseEventType = (typeof sseEventTypes)[number];
