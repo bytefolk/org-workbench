@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
-import { Button as AntButton, Input, Tag } from "antd";
+import { Button as AntButton, Input } from "antd";
 import { ArrowUp, Plus, UserRoundPlus, UsersRound } from "lucide-react";
+import { hueForId } from "@org-workbench/ui";
 import type { GroupConversation, GroupConversationList, GroupTimeline } from "@org-workbench/shared";
 import { engineLabel } from "../turns/TurnPanel";
 import { adaptTurnRecord } from "../turns/adapter";
@@ -11,6 +12,14 @@ export interface GroupsPanelProps {
   workspaceOpen: boolean;
   positions: PositionMentionOption[];
   positionNames: Record<string, string>;
+  /** Avatar background colors keyed by position id (metadata.color); positions
+   * without one get the same deterministic hue the org tree uses (#53). */
+  positionColors?: Record<string, string>;
+  /** Prefilled group draft from the org-tree entry (#53, DS-34-001 §1.3):
+   * opens the create panel with these members checked. The nonce re-fires
+   * repeated entries on the same member set. Explicit draft only — creation
+   * still requires the operator to confirm ≥2 members. */
+  draftSeed?: { members: string[]; nonce: number } | null;
   engine: TurnEngine;
   engineAvailability: Record<TurnEngine, TurnEngineAvailability>;
   /** Shared SSE projection; group runs carry groupRef and are filtered here. */
@@ -40,6 +49,30 @@ function apiErrorMessage(body: unknown, fallback: string): string {
   return fallback;
 }
 
+/** Member avatar (#53 DS-34-001 §1.3): declared metadata.color wins, then
+ * the org tree's deterministic hue — the roster and tree stay in sync. */
+function PositionAvatar({
+  colors,
+  id,
+  name,
+  className,
+}: {
+  colors: Record<string, string>;
+  id: string;
+  name: string;
+  className?: string;
+}) {
+  return (
+    <span
+      className={className ?? "owb-groups__avatar"}
+      title={name}
+      style={{ background: colors[id] ?? `hsl(${hueForId(id)}, 65%, 42%)` }}
+    >
+      {name.trim().charAt(0).toUpperCase()}
+    </span>
+  );
+}
+
 /**
  * S2 group chat surface (#52, DS-34-001 rev-1 §1.2): explicit @mention
  * routing spawns one turn per mentioned member — never broadcast. The
@@ -50,6 +83,8 @@ export function GroupsPanel({
   workspaceOpen,
   positions,
   positionNames,
+  positionColors,
+  draftSeed,
   engine,
   engineAvailability,
   liveRuns,
@@ -63,6 +98,7 @@ export function GroupsPanel({
   const [timeline, setTimeline] = useState<GroupTimeline | null>(null);
   const [timelineLoading, setTimelineLoading] = useState(false);
   const [creating, setCreating] = useState(false);
+  const [createOpen, setCreateOpen] = useState(false);
   const [draftMembers, setDraftMembers] = useState<ReadonlySet<string>>(new Set());
   const [input, setInput] = useState("");
   const [mentions, setMentions] = useState<ReadonlySet<string>>(new Set());
@@ -134,6 +170,16 @@ export function GroupsPanel({
     void loadTimeline(selectedRef);
   }, [loadTimeline, selectedRef]);
 
+  // Org-tree group entry (#53): seed the draft with known positions only —
+  // a stale seed must never check phantom members.
+  useEffect(() => {
+    if (draftSeed === null || draftSeed === undefined) return;
+    const known = draftSeed.members.filter((id) => positions.some((position) => position.id === id));
+    if (known.length === 0) return;
+    setDraftMembers(new Set(known));
+    setCreateOpen(true);
+  }, [draftSeed, positions]);
+
   // Terminal SSE is the refresh hint; the timeline reload is authoritative.
   useEffect(() => {
     let timer: ReturnType<typeof setTimeout> | null = null;
@@ -167,6 +213,7 @@ export function GroupsPanel({
       }
       const created = res.body as GroupConversation;
       setDraftMembers(new Set());
+      setCreateOpen(false);
       await loadGroups();
       setSelectedRef(created.conversationRef);
     } catch {
@@ -278,7 +325,11 @@ export function GroupsPanel({
             </li>
           ))}
         </ul>
-        <details className="owb-groups__create">
+        <details
+          className="owb-groups__create"
+          open={createOpen}
+          onToggle={(event) => setCreateOpen(event.currentTarget.open)}
+        >
           <summary><Plus aria-hidden="true" size={13} />新建群聊（≥2 个岗位）</summary>
           <div className="owb-groups__create-body">
             {positions.map((position) => (
@@ -318,10 +369,45 @@ export function GroupsPanel({
           <>
             <header className="owb-groups__panel-header">
               <h3>{groupLabel(selectedGroup, positionNames)}</h3>
-              <div className="owb-groups__members" aria-label="群成员">
-                {selectedGroup.members.map((memberId) => (
-                  <Tag key={memberId}>{positionNames[memberId] ?? memberId}</Tag>
+              <div className="owb-groups__avatar-stack" aria-label={`群成员 ${selectedGroup.members.length} 人`}>
+                {selectedGroup.members.slice(0, 6).map((memberId) => (
+                  <PositionAvatar
+                    key={memberId}
+                    colors={positionColors ?? {}}
+                    id={memberId}
+                    name={positionNames[memberId] ?? memberId}
+                  />
                 ))}
+                {selectedGroup.members.length > 6 ? (
+                  <span className="owb-groups__avatar owb-groups__avatar--more">
+                    +{selectedGroup.members.length - 6}
+                  </span>
+                ) : null}
+              </div>
+            </header>
+
+            <div className="owb-groups__panel-body">
+              <aside className="owb-groups__roster" aria-label="群成员">
+                <ul className="owb-groups__roster-items">
+                  {selectedGroup.members.map((memberId) => {
+                    const running = Object.values(liveRuns).some(
+                      (run) => run.groupRef === selectedRef && run.positionId === memberId,
+                    );
+                    return (
+                      <li key={memberId} className="owb-groups__roster-item">
+                        <PositionAvatar
+                          colors={positionColors ?? {}}
+                          id={memberId}
+                          name={positionNames[memberId] ?? memberId}
+                        />
+                        <span className="owb-groups__roster-name">{positionNames[memberId] ?? memberId}</span>
+                        {running ? (
+                          <span className="owb-groups__roster-running" aria-label="回合进行中" />
+                        ) : null}
+                      </li>
+                    );
+                  })}
+                </ul>
                 {nonMembers.length > 0 ? (
                   <label className="owb-groups__add-member">
                     <UserRoundPlus aria-hidden="true" size={13} />
@@ -337,9 +423,9 @@ export function GroupsPanel({
                     </select>
                   </label>
                 ) : null}
-              </div>
-            </header>
+              </aside>
 
+              <div className="owb-groups__panel-main">
             {panelError ? <p className="owb-groups__error" role="alert">{panelError}</p> : null}
 
             <div className="owb-groups__timeline" aria-label="群时间线" aria-busy={timelineLoading}>
@@ -466,6 +552,8 @@ export function GroupsPanel({
                   : engineAvailability[engine].reason ?? `${engineLabel(engine)} 尚未就绪`}
               </p>
             </form>
+              </div>
+            </div>
           </>
         )}
       </div>

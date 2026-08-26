@@ -104,6 +104,9 @@ export function App() {
   const [decidedApprovals, setDecidedApprovals] = useState<ReadonlySet<string>>(new Set());
   /** Tree-node "+" hire entry (#32 AC-004): undefined = closed, otherwise the preset reportTo. */
   const [treeHireParent, setTreeHireParent] = useState<string | null | undefined>(undefined);
+  /** Org-tree group entry (#53): prefilled draft members handed to the
+   * GroupsPanel create panel; nonce re-fires repeated entries. */
+  const [groupDraftSeed, setGroupDraftSeed] = useState<{ members: string[]; nonce: number } | null>(null);
 
   useEffect(() => {
     selectedIdRef.current = selectedId;
@@ -778,6 +781,10 @@ export function App() {
                   onMove={(id, reportTo) => void movePosition(id, reportTo)}
                   onDropPosition={(drop) => void reorderPosition(drop)}
                   onHireEntry={(parent) => setTreeHireParent(parent)}
+                  onGroupEntry={(positionId) => {
+                    setGroupDraftSeed({ members: [positionId], nonce: Date.now() });
+                    setActiveModule("groups");
+                  }}
                   moveDisabled={orgBusy}
                 />
               </div>
@@ -842,6 +849,8 @@ export function App() {
             workspaceOpen={workspaceInfo?.open === true}
             positions={positions}
             positionNames={positionNames}
+            positionColors={positionColors}
+            draftSeed={groupDraftSeed}
             engine={turnEngine}
             engineAvailability={engineAvailability}
             liveRuns={turnStream.runs}

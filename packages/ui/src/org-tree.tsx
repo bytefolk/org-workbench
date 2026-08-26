@@ -1,4 +1,4 @@
-import { Building2, ChevronRight, Folder, FolderOpen, Plus } from "lucide-react";
+import { Building2, ChevronRight, Folder, FolderOpen, Plus, UsersRound } from "lucide-react";
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type DragEvent, type KeyboardEvent, type ReactNode } from "react";
 import { cn } from "@fullstack-ai-infra/ui";
 import { BudgetBar } from "./budget-bar";
@@ -34,6 +34,10 @@ export interface OrgTreeProps {
   onDropPosition?: (drop: OrgDropPosition) => void;
   /** Hover "+" creation entry (#32 AC-004): recruit under parentId (null = enterprise root). */
   onHireEntry?: (parentId: string | null) => void;
+  /** Explicit group-chat entry (#53, DS-34-001 §1.3/§7): start a group draft
+   * prefilled with this row's position. An explicit action only — the caller
+   * owns member confirmation; the tree never broadcasts. */
+  onGroupEntry?: (positionId: string) => void;
   /** Single-step undo request (#32 AC-005), ⌘/Ctrl+Z while the tree has focus. */
   onUndo?: () => void;
   moveDisabled?: boolean;
@@ -63,6 +67,8 @@ export interface OrgTreeNodeProps {
   onDrop: (event: DragEvent<HTMLDivElement>) => void;
   /** Hover "+" entry (#32 AC-004): recruit a subordinate of this row's position. */
   onHireEntry?: () => void;
+  /** Hover group entry (#53): start a group-chat draft prefilled with this row. */
+  onGroupEntry?: () => void;
 }
 
 export function OrgTreeNode({
@@ -85,6 +91,7 @@ export function OrgTreeNode({
   onDragOver,
   onDrop,
   onHireEntry,
+  onGroupEntry,
 }: OrgTreeNodeProps) {
   return (
     <div
@@ -158,6 +165,19 @@ export function OrgTreeNode({
         format="compact"
         declared={{ taskLimit: node.budget.perTask, dailyLimit: node.budget.perDay }}
       />
+      {onGroupEntry ? (
+        <button
+          type="button"
+          className="ui-org-tree__group"
+          aria-label={`与 ${displayName ?? node.id} 发起群聊`}
+          onClick={(event) => {
+            event.stopPropagation();
+            onGroupEntry();
+          }}
+        >
+          <UsersRound aria-hidden="true" size={12} />
+        </button>
+      ) : null}
       {onHireEntry ? (
         <button
           type="button"
@@ -177,8 +197,9 @@ export function OrgTreeNode({
 
 const ENTERPRISE_ID = "__enterprise__";
 
-/** Stable avatar hue for positions without a declared color. */
-function hueForId(id: string): number {
+/** Stable avatar hue for positions without a declared color. Exported so
+ * other surfaces (#53 group roster) keep avatar hues consistent. */
+export function hueForId(id: string): number {
   let hash = 0;
   for (const char of id) hash = (hash * 31 + (char.codePointAt(0) ?? 0)) % 360;
   return hash;
@@ -288,6 +309,7 @@ export function OrgTree({
   onMove,
   onDropPosition,
   onHireEntry,
+  onGroupEntry,
   onUndo,
   moveDisabled = false,
   className,
@@ -587,6 +609,7 @@ export function OrgTree({
             onMove?.(source, node.id);
           }}
           onHireEntry={onHireEntry && !moveDisabled ? () => onHireEntry(node.id) : undefined}
+          onGroupEntry={onGroupEntry ? () => onGroupEntry(node.id) : undefined}
         />
         {hint?.zone === "after" ? <div className="ui-org-tree__drop-line" aria-hidden="true" /> : null}
         {isExpanded && hasChildren ? (

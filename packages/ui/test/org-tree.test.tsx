@@ -328,4 +328,28 @@ describe("OrgTree (#32 §1 insertion lines, invalid-drop rejection, ⌘ reorder)
     expect(onHireEntry).toHaveBeenCalledWith("release-engineer");
     expect(onSelect).not.toHaveBeenCalled();
   });
+
+  it("hover group entry starts a prefilled group draft for the row (#53)", () => {
+    const onGroupEntry = vi.fn();
+    render(<OrgTree snapshot={SNAPSHOT} onGroupEntry={onGroupEntry} />);
+    fireEvent.click(screen.getByRole("button", { name: "与 community-operator 发起群聊" }));
+    expect(onGroupEntry).toHaveBeenCalledWith("community-operator");
+  });
+
+  it("group entry is absent without onGroupEntry and independent of moveDisabled (#53)", () => {
+    const onGroupEntry = vi.fn();
+    const first = render(<OrgTree snapshot={SNAPSHOT} />);
+    expect(first.container.querySelectorAll(".ui-org-tree__group")).toHaveLength(0);
+    const second = render(<OrgTree snapshot={SNAPSHOT} onGroupEntry={onGroupEntry} moveDisabled />);
+    expect(second.container.querySelectorAll(".ui-org-tree__group").length).toBeGreaterThan(0);
+  });
+
+  it("group entry does not select the row and stops propagation (#53)", () => {
+    const onSelect = vi.fn();
+    const onGroupEntry = vi.fn();
+    render(<OrgTree snapshot={SNAPSHOT} onSelect={onSelect} onGroupEntry={onGroupEntry} />);
+    fireEvent.click(screen.getByRole("button", { name: "与 release-engineer 发起群聊" }));
+    expect(onGroupEntry).toHaveBeenCalledWith("release-engineer");
+    expect(onSelect).not.toHaveBeenCalled();
+  });
 });

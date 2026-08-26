@@ -1,0 +1,11 @@
+cdp connected
+org tree rows: 5
+org-tree group entry present+revealed on hover: true
+shot org-tree-group-entry.png
+create panel open, prefilled checked count: 1 (explicit draft, no group created yet)
+shot group-draft-prefilled.png
+group created: avatar stack 2 avatars; roster: Release Engineer, Repo Owner
+shot group-header-roster.png
+avatar stack aria-label: 群成员 2 人
+composer hint (explicit-routing guard preserved): 选择至少一名成员：群回合只按 @mention 显式路由，不广播
+mention chips in-flow inside picker row: true
