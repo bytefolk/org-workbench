@@ -53,6 +53,14 @@ export const errorCodes = {
   reports_data_invalid: "reports_data_invalid",
   /** POST /hire request shape violates the frozen hire channel contract (#33). */
   hire_request_invalid: "hire_request_invalid",
+  /** POST /groups request shape violates the S2 group-chat contract (#52). */
+  group_request_invalid: "group_request_invalid",
+  /** A requested group conversationRef does not exist in the open workspace (#52). */
+  group_missing: "group_missing",
+  /** Group lifecycle state rejects the requested mutation (#52). */
+  group_conflict: "group_conflict",
+  /** Workspace-local group state failed validation or atomic persistence (#52). */
+  group_storage_failed: "group_storage_failed",
   /** Route not found. */
   not_found: "not_found",
   /** Method not allowed on a known route. */

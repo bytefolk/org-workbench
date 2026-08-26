@@ -137,7 +137,7 @@ export const nodeAtomicTurnWriteOperations: AtomicTurnWriteOperations = {
   removeTemporary: (file) => fs.rm(file, { force: true }),
 };
 
-async function atomicWriteJson(
+export async function atomicWriteJson(
   file: string,
   value: unknown,
   maxBytes: number,
@@ -313,7 +313,7 @@ export function isTurnRecord(value: unknown): value is TurnRecord {
       "schemaVersion", "conversationId", "turnId", "positionId", "engine", "status",
       "input", "envelopeDigest", "createdAt", "updatedAt", "events",
     ],
-    ["runId", "output", "error"],
+    ["runId", "output", "error", "groupRef"],
   )) return false;
   const createdInstant = parseRfc3339Instant(value.createdAt);
   const updatedInstant = parseRfc3339Instant(value.updatedAt);
@@ -342,6 +342,8 @@ export function isTurnRecord(value: unknown): value is TurnRecord {
   const hasOutput = Object.hasOwn(value, "output");
   const hasError = Object.hasOwn(value, "error");
   if (hasRunId && !isBoundedIdentifier(value.runId)) return false;
+  // Additive #52: local group conversationRef link (transition debt, 缺口①).
+  if (Object.hasOwn(value, "groupRef") && !isBoundedIdentifier(value.groupRef)) return false;
   if (events.length > 0 && value.runId !== events[0]!.runId) return false;
   if (events.length === 0 && hasRunId) return false;
   const recordError = hasError ? validateRecordError(value.error) : null;
@@ -661,6 +663,8 @@ export class TurnStore {
     message: string;
     envelopeDigest: string;
     now: string;
+    /** Additive #52: local group conversationRef for group-spawned turns. */
+    groupRef?: string;
   }): Promise<TurnRecord> {
     assertPositionId(input.positionId);
     turnRecordFile(input.workspace, input.positionId, input.turnId);
@@ -679,6 +683,7 @@ export class TurnStore {
       createdAt: input.now,
       updatedAt: input.now,
       events: [],
+      ...(input.groupRef !== undefined ? { groupRef: input.groupRef } : {}),
     };
     const activeKey = this.activeTurnKey(input.workspace, input.positionId, input.turnId);
     this.activeTurns.add(activeKey);

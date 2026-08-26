@@ -23,6 +23,8 @@ export interface LiveRunState {
   startedAt: string;
   /** Latest engine-reported usage; feeds the compact status line only. */
   totalTokens: number | null;
+  /** Group conversation this run belongs to (#52); absent for 1:1 turns. */
+  groupRef?: string;
 }
 
 export interface TurnStreamState {
@@ -66,6 +68,38 @@ export function beginPendingTurn(
   request: { positionId: string; engine: TurnEngine; input: string },
 ): TurnStreamState {
   return { ...state, pending: { ...request, runId: null } };
+}
+
+/**
+ * Group spawn (#52): the 202 response pre-assigns each member's turnId, so the
+ * run is adopted here — group turns bypass the single-pending attribution.
+ */
+export function beginGroupRun(
+  state: TurnStreamState,
+  spawn: {
+    groupRef: string;
+    turnId: string;
+    positionId: string;
+    engine: TurnEngine;
+    input: string;
+  },
+): TurnStreamState {
+  if (state.runs[spawn.turnId] !== undefined) return state;
+  return {
+    ...state,
+    runs: evictIfOverCap({
+      ...state.runs,
+      [spawn.turnId]: {
+        positionId: spawn.positionId,
+        engine: spawn.engine,
+        input: spawn.input,
+        text: "",
+        startedAt: new Date().toISOString(),
+        totalTokens: null,
+        groupRef: spawn.groupRef,
+      },
+    }),
+  };
 }
 
 /** The in-flight POST failed before any engine attribution; drop the pending marker only. */
@@ -119,6 +153,24 @@ export function applyTurnEvent(
           runs: { ...state.runs, [runId]: { ...existing, text: existing.text + delta } },
         };
       }
+      if (stringField(payload, "groupRef") !== null) {
+        // Group runs (#52) are seeded by beginGroupRun under the pre-assigned
+        // turnId; the first engine event re-keys the buffer under the engine
+        // runId so delta/usage/completed all resolve through the normal path.
+        const seedId = stringField(payload, "turnId");
+        const seeded = seedId !== null ? state.runs[seedId] : undefined;
+        if (seeded === undefined || runId === null) return { ...state, seq: nextSeq };
+        const runs = { ...state.runs };
+        if (seedId !== null && seedId !== runId) delete runs[seedId];
+        return {
+          ...state,
+          seq: nextSeq,
+          runs: evictIfOverCap({
+            ...runs,
+            [runId]: { ...seeded, text: seeded.text + delta },
+          }),
+        };
+      }
       const pending = state.pending;
       // A run we cannot attribute to our in-flight POST is left to the
       // authoritative history reload; the renderer never guesses a position.
@@ -163,15 +215,24 @@ export function applyTurnEvent(
       return { ...state, seq: nextSeq, runs };
     }
     case "turn.indeterminate": {
-      // No runId is carried; scope the cleanup to the reported position, or to
-      // the run bound to the in-flight POST when the position is absent.
+      // No runId is carried. 1:1 cleanup stays position-scoped (the run buffer
+      // is keyed by the engine runId). Group spawn failures (#52) carry
+      // groupRef + the pre-assigned turnId (seed key) or match the re-keyed
+      // buffer by groupRef+positionId.
+      const indeterminateTurnId = stringField(payload, "turnId");
+      const indeterminateGroupRef = stringField(payload, "groupRef");
       const positionId = stringField(payload, "positionId");
       const pendingRunId = state.pending?.runId ?? null;
       const runs: Record<string, LiveRunState> = {};
       for (const [runId, run] of Object.entries(state.runs)) {
-        const scoped = positionId !== null
-          ? run.positionId === positionId
-          : runId === pendingRunId;
+        const scoped = indeterminateGroupRef !== null && indeterminateTurnId !== null
+          ? runId === indeterminateTurnId ||
+            (positionId !== null &&
+              run.groupRef === indeterminateGroupRef &&
+              run.positionId === positionId)
+          : positionId !== null
+            ? run.positionId === positionId
+            : runId === pendingRunId;
         if (!scoped) runs[runId] = run;
       }
       return { ...state, seq: nextSeq, runs };

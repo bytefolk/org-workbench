@@ -153,6 +153,11 @@ export interface TurnRecord {
   runId?: string;
   output?: unknown;
   error?: { code: string; message: string; retryable: boolean };
+  /** Additive #52 (DS-34-001 rev-1 缺口①过渡): local conversationRef of the
+   * spawning group; absent for personal turns. Contract-level conversationRef
+   * lands with the upstream v1alpha2 de issue; until then this local link is
+   * the registered transition debt. */
+  groupRef?: string;
 }
 
 export interface TurnHistory {

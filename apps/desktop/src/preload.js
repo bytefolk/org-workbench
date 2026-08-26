@@ -22,6 +22,12 @@ contextBridge.exposeInMainWorld("owb", {
   rotateSession: (sessionId) => ipcRenderer.invoke("owb:session:rotate", sessionId),
   createSessionTurn: (request) => ipcRenderer.invoke("owb:session:turn:create", request),
   sessionTurnHistory: (sessionId) => ipcRenderer.invoke("owb:session:turn:history", sessionId),
+  createGroup: (request) => ipcRenderer.invoke("owb:group:create", request),
+  groups: () => ipcRenderer.invoke("owb:group:list"),
+  group: (conversationRef) => ipcRenderer.invoke("owb:group:get", conversationRef),
+  addGroupMember: (request) => ipcRenderer.invoke("owb:group:member:add", request),
+  createGroupTurn: (request) => ipcRenderer.invoke("owb:group:turn:create", request),
+  groupTimeline: (conversationRef) => ipcRenderer.invoke("owb:group:timeline", conversationRef),
   sseStatus: () => ipcRenderer.invoke("owb:sse-status:get"),
   onEvent: (callback) => {
     const listener = (_event, payload) => callback(payload);
