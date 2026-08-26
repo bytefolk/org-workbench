@@ -1,4 +1,5 @@
 const { isPositionId } = require("@org-workbench/shared/position-id");
+const { validatePendingApproval } = require("./approval-ipc.cjs");
 const MAX_INPUT_BYTES = 256 * 1024;
 const TURN_ENGINES = new Set(["qoder", "claude-code", "claude-local"]);
 
@@ -15,8 +16,11 @@ function validateCreateTurnRequest(value) {
     return { ok: false, response: invalid("turn request must be an object") };
   }
   const keys = Object.keys(value).sort();
-  if (keys.join(",") !== "engine,input,positionId") {
-    return { ok: false, response: invalid("turn request accepts exactly positionId, input, and engine") };
+  if (keys.join(",") !== "engine,input,positionId" && keys.join(",") !== "engine,input,pendingApproval,positionId") {
+    return {
+      ok: false,
+      response: invalid("turn request accepts exactly positionId, input, engine, and optional pendingApproval"),
+    };
   }
   if (!validatePositionId(value.positionId)) {
     return { ok: false, response: invalid("positionId is invalid") };
@@ -31,9 +35,20 @@ function validateCreateTurnRequest(value) {
   if (typeof value.engine !== "string" || !TURN_ENGINES.has(value.engine)) {
     return { ok: false, response: invalid("engine must be qoder, claude-code, or claude-local") };
   }
+  let pendingApproval;
+  if (value.pendingApproval !== undefined) {
+    const checked = validatePendingApproval(value.pendingApproval);
+    if (!checked.ok) return checked;
+    pendingApproval = checked.value;
+  }
   return {
     ok: true,
-    request: { positionId: value.positionId, input: value.input, engine: value.engine },
+    request: {
+      positionId: value.positionId,
+      input: value.input,
+      engine: value.engine,
+      ...(pendingApproval !== undefined ? { pendingApproval } : {}),
+    },
   };
 }
 

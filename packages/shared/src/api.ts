@@ -43,6 +43,10 @@ export const sseEventTypes = [
   "turn.completed",
   "turn.failed",
   "turn.indeterminate",
+  // Additive approval-gate mirror of the engine.v1 #187 events (#25 Slice B).
+  "turn.approval.requested",
+  "turn.approval.granted",
+  "turn.approval.denied",
   "escalation.created",
   "evidence.created",
 ] as const;

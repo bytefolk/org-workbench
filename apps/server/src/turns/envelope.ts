@@ -1,5 +1,5 @@
 import crypto from "node:crypto";
-import type { TurnEnvelope } from "@org-workbench/shared";
+import type { TurnEnvelope, TurnPendingApproval } from "@org-workbench/shared";
 import { TURN_ENVELOPE_SCHEMA_VERSION } from "@org-workbench/shared";
 
 function canonicalJson(value: unknown): unknown {
@@ -23,6 +23,8 @@ export function createTurnEnvelope(input: {
   positionId: string;
   turnId: string;
   message: string;
+  /** Operator verdict for a resume turn (#193); included in the digest. */
+  pendingApproval?: TurnPendingApproval;
 }): TurnEnvelope {
   const body = {
     schemaVersion: TURN_ENVELOPE_SCHEMA_VERSION,
@@ -30,6 +32,9 @@ export function createTurnEnvelope(input: {
     positionId: input.positionId,
     turnId: input.turnId,
     input: input.message,
+    ...(input.pendingApproval !== undefined
+      ? { pendingApproval: input.pendingApproval }
+      : {}),
   };
   return { ...body, envelopeDigest: computeEnvelopeDigest(body) };
 }

@@ -33,6 +33,7 @@ import {
   adaptTurnHistory,
   adaptTurnRecord,
   applyTurnEvent,
+  approvalResumeInput,
   beginPendingTurn,
   cancelPendingTurn,
   resetStreamSeq,
@@ -95,6 +96,10 @@ export function App() {
   const [reportsError, setReportsError] = useState<string | null>(null);
   const [orgBusy, setOrgBusy] = useState(false);
   const [orgFeedback, setOrgFeedback] = useState<{ tone: "info" | "warn"; text: string } | null>(null);
+  /** Approvals whose verdict was already sealed into a resume turn. The
+   * server record never persists pendingApproval, so this client-side set is
+   * the only source for settling the verdict card into a terminal state. */
+  const [decidedApprovals, setDecidedApprovals] = useState<ReadonlySet<string>>(new Set());
   /** Tree-node "+" hire entry (#32 AC-004): undefined = closed, otherwise the preset reportTo. */
   const [treeHireParent, setTreeHireParent] = useState<string | null | undefined>(undefined);
 
@@ -177,6 +182,7 @@ export function App() {
       setSelectedSessionId(null);
       selectedSessionIdRef.current = null;
       setTurnError(null);
+      setDecidedApprovals(new Set());
       setBackups([]);
       setReports(null);
       setReportsError(null);
@@ -390,6 +396,9 @@ export function App() {
         sessionId,
         engine: request.engine,
         input: request.input,
+        ...(request.pendingApproval !== undefined
+          ? { pendingApproval: request.pendingApproval }
+          : {}),
       });
       if (res.status !== 200) {
         const message = apiErrorMessage(res.body, "回合创建失败");
@@ -439,6 +448,35 @@ export function App() {
       setTurnCancelling(false);
     }
   }, []);
+
+  /** Operator verdict (issue #25 Slice B): the verdict is a new resume turn
+   * whose sealed envelope carries pendingApproval; granted defaults scope to
+   * "once" upstream, denied carries the optional reason only. A verdict is
+   * only marked decided after the resume turn is created, so a failed
+   * creation leaves the card actionable. */
+  const verdictTurn = useCallback(
+    async (turn: TurnRecord, decision: "granted" | "denied", reason?: string) => {
+      const request = turn.approvalRequest;
+      if (request === undefined) return;
+      if (decidedApprovals.has(request.approvalId)) return;
+      const created = await createTurn({
+        positionId: turn.positionId,
+        engine: turn.engine,
+        input: approvalResumeInput(decision, reason),
+        pendingApproval: {
+          approvalId: request.approvalId,
+          decision,
+          decidedBy: "operator",
+          ...(decision === "granted" ? { scope: "once" as const } : {}),
+          ...(reason !== undefined ? { reason } : {}),
+        },
+      });
+      if (created !== false) {
+        setDecidedApprovals((current) => new Set(current).add(request.approvalId));
+      }
+    },
+    [createTurn, decidedApprovals],
+  );
 
   const openWorkspace = useCallback(async () => {
     await window.owb.openWorkspace();
@@ -785,6 +823,8 @@ export function App() {
             onSelectEngine={setTurnEngine}
             onCreateTurn={createTurn}
             onCancelTurn={cancelTurn}
+            onVerdictTurn={verdictTurn}
+            decidedApprovalIds={decidedApprovals}
             cancelling={turnCancelling}
             onSelectSession={selectSession}
             onCreateSession={createSession}

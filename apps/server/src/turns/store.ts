@@ -41,6 +41,14 @@ const TERMINAL_REASONS = new Set<TurnTerminalReason>([
   "cancelled",
   "engine_internal_error",
 ]);
+// Additive #25 Slice B: the approval.* read bounds mirror driver-cli.ts
+// (upstream #187 MAX_ID_LENGTH / APPROVAL_DESCRIPTION_MAX_BYTES /
+// APPROVAL_TARGET_MAX_BYTES) so every event the driver accepts persists
+// and reads back intact.
+const APPROVAL_ID_MAX_LENGTH = 256;
+const APPROVAL_ACTION_KINDS = new Set(["exec", "write", "network", "tool"]);
+const APPROVAL_DESCRIPTION_MAX_BYTES = 1024;
+const APPROVAL_TARGET_MAX_BYTES = 512;
 
 interface ConversationMetadata {
   schemaVersion: "conversation.v1";
@@ -447,6 +455,24 @@ function isBoundedJson(value: unknown, limit: number): boolean {
   }
 }
 
+function isBoundedApprovalId(value: unknown): value is string {
+  return typeof value === "string" && value.trim().length > 0 && value.length <= APPROVAL_ID_MAX_LENGTH;
+}
+
+function isBoundedNonEmptyText(value: unknown, maxBytes: number): value is string {
+  return (
+    typeof value === "string" &&
+    value.trim().length > 0 &&
+    Buffer.byteLength(value, "utf8") <= maxBytes
+  );
+}
+
+// The driver validates expiresAt with Date.parse; the store must not be
+// stricter or read-after-write fails for records the driver accepted.
+function isOptionalIsoTimestamp(value: unknown): boolean {
+  return value === undefined || (typeof value === "string" && !Number.isNaN(Date.parse(value)));
+}
+
 function validateRecordError(
   value: unknown,
 ): { code: string; message: string; retryable: boolean } | null {
@@ -522,6 +548,72 @@ function validateEngineEvent(value: unknown): EngineEvent | null {
           retryable: value.error.retryable,
           terminalReason: value.error.terminalReason as TurnTerminalReason,
         },
+      };
+    }
+    // Additive #25 Slice B mirror of driver-cli.ts approval.* validation;
+    // the frozen five cases above are unchanged.
+    case "approval.requested": {
+      if (
+        !hasExactKeys(
+          value,
+          ["type", "runId", "timestamp", "approvalId", "action"],
+          ["reason", "expiresAt"],
+        ) ||
+        !isObjectRecord(value.action) ||
+        !hasExactKeys(value.action, ["kind", "description"], ["target"]) ||
+        !isBoundedApprovalId(value.approvalId) ||
+        !APPROVAL_ACTION_KINDS.has(value.action.kind as string) ||
+        !isBoundedNonEmptyText(value.action.description, APPROVAL_DESCRIPTION_MAX_BYTES) ||
+        (value.action.target !== undefined &&
+          !isBoundedNonEmptyText(value.action.target, APPROVAL_TARGET_MAX_BYTES)) ||
+        (value.reason !== undefined &&
+          !isBoundedNonEmptyText(value.reason, APPROVAL_DESCRIPTION_MAX_BYTES)) ||
+        !isOptionalIsoTimestamp(value.expiresAt)
+      ) return null;
+      return {
+        ...base,
+        type: "approval.requested",
+        approvalId: value.approvalId,
+        action: {
+          kind: value.action.kind as "exec" | "write" | "network" | "tool",
+          description: value.action.description,
+          ...(value.action.target !== undefined ? { target: value.action.target } : {}),
+        },
+        ...(value.reason !== undefined ? { reason: value.reason } : {}),
+        ...(value.expiresAt !== undefined ? { expiresAt: value.expiresAt as string } : {}),
+      };
+    }
+    case "approval.granted":
+      return hasExactKeys(value, ["type", "runId", "timestamp", "approvalId", "grantedBy", "scope"]) &&
+        isBoundedApprovalId(value.approvalId) &&
+        value.grantedBy === "operator" &&
+        (value.scope === "once" || value.scope === "run")
+        ? {
+            ...base,
+            type: "approval.granted",
+            approvalId: value.approvalId,
+            grantedBy: "operator" as const,
+            scope: value.scope,
+          }
+        : null;
+    case "approval.denied": {
+      if (
+        !hasExactKeys(
+          value,
+          ["type", "runId", "timestamp", "approvalId", "deniedBy"],
+          ["reason"],
+        ) ||
+        !isBoundedApprovalId(value.approvalId) ||
+        value.deniedBy !== "operator" ||
+        (value.reason !== undefined &&
+          !isBoundedNonEmptyText(value.reason, APPROVAL_DESCRIPTION_MAX_BYTES))
+      ) return null;
+      return {
+        ...base,
+        type: "approval.denied",
+        approvalId: value.approvalId,
+        deniedBy: "operator" as const,
+        ...(value.reason !== undefined ? { reason: value.reason } : {}),
       };
     }
     default:

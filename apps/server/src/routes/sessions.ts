@@ -4,7 +4,8 @@ import type { TurnEngine } from "@org-workbench/shared";
 import type { ControlPlaneContext } from "../context.js";
 import { readJsonBody, sendJson } from "../http.js";
 import { assertSessionId } from "../sessions/store.js";
-import { assertPositionExists, executeTurn } from "./turns.js";
+import { assertPositionExists, assertPendingApproval, executeTurn } from "./turns.js";
+import type { TurnPendingApproval } from "@org-workbench/shared";
 
 const MAX_INPUT_BYTES = 256 * 1024;
 
@@ -37,12 +38,19 @@ function parseEmpty(raw: unknown): void {
   }
 }
 
-function parseSessionTurn(raw: unknown): { input: string; engine: TurnEngine } {
-  if (!isRecord(raw) || !exactKeys(raw, ["input", "engine"])) {
+function parseSessionTurn(raw: unknown): {
+  input: string;
+  engine: TurnEngine;
+  pendingApproval?: TurnPendingApproval;
+} {
+  if (
+    !isRecord(raw) ||
+    (!exactKeys(raw, ["input", "engine"]) && !exactKeys(raw, ["input", "engine", "pendingApproval"]))
+  ) {
     throw new OrgApiError(
       errorCodes.turn_request_invalid,
       400,
-      "session turn accepts exactly input and engine",
+      "session turn accepts exactly input, engine, and optional pendingApproval",
     );
   }
   if (
@@ -58,7 +66,13 @@ function parseSessionTurn(raw: unknown): { input: string; engine: TurnEngine } {
   if (typeof raw.engine !== "string" || !turnEngines.includes(raw.engine as TurnEngine)) {
     throw new OrgApiError(errorCodes.turn_engine_unsupported, 400, `engine must be ${turnEngines.join(" or ")}`);
   }
-  return { input: raw.input, engine: raw.engine as TurnEngine };
+  return {
+    input: raw.input,
+    engine: raw.engine as TurnEngine,
+    ...(raw.pendingApproval !== undefined
+      ? { pendingApproval: assertPendingApproval(raw.pendingApproval) }
+      : {}),
+  };
 }
 
 export async function handleSessionCreate(
