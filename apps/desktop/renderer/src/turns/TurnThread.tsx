@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Empty } from "antd";
 import { AlertTriangle, Check, Clock3, RotateCcw, ShieldAlert, ShieldQuestion } from "lucide-react";
 import { engineLabel } from "./TurnPanel";
+import { EngineIcon } from "./engine-icon";
 import type { TurnRecord, TurnStatus } from "./types";
 
 export interface TurnThreadProps {
@@ -58,7 +59,10 @@ function Elapsed({ since }: { since: string }) {
 function StatusLine({ turn }: { turn: TurnRecord }) {
   return (
     <p className="owb-turn__statusline">
-      <span className="owb-turn__statusline-engine">{engineLabel(turn.engine)}</span>
+      <span className="owb-turn__statusline-engine">
+        <EngineIcon engine={turn.engine} />
+        {engineLabel(turn.engine)}
+      </span>
       <span aria-hidden="true">·</span>
       <Elapsed since={turn.createdAt} />
       {turn.totalTokens !== undefined ? (
@@ -166,7 +170,10 @@ export function TurnThread({ turns, retrying = false, canRetry, onRetry, onVerdi
             <article className="owb-turn__request">
               <header>
                 <span className="owb-turn__mention">@{turn.positionName}</span>
-                <span className="owb-turn__engine">{engineLabel(turn.engine)}</span>
+                <span className="owb-turn__engine">
+                  <EngineIcon engine={turn.engine} />
+                  {engineLabel(turn.engine)}
+                </span>
                 <time dateTime={turn.createdAt}>{new Date(turn.createdAt).toLocaleString()}</time>
               </header>
               <p className="owb-clamp-2" title={turn.input}>{turn.input}</p>

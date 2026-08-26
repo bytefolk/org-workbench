@@ -1,6 +1,7 @@
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { useState } from "react";
 import { describe, expect, it, vi } from "vitest";
+import { pickSelectOption, visibleSelectOptions } from "./select-helper";
 import { TurnPanel } from "../src/turns";
 import type { CreateTurnRequest, TurnEngine, TurnPanelProps, TurnRecord } from "../src/turns";
 
@@ -52,13 +53,12 @@ describe("TurnPanel Issue #5 D3 behavior", () => {
     const createTurn = vi.fn();
     render(<ControlledPanel onCreateTurn={createTurn} />);
 
-    const positionSelect = screen.getByRole("combobox", { name: "选择对话岗位" });
-    fireEvent.change(positionSelect, { target: { value: "release-manager" } });
+    pickSelectOption("选择对话岗位", "发布负责人");
     expect(screen.getByRole("heading", { name: "@发布负责人" })).toBeInTheDocument();
 
-    const hostSelect = screen.getByRole("combobox", { name: "选择 Agent Host" });
-    expect(within(hostSelect).getAllByRole("option")).toHaveLength(3);
-    fireEvent.change(hostSelect, { target: { value: "claude-code" } });
+    fireEvent.mouseDown(screen.getByRole("combobox", { name: "选择 Agent Host" }));
+    expect(visibleSelectOptions()).toHaveLength(3);
+    pickSelectOption("选择 Agent Host", "Claude Code · Configured");
 
     fireEvent.change(screen.getByLabelText("交办任务"), { target: { value: "准备发布说明" } });
     fireEvent.click(screen.getByRole("button", { name: "发送任务" }));
