@@ -578,11 +578,9 @@
   flex-direction: column;
   gap: var(--ui-space-4, 16px);
   margin: 0;
-  padding: var(--ui-space-4, 16px);
+  padding: 20px 24px;
   overflow-y: auto;
-  background:
-    linear-gradient(var(--ui-border), var(--ui-border)) 30px 0 / 1px 100% no-repeat,
-    var(--ui-surface-inset);
+  background: var(--ui-surface-inset);
   list-style: none;
 }
 
@@ -605,64 +603,285 @@
   font-size: var(--ui-text-xs, 12px);
 }
 
-.owb-turn {
-  position: relative;
-  display: grid;
-  gap: var(--ui-space-2, 8px);
-  padding-left: 28px;
-}
-
-.owb-turn::before {
-  content: "";
-  position: absolute;
-  top: 13px;
-  left: 10px;
-  width: 8px;
-  height: 8px;
-  border: 2px solid var(--ui-surface-inset);
-  border-radius: 50%;
-  background: var(--ui-primary);
-  box-shadow: 0 0 0 1px var(--ui-border);
-}
-
-.owb-turn__request,
-.owb-turn__response {
-  border: 1px solid var(--ui-border);
-  border-radius: var(--ui-radius-md, 10px);
-  background: var(--ui-surface);
-  padding: 10px 12px;
-}
-
-.owb-turn__request header,
-.owb-turn__response header {
+/* --- Bubble chat (#61, 气泡规格 2026-08-26)：操作员右气泡 / 员工左气泡 --- */
+.owb-bubble-turn {
   display: flex;
-  align-items: center;
+  flex-direction: column;
+  gap: var(--ui-space-1, 4px);
+  animation: owb-bubble-in var(--owb-duration-mid, 150ms) var(--owb-ease-out, ease);
+}
+
+@keyframes owb-bubble-in {
+  from {
+    opacity: 0;
+    transform: translateY(2px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .owb-bubble-turn {
+    animation: none;
+  }
+}
+
+.owb-bubble-row {
+  display: flex;
+  align-items: flex-start;
   gap: var(--ui-space-2, 8px);
   min-width: 0;
-  color: var(--ui-foreground-muted);
-  font-size: var(--ui-text-xs, 12px);
 }
 
-.owb-turn__request time,
-.owb-turn__response code {
-  margin-left: auto;
-  flex: 0 0 auto;
+.owb-bubble-row--operator {
+  justify-content: flex-end;
 }
 
-.owb-turn__response code {
-  max-width: 46%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+.owb-bubble-row--employee {
+  justify-content: flex-start;
+}
+
+.owb-bubble {
+  min-width: 0;
+  border: 1px solid var(--ui-border);
+  border-radius: var(--ui-radius-xl, 12px);
+  padding: 10px 14px;
+  font-size: 14px;
+  line-height: 1.5714;
+}
+
+.owb-bubble--operator {
+  max-width: 68%;
+  background: var(--ui-primary);
+  border-color: var(--ui-primary);
+  color: var(--ui-primary-foreground);
+  border-top-right-radius: var(--ui-radius-sm, 4px);
+}
+
+.owb-bubble--operator .owb-bubble__text {
+  margin: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.owb-bubble__meta {
+  margin-top: 4px;
+  color: var(--ui-primary-foreground);
+  opacity: 0.72;
   font-size: 11px;
 }
 
-.owb-turn__mention {
+.owb-bubble--employee {
+  max-width: 72%;
+  background: var(--ui-surface);
+  color: var(--ui-foreground);
+  border-top-left-radius: var(--ui-radius-sm, 4px);
+}
+
+.owb-bubble__avatar {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  color: #fff;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.owb-bubble__avatar--operator {
+  background: var(--ui-primary);
+}
+
+.owb-bubble__column {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  max-width: 72%;
+}
+
+.owb-bubble__meta-line {
+  display: flex;
+  align-items: center;
+  gap: var(--ui-space-2, 8px);
+  margin: 0;
+  min-width: 0;
+  color: var(--ui-foreground-subtle);
+  font-size: var(--ui-text-xs, 12px);
+}
+
+.owb-bubble__name {
+  color: var(--ui-foreground);
+  font-size: var(--ui-text-sm, 13px);
+  font-weight: 600;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.owb-bubble__time {
+  margin-left: auto;
+  flex: 0 0 auto;
+  color: var(--ui-foreground-subtle);
+  font-size: 11px;
+}
+
+.owb-bubble__undermeta {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin: 0;
+  color: var(--ui-foreground-subtle);
+  font-size: 11px;
+}
+
+.owb-bubble__undermeta code {
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--ui-foreground-subtle);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px;
+}
+
+/* 错误块（规格④：danger-soft 内嵌块 + 不自动重试警示） */
+.owb-bubble__error {
+  margin-top: 6px;
+  border-radius: var(--ui-radius-lg, 8px);
+  background: var(--ui-danger-soft);
+  color: var(--ui-danger-strong, var(--ui-danger));
+  padding: 8px 10px;
+  font-size: var(--ui-text-xs, 12px);
+  line-height: 1.55;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.owb-turn__warning {
+  display: flex;
+  align-items: flex-start;
+  gap: 5px;
+  margin-top: 6px;
+  border-radius: var(--ui-radius-lg, 8px);
+  background: var(--ui-warning-soft);
+  color: var(--ui-warning-strong);
+  padding: 8px 10px;
+  font-size: var(--ui-text-xs, 12px);
+}
+
+/* 重试：气泡外右下（规格④） */
+.owb-bubble__retryrow {
+  display: flex;
+  justify-content: flex-end;
+}
+
+/* Typing indicator（规格②：6px 圆点、gap 4px、stagger 150ms、周期 1.05s
+   ease-out——处方4 聊天例外，见 ADR-0005）+ 读屏文案。 */
+.owb-bubble__typing {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--ui-foreground-subtle);
+  font-size: var(--ui-text-xs, 12px);
+}
+
+.owb-bubble__typing-dots {
+  display: inline-flex;
+  gap: 4px;
+}
+
+.owb-bubble__typing-dots i {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--ui-foreground-subtle);
+  animation: owb-typing 1.05s infinite ease-out;
+}
+
+.owb-bubble__typing-dots i:nth-child(2) {
+  animation-delay: 150ms;
+}
+
+.owb-bubble__typing-dots i:nth-child(3) {
+  animation-delay: 300ms;
+}
+
+@keyframes owb-typing {
+  0%, 70%, 100% {
+    opacity: 0.25;
+  }
+  35% {
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .owb-bubble__typing-dots i {
+    animation: none;
+  }
+}
+
+/* 证据块（规格⑤：气泡下可折叠；默认折叠摘要行，展开 mono 全值；
+   证据不丢、可审计——红线） */
+.owb-bubble__evidence {
+  min-width: 0;
+}
+
+.owb-bubble__evidence-toggle {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 100%;
+  border: none;
+  background: none;
+  padding: 0;
+  color: var(--ui-info);
+  font-size: 11px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  cursor: pointer;
+}
+
+.owb-bubble__evidence-summary {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.owb-bubble__evidence-toggle svg {
+  flex: 0 0 auto;
+  transition: transform var(--owb-duration-fast, 120ms) var(--owb-ease-out, ease);
+}
+
+.owb-bubble__evidence-toggle svg.is-open {
+  transform: rotate(90deg);
+}
+
+/* @mention 高亮（规格①/⑥：--ui-primary-soft 底、--ui-primary 字） */
+.owb-mention {
+  border-radius: var(--ui-radius-sm, 4px);
+  background: var(--ui-primary-soft);
   color: var(--ui-primary);
+  padding: 0 4px;
   font-weight: 600;
+}
+
+.owb-bubble--operator .owb-mention {
+  background: rgba(255, 255, 255, 0.22);
+  color: var(--ui-primary-foreground);
+}
+
+/* 群聊逐成员路由注记（规格⑥） */
+.owb-groups__route-note {
+  margin: 0;
+  color: var(--ui-foreground-subtle);
+  font-size: 11px;
 }
 
 .owb-turn__engine {
@@ -674,15 +893,12 @@
   font-size: 11px;
 }
 
-.owb-turn__request p,
 .owb-turn__output,
-.owb-turn__pending,
-.owb-turn__error,
 .owb-turn__warning {
-  margin: 7px 0 0;
+  margin: 0;
   color: var(--ui-foreground);
   font-size: var(--ui-text-sm, 13px);
-  line-height: 1.55;
+  line-height: 1.5714;
   white-space: pre-wrap;
 }
 
@@ -694,15 +910,6 @@
   -webkit-line-clamp: 2;
   overflow: hidden;
   overflow-wrap: anywhere;
-}
-
-.owb-turn__response.is-running {
-  border-color: var(--ui-primary);
-}
-
-.owb-turn__response.is-failed,
-.owb-turn__response.is-indeterminate {
-  border-color: var(--ui-warning);
 }
 
 .owb-turn__status {
@@ -743,30 +950,30 @@
 }
 
 .owb-turn__evidence {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--ui-space-2, 8px);
-  margin: 10px 0 0;
+  display: grid;
+  gap: 4px;
+  margin: 4px 0 0;
 }
 
 .owb-turn__evidence > div {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  border-radius: 6px;
-  background: var(--ui-surface-inset);
-  padding: 4px 7px;
-  font-size: 11px;
+  display: grid;
+  grid-template-columns: 64px minmax(0, 1fr);
+  gap: var(--ui-space-2, 8px);
+  align-items: baseline;
 }
 
 .owb-turn__evidence dt {
-  color: var(--ui-foreground-muted);
+  color: var(--ui-foreground-subtle);
+  font-size: 11px;
   text-transform: uppercase;
 }
 
 .owb-turn__evidence dd {
   margin: 0;
-  color: var(--ui-foreground);
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: var(--ui-foreground-muted);
+  font-size: 11px;
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
 }
 
@@ -774,12 +981,11 @@
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  margin-top: 10px;
   border: 1px solid var(--ui-border);
-  border-radius: var(--ui-radius-md, 10px);
-  background: var(--ui-surface);
-  color: var(--ui-foreground);
-  padding: 5px 8px;
+  border-radius: var(--ui-radius-md, 6px);
+  background: transparent;
+  color: var(--ui-foreground-muted);
+  padding: 4px 8px;
   font: inherit;
   font-size: var(--ui-text-xs, 12px);
   cursor: pointer;
@@ -797,12 +1003,14 @@
 .owb-turn__approval {
   display: grid;
   gap: 6px;
-  margin-top: 10px;
-  border: 1px solid var(--ui-border);
-  border-left: 3px solid var(--ui-primary);
-  border-radius: var(--ui-radius-md, 10px);
-  background: var(--ui-surface);
+  margin-top: 8px;
+  border-radius: var(--ui-radius-lg, 8px);
+  background: var(--ui-warning-soft);
   padding: 10px 12px;
+}
+
+.owb-turn__approval.is-decided {
+  background: var(--ui-surface-inset);
 }
 
 .owb-turn__approval-title {
@@ -810,9 +1018,13 @@
   align-items: center;
   gap: 6px;
   margin: 0;
-  color: var(--ui-foreground);
-  font-size: var(--ui-text-sm, 13px);
+  color: var(--ui-warning-strong);
+  font-size: var(--ui-text-xs, 12px);
   font-weight: 600;
+}
+
+.owb-turn__approval.is-decided .owb-turn__approval-title {
+  color: var(--ui-foreground-muted);
 }
 
 .owb-turn__approval-description {
@@ -834,11 +1046,12 @@
 
 .owb-turn__approval-reason {
   width: 100%;
+  height: 32px;
   border: 1px solid var(--ui-border);
-  border-radius: var(--ui-radius-md, 10px);
-  background: var(--ui-surface-inset, var(--ui-surface));
+  border-radius: var(--ui-radius-md, 6px);
+  background: var(--ui-surface);
   color: var(--ui-foreground);
-  padding: 5px 8px;
+  padding: 0 8px;
   font: inherit;
   font-size: var(--ui-text-xs, 12px);
 }
@@ -850,14 +1063,19 @@
 
 .owb-turn__approval-grant,
 .owb-turn__approval-deny {
+  height: 32px;
   border: 1px solid var(--ui-border);
-  border-radius: var(--ui-radius-md, 10px);
+  border-radius: var(--ui-radius-md, 6px);
   background: var(--ui-surface);
   color: var(--ui-foreground);
-  padding: 5px 10px;
+  padding: 0 12px;
   font: inherit;
   font-size: var(--ui-text-xs, 12px);
   cursor: pointer;
+}
+
+.owb-turn__approval-deny {
+  background: transparent;
 }
 
 .owb-turn__approval-grant {
@@ -1215,72 +1433,7 @@
   background: var(--ui-surface-inset);
 }
 
-.owb-groups__message {
-  max-width: 78%;
-  padding: 8px 10px;
-  border: 1px solid var(--ui-border);
-  border-radius: var(--ui-radius-md, 10px);
-  background: var(--ui-surface);
-  font-size: var(--ui-text-sm, 13px);
-}
-
-.owb-groups__message--user {
-  align-self: flex-end;
-  background: var(--ui-primary-soft);
-}
-
-.owb-groups__message--user p {
-  margin: 0;
-  white-space: pre-wrap;
-}
-
-.owb-groups__message time {
-  display: block;
-  margin-top: 4px;
-  font-size: var(--ui-text-xs, 12px);
-  color: var(--ui-foreground-muted);
-}
-
-.owb-groups__message--member header {
-  display: flex;
-  align-items: center;
-  gap: var(--ui-space-2, 8px);
-  margin-bottom: 4px;
-}
-
-.owb-groups__member-name {
-  font-weight: 600;
-}
-
-.owb-groups__message-engine,
-.owb-groups__message--member time {
-  font-size: var(--ui-text-xs, 12px);
-  color: var(--ui-foreground-muted);
-}
-
-.owb-groups__message-output {
-  margin: 0;
-  white-space: pre-wrap;
-}
-
-.owb-groups__message-error {
-  margin: 4px 0 0;
-  color: var(--ui-danger);
-}
-
-.owb-groups__message-warning {
-  margin: 4px 0 0;
-  color: var(--ui-warning);
-}
-
-.owb-groups__message-pending {
-  margin: 0;
-  color: var(--ui-foreground-muted);
-}
-
-.owb-groups__message.is-running {
-  border-color: var(--ui-accent);
-}
+/* Group timeline messages share the #61 bubble classes (.owb-bubble*). */
 
 .owb-groups__mention-picker {
   display: flex;

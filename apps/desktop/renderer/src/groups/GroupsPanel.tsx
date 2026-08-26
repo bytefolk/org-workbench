@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { Button as AntButton, Input, Select as AntSelect } from "antd";
-import { ArrowUp, Plus, UserRoundPlus, UsersRound } from "lucide-react";
-import { hueForId } from "@org-workbench/ui";
+import { ArrowUp, Plus, UserRound, UserRoundPlus, UsersRound } from "lucide-react";
+import { PositionAvatar } from "../PositionAvatar";
+import { TypingIndicator } from "../turns/TurnThread";
 import type { GroupConversation, GroupConversationList, GroupTimeline } from "@org-workbench/shared";
 import { engineLabel, engineSelectOptions } from "../turns/TurnPanel";
 import { EngineIcon } from "../turns/engine-icon";
@@ -42,6 +43,17 @@ function groupLabel(group: GroupConversation, names: Record<string, string>): st
 
 const GROUP_ENGINES: TurnEngine[] = ["qoder", "claude-code", "claude-local"];
 
+/** @mention highlight inside operator bubble text (spec §1/§6). */
+function renderMentionText(input: string) {
+  return input.split(/(@[\w-]+)/g).map((part, index) =>
+    part.startsWith("@") ? (
+      <mark key={index} className="owb-mention">{part}</mark>
+    ) : (
+      part
+    ),
+  );
+}
+
 function apiErrorMessage(body: unknown, fallback: string): string {
   if (body !== null && typeof body === "object" && !Array.isArray(body)) {
     const message = (body as { message?: unknown }).message;
@@ -50,29 +62,6 @@ function apiErrorMessage(body: unknown, fallback: string): string {
   return fallback;
 }
 
-/** Member avatar (#53 DS-34-001 §1.3): declared metadata.color wins, then
- * the org tree's deterministic hue — the roster and tree stay in sync. */
-function PositionAvatar({
-  colors,
-  id,
-  name,
-  className,
-}: {
-  colors: Record<string, string>;
-  id: string;
-  name: string;
-  className?: string;
-}) {
-  return (
-    <span
-      className={className ?? "owb-groups__avatar"}
-      title={name}
-      style={{ background: colors[id] ?? `hsl(${hueForId(id)}, 65%, 42%)` }}
-    >
-      {name.trim().charAt(0).toUpperCase()}
-    </span>
-  );
-}
 
 /**
  * S2 group chat surface (#52, DS-34-001 rev-1 §1.2): explicit @mention
@@ -377,6 +366,7 @@ export function GroupsPanel({
                     colors={positionColors ?? {}}
                     id={memberId}
                     name={positionNames[memberId] ?? memberId}
+                    className="owb-groups__avatar"
                   />
                 ))}
                 {selectedGroup.members.length > 6 ? (
@@ -400,6 +390,7 @@ export function GroupsPanel({
                           colors={positionColors ?? {}}
                           id={memberId}
                           name={positionNames[memberId] ?? memberId}
+                          className="owb-groups__avatar"
                         />
                         <span className="owb-groups__roster-name">{positionNames[memberId] ?? memberId}</span>
                         {running ? (
@@ -434,10 +425,25 @@ export function GroupsPanel({
             <div className="owb-groups__timeline" aria-label="群时间线" aria-busy={timelineLoading}>
               {displayItems.persisted.map((item) =>
                 item.kind === "user" ? (
-                  <article className="owb-groups__message owb-groups__message--user" key={item.messageId}>
-                    <p>{item.input}</p>
-                    <time dateTime={item.createdAt}>{new Date(item.createdAt).toLocaleString()}</time>
-                  </article>
+                  <div className="owb-bubble-turn" key={item.messageId}>
+                    {item.mentions.length > 0 ? (
+                      <p className="owb-groups__route-note">
+                        {item.mentions.map((memberId) => `@${positionNames[memberId] ?? memberId}`).join(" ")}
+                        {" "}→ 逐成员 spawn {item.mentions.length} 回合（显式路由，不广播）
+                      </p>
+                    ) : null}
+                    <div className="owb-bubble-row owb-bubble-row--operator">
+                      <article className="owb-bubble owb-bubble--operator">
+                        <p className="owb-bubble__text">{renderMentionText(item.input)}</p>
+                        <footer className="owb-bubble__meta">
+                          <time dateTime={item.createdAt}>{new Date(item.createdAt).toLocaleString()}</time>
+                        </footer>
+                      </article>
+                      <span className="owb-bubble__avatar owb-bubble__avatar--operator" title="操作员" aria-hidden="true">
+                        <UserRound size={14} />
+                      </span>
+                    </div>
+                  </div>
                 ) : (
                   (() => {
                     const turn = adaptTurnRecord(
@@ -445,45 +451,60 @@ export function GroupsPanel({
                       positionNames[item.turn.positionId] ?? item.turn.positionId,
                     );
                     return (
-                      <article
-                        className={`owb-groups__message owb-groups__message--member is-${turn.status}`}
-                        key={turn.id}
-                      >
-                        <header>
-                          <span className="owb-groups__member-name">@{turn.positionName}</span>
-                          <span className="owb-groups__message-engine">
-                            <EngineIcon engine={turn.engine} />
-                            {engineLabel(turn.engine)}
-                          </span>
-                          <time dateTime={turn.createdAt}>{new Date(turn.createdAt).toLocaleString()}</time>
-                        </header>
-                        {turn.output ? <p className="owb-groups__message-output">{turn.output}</p> : null}
-                        {turn.status === "failed" && turn.error ? (
-                          <p className="owb-groups__message-error">{turn.error}</p>
-                        ) : null}
-                        {turn.status === "indeterminate" ? (
-                          <p className="owb-groups__message-warning">运行器未返回可信终态；不会自动重试。</p>
-                        ) : null}
-                      </article>
+                      <div className="owb-bubble-row owb-bubble-row--employee" key={turn.id}>
+                        <PositionAvatar
+                          colors={positionColors}
+                          id={turn.positionId}
+                          name={turn.positionName}
+                          className="owb-bubble__avatar"
+                        />
+                        <article className={`owb-bubble owb-bubble--employee is-${turn.status}`}>
+                          <header className="owb-bubble__header">
+                            <span className="owb-bubble__name">@{turn.positionName}</span>
+                            <span className="owb-turn__engine">
+                              <EngineIcon engine={turn.engine} />
+                              {engineLabel(turn.engine)}
+                            </span>
+                            <time dateTime={turn.createdAt}>{new Date(turn.createdAt).toLocaleString()}</time>
+                          </header>
+                          {turn.output ? (
+                            <p className="owb-turn__output owb-clamp-2" title={turn.output}>{turn.output}</p>
+                          ) : null}
+                          {turn.status === "failed" && turn.error ? (
+                            <p className="owb-turn__error owb-clamp-2" title={turn.error}>{turn.error}</p>
+                          ) : null}
+                          {turn.status === "indeterminate" ? (
+                            <p className="owb-turn__warning owb-clamp-2">运行器未返回可信终态；不会自动重试。</p>
+                          ) : null}
+                        </article>
+                      </div>
                     );
                   })()
                 ),
               )}
               {displayItems.live.map(({ key, turn }) => (
-                <article className="owb-groups__message owb-groups__message--member is-running" key={key} aria-live="polite">
-                  <header>
-                    <span className="owb-groups__member-name">@{turn.positionName}</span>
-                    <span className="owb-groups__message-engine">
-                      <EngineIcon engine={turn.engine} />
-                      {engineLabel(turn.engine)}
-                    </span>
-                  </header>
-                  {turn.output ? (
-                    <p className="owb-groups__message-output">{turn.output}</p>
-                  ) : (
-                    <p className="owb-groups__message-pending">正在等待岗位完成本回合…</p>
-                  )}
-                </article>
+                <div className="owb-bubble-row owb-bubble-row--employee" key={key} aria-live="polite">
+                  <PositionAvatar
+                    colors={positionColors}
+                    id={turn.positionId}
+                    name={turn.positionName}
+                    className="owb-bubble__avatar"
+                  />
+                  <article className="owb-bubble owb-bubble--employee is-running">
+                    <header className="owb-bubble__header">
+                      <span className="owb-bubble__name">@{turn.positionName}</span>
+                      <span className="owb-turn__engine">
+                        <EngineIcon engine={turn.engine} />
+                        {engineLabel(turn.engine)}
+                      </span>
+                    </header>
+                    {turn.output ? (
+                      <p className="owb-turn__output owb-clamp-2" title={turn.output}>{turn.output}</p>
+                    ) : (
+                      <TypingIndicator />
+                    )}
+                  </article>
+                </div>
               ))}
               {!timelineLoading && displayItems.persisted.length === 0 && displayItems.live.length === 0 ? (
                 <p className="owb-muted">还没有消息；@提及成员并发送，即为显式路由。</p>

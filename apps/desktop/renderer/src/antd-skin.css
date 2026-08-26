@@ -85,3 +85,74 @@
   --owb-duration-slow: 200ms;
   --owb-ease-out: cubic-bezier(0.215, 0.61, 0.355, 1);
 }
+
+/* 暗色主题（气泡规格 2026-08-26 §4 设计增量，客户端落 skin）：
+ * 暖黑两阶画布；语义名与 light 一致，消费面零迁移。 */
+[data-theme="dark"] {
+  color-scheme: dark;
+
+  /* 画布两阶：暖黑壳层 + 卡面 */
+  --ui-canvas: #171614;
+  --ui-canvas-subtle: #1c1b18;
+  --ui-navigation: #201f1b;
+  --ui-surface: #211f1b;
+  --ui-surface-raised: #262420;
+  --ui-surface-inset: #2a2823;
+  --ui-foreground: rgba(255, 255, 255, 0.85);
+  --ui-foreground-muted: rgba(255, 255, 255, 0.65);
+  --ui-foreground-subtle: rgba(255, 255, 255, 0.45);
+
+  /* warm hairline 暗阶 */
+  --ui-border: #35322c;
+  --ui-border-strong: #59554d;
+
+  /* 单一强调色：lavender 暗阶提亮 */
+  --ui-primary: #7c86e8;
+  --ui-primary-hover: #8d96ec;
+  --ui-primary-foreground: #ffffff;
+  --ui-primary-soft: #232744;
+
+  /* AI affordance 暗阶 */
+  --ui-ai: #9254de;
+  --ui-ai-strong: #b37feb;
+  --ui-ai-hover: #a66ae4;
+  --ui-ai-foreground: #ffffff;
+  --ui-ai-soft: #2a1f3d;
+
+  /* Health states（antd dark 官方 + soft 暗阶） */
+  --ui-info: #7c86e8;
+  --ui-info-soft: #232744;
+  --ui-success: #49aa19;
+  --ui-success-strong: #6abe39;
+  --ui-success-soft: #162312;
+  --ui-warning: #d89614;
+  --ui-warning-strong: #e8b339;
+  --ui-warning-soft: #2b2111;
+  --ui-danger: #dc4446;
+  --ui-danger-strong: #e86a6c;
+  --ui-danger-soft: #2c1618;
+
+  /* Interaction feedback */
+  --ui-overlay: rgba(0, 0, 0, 0.65);
+  --ui-focus: #7c86e8;
+  --ui-selection: #232744;
+
+  /* Radii 同 light（4/6/8/12） */
+  --ui-radius-sm: 4px;
+  --ui-radius-md: 6px;
+  --ui-radius-lg: 8px;
+  --ui-radius-xl: 12px;
+
+  /* 阴影额度：暖黑三档同结构 */
+  --ui-shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.4);
+  --ui-shadow-md:
+    0 6px 20px 0 rgba(0, 0, 0, 0.5),
+    0 2px 6px 0 rgba(0, 0, 0, 0.4);
+  --ui-shadow-lg: 0 24px 64px 0 rgba(0, 0, 0, 0.6);
+
+  /* 动效三档同 light */
+  --owb-duration-fast: 120ms;
+  --owb-duration-mid: 150ms;
+  --owb-duration-slow: 200ms;
+  --owb-ease-out: cubic-bezier(0.215, 0.61, 0.355, 1);
+}

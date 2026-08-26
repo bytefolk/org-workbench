@@ -32,7 +32,7 @@ const shortTurn: TurnRecord = {
 describe("issue #20 two-line clamp + tooltip", () => {
   it("clamps long turn input and output and keeps the full text in title", () => {
     const { container } = render(<TurnThread turns={[longTurn]} />);
-    const input = container.querySelector(".owb-turn__request p");
+    const input = container.querySelector(".owb-bubble--operator .owb-bubble__text");
     const output = container.querySelector(".owb-turn__output");
     expect(input).not.toBeNull();
     expect(input?.className).toContain("owb-clamp-2");
@@ -44,7 +44,7 @@ describe("issue #20 two-line clamp + tooltip", () => {
 
   it("keeps the clamp class on short text without altering it", () => {
     const { container } = render(<TurnThread turns={[shortTurn]} />);
-    const input = container.querySelector(".owb-turn__request p");
+    const input = container.querySelector(".owb-bubble--operator .owb-bubble__text");
     expect(input?.getAttribute("title")).toBe("检查发布");
     expect(input?.textContent).toBe("检查发布");
   });
@@ -109,18 +109,18 @@ describe("issue #20 two-line clamp + tooltip", () => {
     expect(evidenceP?.getAttribute("title")).toBe(evidenceP?.textContent);
   });
 
-  it("renders the pending placeholder with clamp and tooltip while running", () => {
+  it("renders the typing indicator (screen-reader copy intact) while running", () => {
     const running: TurnRecord = { ...shortTurn, id: "turn-run", status: "running", output: undefined };
-    const { container } = render(<TurnThread turns={[running]} />);
-    const pending = container.querySelector(".owb-turn__pending");
-    expect(pending?.className).toContain("owb-clamp-2");
-    expect(pending?.getAttribute("title")).toBe(pending?.textContent);
+    render(<TurnThread turns={[running]} />);
+    const typing = screen.getByRole("status");
+    expect(typing.className).toContain("owb-bubble__typing");
+    expect(typing.textContent).toContain("正在等待岗位完成本回合");
   });
 
   it("exposes the full error text through title on failed turns", () => {
     const failed: TurnRecord = { ...shortTurn, id: "turn-fail", status: "failed", output: undefined, error: LONG };
     const { container } = render(<TurnThread turns={[failed]} />);
-    const error = container.querySelector(".owb-turn__error");
+    const error = container.querySelector(".owb-bubble__error");
     expect(error?.className).toContain("owb-clamp-2");
     expect(error?.getAttribute("title")).toBe(LONG);
   });

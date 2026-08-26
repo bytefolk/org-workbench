@@ -159,6 +159,8 @@ describe("TurnPanel Issue #5 D3 behavior", () => {
     expect(screen.getByText("已完成")).toBeInTheDocument();
     expect(screen.getByText("失败")).toBeInTheDocument();
     expect(screen.getByText("状态未知")).toBeInTheDocument();
+    // 证据默认折叠（气泡规格⑤）：展开后全量 digest 可见（审计红线）
+    fireEvent.click(screen.getByRole("button", { name: /证据/ }));
     expect(screen.getByTitle("sha256:1234567890abcdefghijklmnopqrstuv")).toBeInTheDocument();
     expect(screen.getByTitle("sha256:abcdefghijklmnopqrstuvwxyz123456")).toBeInTheDocument();
     expect(screen.getByText("委派链", { exact: false })).toHaveTextContent("Planned");
@@ -298,6 +300,8 @@ describe("TurnPanel Issue #25 Slice A — operator interrupt", () => {
     expect(screen.queryByRole("button", { name: "发送任务" })).not.toBeInTheDocument();
     const statusLine = screen.getByText("1280 tokens").closest("p");
     expect(statusLine).toHaveClass("owb-turn__statusline");
-    expect(screen.queryByText("999 tokens")).not.toBeInTheDocument();
+    // 已结算回合的 tokens 出现在气泡下 meta（气泡规格①）
+    const undermeta = screen.getByText("999 tokens").closest("p");
+    expect(undermeta).toHaveClass("owb-bubble__undermeta");
   });
 });
