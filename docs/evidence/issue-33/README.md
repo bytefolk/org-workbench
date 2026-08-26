@@ -70,3 +70,5 @@ applied org.json contains docs-runner: true (reportTo=repo-owner)
 audit entries: 2, hire entry recorded: true
 stub saw hire validate: true, org apply: true, unexpected calls: false
 ```
+
+CI 重触发说明：head 43a9697 的 pull_request 事件丢失（close/reopen 均未重触发），本提交为真实改动的重推。
