@@ -15,10 +15,16 @@
       "types": "./dist/position-id.d.ts",
       "import": "./dist/position-id.js",
       "require": "./position-id.cjs"
+    },
+    "./pending-approval": {
+      "types": "./dist/pending-approval.d.ts",
+      "import": "./dist/pending-approval.js",
+      "require": "./pending-approval.cjs"
     }
   },
   "files": [
     "dist",
-    "position-id.cjs"
+    "position-id.cjs",
+    "pending-approval.cjs"
   ]
 }
