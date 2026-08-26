@@ -10,8 +10,8 @@
  *   处方2 强调色一次定死（Linear lavender #5e6ad2；AI 紫保持专属）；
  *   处方3 warm hairline 分层 + 阴影额度收紧（md 仅拖拽预览/dropdown，lg 仅 modal/drawer）；
  *   处方4 动效三档 token（120/150/200ms，ease-out）。
- * antd cssinjs 侧的同值 token 在 App.tsx ConfigProvider 中同步（colorPrimary/
- * colorBorder/motion*/controlHeight）；design-system seed 同步由设计线跟进。
+ * antd cssinjs 侧的同值 token 在 App.tsx ConfigProvider 中同步（colorPrimary、
+ * colorBorder、motion 三档、controlHeight）；design-system seed 同步由设计线跟进。
  */
 
 :root,
