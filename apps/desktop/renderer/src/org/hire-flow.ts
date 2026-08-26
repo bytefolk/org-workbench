@@ -1,5 +1,17 @@
-// #33 四态状态机本地态骨架（备工，不触契约）：①draft → ②submitting → ③approval(可选) → ④终态。
-// 无 IPC / server / 引擎接线；spawn/hire 执行通道等 digital-employee #194 契约落地后再接。
+// #33 四态状态机（发起 → 过程态 → 审批(可选) → 终态）+ hire 契约消费映射。
+// 消费修订（R3 冻结门禁项①②③，PM 台账 2026-08-26）：
+// - 权威词表 = hire-request.v1alpha1（digital-employee #194/#198，merge b3d54bf）；
+// - renderer 草稿只携带 HirePositionRequest 字段；envelope 骨架字段
+//   workspaceRef / packageRef{name,version,digest} / targetParentId / budget /
+//   requestedBy / deadline / envelopeDigest 全部由控制面 POST /hire 组装，
+//   renderer 不构造、不扩展任何 envelope 词表；
+// - reportTo（草稿侧）→ targetParentId 由控制面解析（null = 企业负责人），
+//   identity.reportTo 不存在于骨架（服务端硬拒面由上游 fail-closed 承担）；
+// - 审批态：hire 通道上游无 approval 语义（hire-contract.md Consumer boundary），
+//   approval 相位仅为四态机保留位，动作集合刻意没有 approve/deny；turn 内审批
+//   走 #25 Slice B 的 approval 三事件契约，两线零混用。
+
+import type { HirePositionRequest, PositionBudget } from "@org-workbench/shared";
 
 export interface HireDraft {
   id: string;
@@ -7,10 +19,7 @@ export interface HireDraft {
   description: string;
   reportTo: string | null;
   mode: "read_only" | "approval_required";
-  budget: {
-    perTask: { tokens: number; iterations?: number };
-    perDay: { tokens: number; iterations?: number };
-  };
+  budget: PositionBudget;
 }
 
 export type HireFlowState =
@@ -48,6 +57,18 @@ export function initialHireFlow(presets?: Partial<HireDraft>): HireFlowState {
   return { phase: "draft", draft: createHireDraft(presets) };
 }
 
+/** Draft → POST /hire body; exact shared HirePositionRequest shape, no extra keys. */
+export function toHirePositionRequest(draft: HireDraft): HirePositionRequest {
+  return {
+    positionId: draft.id,
+    name: draft.name,
+    description: draft.description,
+    reportTo: draft.reportTo,
+    mode: draft.mode,
+    budget: draft.budget,
+  };
+}
+
 export function reduceHireFlow(state: HireFlowState, action: HireFlowAction): HireFlowState {
   switch (action.type) {
     case "edit":
@@ -73,5 +94,3 @@ export function reduceHireFlow(state: HireFlowState, action: HireFlowAction): Hi
       return { phase: "draft", draft: action.draft };
   }
 }
-
-// 审批态只展示不回传：action 集合刻意没有 approve/deny，等 #193 pendingApproval verdict 合入后再加。

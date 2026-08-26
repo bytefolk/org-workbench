@@ -3,6 +3,7 @@ import { StringDecoder } from "node:string_decoder";
 import type {
   EngineOrgApplySuccess,
   EngineEvent,
+  HireValidateDriver,
   OrgApplyDriver,
   TurnEngine,
   TurnRunDriver,
@@ -13,6 +14,7 @@ import type {
 import { splitCommand } from "./probe.js";
 
 type DriverOutcome = Awaited<ReturnType<OrgApplyDriver["apply"]>>;
+type HireValidateOutcome = Awaited<ReturnType<HireValidateDriver["hireValidate"]>>;
 
 const CAPABILITY_MISSING_PATTERN =
   /unknown command|unknown argument|invalid choice|unrecognized command|no such command|did you mean/i;
@@ -221,11 +223,93 @@ function turnEnvironment(engine: TurnEngine): NodeJS.ProcessEnv {
  * Validation lawfulness lives entirely in the engine; this driver only spawns,
  * parses, and classifies. Secrets never enter argv — env injection only.
  */
-export class DigitalEmployeeCliDriver implements OrgApplyDriver, TurnRunDriver {
+export class DigitalEmployeeCliDriver implements OrgApplyDriver, TurnRunDriver, HireValidateDriver {
   constructor(
     private readonly command: string,
     private readonly timeoutMs = 120_000,
   ) {}
+
+  /**
+   * hire-request.v1alpha1 static validation seam (#33, consuming digital-employee
+   * #194/#198 at b3d54bf): `hire validate <file> --json` is fail-closed and
+   * effect-free upstream — exit 0 with {status:"valid"}, or exit 1 with
+   * {status:"failed", code} before any effect. No spawn of an employee, no
+   * engine, no provider.
+   */
+  hireValidate(file: string): Promise<HireValidateOutcome> {
+    return new Promise((resolve) => {
+      let settled = false;
+      const finish = (outcome: Awaited<ReturnType<HireValidateDriver["hireValidate"]>>): void => {
+        if (!settled) {
+          settled = true;
+          resolve(outcome);
+        }
+      };
+      const { bin, prefix } = splitCommand(this.command);
+      let child: ReturnType<typeof spawn>;
+      try {
+        child = spawn(bin, [...prefix, "hire", "validate", file, "--json"], {
+          stdio: ["ignore", "pipe", "pipe"],
+          env: process.env,
+        });
+      } catch {
+        finish({ status: "engine_unavailable", message: `cannot spawn ${this.command}` });
+        return;
+      }
+      let out = "";
+      let errOut = "";
+      const timer = setTimeout(() => {
+        child.kill();
+        finish({
+          status: "engine_unavailable",
+          message: `digital-employee hire validate timed out after ${this.timeoutMs}ms`,
+        });
+      }, this.timeoutMs);
+      child.stdout?.on("data", (chunk) => {
+        if (Buffer.byteLength(out, "utf8") <= 64 * 1024) out += String(chunk);
+      });
+      child.stderr?.on("data", (chunk) => {
+        if (Buffer.byteLength(errOut, "utf8") <= MAX_DIAGNOSTIC_BYTES) errOut += String(chunk);
+      });
+      child.on("error", () => {
+        clearTimeout(timer);
+        finish({
+          status: "engine_unavailable",
+          message: `cannot spawn ${this.command} (ENOENT); set ORG_WORKBENCH_DIGITAL_EMPLOYEE_CLI to the pinned CLI`,
+        });
+      });
+      child.on("close", (code) => {
+        clearTimeout(timer);
+        const parsed = parseJsonOutput(out) as
+          | { status?: unknown; code?: unknown; message?: unknown }
+          | null;
+        if (code === 0 && parsed?.status === "valid") {
+          finish({ status: "valid" });
+          return;
+        }
+        if (CAPABILITY_MISSING_PATTERN.test(errOut)) {
+          finish({
+            status: "engine_capability_missing",
+            message: errOut.trim().slice(0, 512) || "CLI lacks the hire validate surface (#194/#198)",
+          });
+          return;
+        }
+        if (parsed?.status === "failed" && typeof parsed.code === "string" && parsed.code.length > 0) {
+          finish({
+            status: "failed",
+            code: parsed.code,
+            message: typeof parsed.message === "string" ? parsed.message : `hire validate rejected the envelope: ${parsed.code}`,
+          });
+          return;
+        }
+        finish({
+          status: "failed",
+          code: "hire_request_rejected",
+          message: errOut.trim().slice(0, 512) || `hire validate exited ${code} without a trusted diagnostic`,
+        });
+      });
+    });
+  }
 
   apply(workspaceDir: string): Promise<DriverOutcome> {
     return new Promise((resolve) => {

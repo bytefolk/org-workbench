@@ -55,6 +55,10 @@ second undo note: 没有可撤销的组织调整
 
 ## hire-entry.png（行 hover「+」创建入口，AC-004）
 
+> 历史取证说明：本截图中的「招聘岗位并声明预算」弹窗已于 #33 随 orgApply 直写
+> bypass 一并移除；创建入口现为「创建员工」Drawer（hire-request.v1alpha1 契约面），
+> 见 `docs/evidence/issue-33/README.md`。以下记录保留为 #32 时点取证。
+
 第二个 CDP 驱动（同一实例）点击 `community-operator` 行的「+」
 （`aria-label="在 Community Operator 下招聘下属"`）：
 

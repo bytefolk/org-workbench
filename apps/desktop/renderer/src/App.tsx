@@ -12,7 +12,6 @@ import {
 import { BudgetBar, OrgTree, PositionCard } from "@org-workbench/ui";
 import type { OrgDropPosition, PositionCardData } from "@org-workbench/ui";
 import type {
-  AddPositionChange,
   ChangeManifest,
   HealthResponse,
   OrgBackupEntry,
@@ -46,7 +45,8 @@ import type {
   TurnStreamEnvelope,
   TurnStreamState,
 } from "./turns";
-import { BackupTray, DismissPositionDialog, HirePositionDialog } from "./org/OrgControls";
+import { BackupTray, DismissPositionDialog } from "./org/OrgControls";
+import { HireDrawer } from "./org/HireDrawer";
 import { ReportsCenter } from "./reports/ReportsCenter";
 
 interface PositionCardState {
@@ -487,8 +487,12 @@ export function App() {
     return applyOrg({ schemaVersion: "change-manifest.v1", changes: [{ op: "move", id, reportTo }] }, `已将 ${id} 调整到 ${reportTo ?? "企业根"}`);
   }, [applyOrg, snapshot]);
 
-  const hirePosition = useCallback(async (position: AddPositionChange["position"]) =>
-    applyOrg({ schemaVersion: "change-manifest.v1", changes: [{ op: "add", position }] }, `已招聘 ${position.name}`), [applyOrg]);
+  /** #33: hire is the only creation channel; success linkage = refresh + select the new node. */
+  const hiredPosition = useCallback(async (positionId: string, name: string) => {
+    setOrgFeedback({ tone: "info", text: `${name} 已加入团队（hire-request.v1alpha1 契约面）` });
+    await refresh();
+    setSelectedId(positionId);
+  }, [refresh]);
 
   const dismissPosition = useCallback(async (id: string) =>
     applyOrg({ schemaVersion: "change-manifest.v1", changes: [{ op: "delete", id }] }, `已裁撤 ${id}；目录保留在恢复区`), [applyOrg]);
@@ -666,7 +670,7 @@ export function App() {
       sidebar={
         <Sidebar
           label="组织目录树"
-          header={<div className="owb-sidebar-title"><span className="owb-sidebar-header">组织</span>{workspaceInfo?.open === true ? <><AntButton size="small" disabled={orgBusy} onClick={() => void undoLastAdjustment()} title="撤销最近一次拖拽调整（⌘Z）">撤销</AntButton><HirePositionDialog positions={positions} defaultManager={selectedId ?? snapshot?.owner ?? null} busy={orgBusy} onHire={hirePosition} /></> : null}</div>}
+          header={<div className="owb-sidebar-title"><span className="owb-sidebar-header">组织</span>{workspaceInfo?.open === true ? <><AntButton size="small" disabled={orgBusy} onClick={() => void undoLastAdjustment()} title="撤销最近一次拖拽调整（⌘Z）">撤销</AntButton><AntButton size="small" type="primary" disabled={orgBusy} onClick={() => setTreeHireParent(selectedId ?? snapshot?.owner ?? null)}>创建员工</AntButton></> : null}</div>}
           footer={
             workspaceInfo?.open === true ? <BackupTray backups={backups} busy={orgBusy} onRestore={restorePosition} /> : (
               <AntButton type="primary" block onClick={() => void openWorkspace()}>
@@ -707,16 +711,12 @@ export function App() {
             <p className="owb-muted">尚未打开工作区</p>
           )}
           {workspaceInfo?.open === true ? (
-            <HirePositionDialog
-              positions={positions}
-              defaultManager={treeHireParent ?? null}
-              busy={orgBusy}
-              onHire={hirePosition}
+            <HireDrawer
               open={treeHireParent !== undefined}
-              hideTrigger
-              onOpenChange={(next) => {
-                if (!next) setTreeHireParent(undefined);
-              }}
+              positions={positions}
+              presetReportTo={treeHireParent ?? null}
+              onClose={() => setTreeHireParent(undefined)}
+              onHired={(positionId, name) => void hiredPosition(positionId, name)}
             />
           ) : null}
         </Sidebar>

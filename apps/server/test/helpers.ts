@@ -4,6 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import type {
+  HireValidateDriver,
   OrgApplyDriver,
   TurnRunDriver,
   TurnRunRequest,
@@ -25,9 +26,13 @@ export const EXAMPLE_WORKSPACE = fileURLToPath(
 );
 
 export type FakeOutcome = Awaited<ReturnType<OrgApplyDriver["apply"]>>;
+export type FakeHireOutcome = Awaited<ReturnType<HireValidateDriver["hireValidate"]>>;
 
-export class FakeDriver implements OrgApplyDriver {
+export class FakeDriver implements OrgApplyDriver, HireValidateDriver {
   calls: string[] = [];
+  hireCalls: string[] = [];
+  hireEnvelopes: Array<Record<string, unknown>> = [];
+  hireOutcome: FakeHireOutcome = { status: "valid" };
 
   constructor(
     public outcome: FakeOutcome = { status: "applied" },
@@ -38,6 +43,16 @@ export class FakeDriver implements OrgApplyDriver {
     this.calls.push(workspaceDir);
     await this.beforeReturn?.(workspaceDir);
     return this.outcome;
+  }
+
+  async hireValidate(file: string): Promise<FakeHireOutcome> {
+    this.hireCalls.push(file);
+    try {
+      this.hireEnvelopes.push(JSON.parse(await fs.readFile(file, "utf8")) as Record<string, unknown>);
+    } catch {
+      // The envelope is transient; capture failures must not mask the outcome.
+    }
+    return this.hireOutcome;
   }
 }
 
@@ -75,6 +90,7 @@ export async function startTestServer(
   turnDriver: TurnRunDriver = new DefaultFakeTurnDriver(),
   contextExporter: ContextExportService = new ContextExportService(new UnavailableTestContextAdapter()),
 ): Promise<TestServer> {
+  const orgDriver = driver ?? new FakeDriver();
   const ctx: ControlPlaneContext = {
     config: {
       host: "127.0.0.1",
@@ -86,8 +102,9 @@ export async function startTestServer(
     },
     workspace: new WorkspaceState(),
     bus: new EventBus(),
-    driver: driver ?? new FakeDriver(),
+    driver: orgDriver,
     turnDriver,
+    hireDriver: orgDriver,
     turnStore: new TurnStore(),
     runningTurns: new RunningTurnRegistry(),
     sessionStore: new SessionStore(),

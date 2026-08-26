@@ -1,0 +1,11 @@
+entry button present: true
+drawer open (S1 draft)
+form filled: docs-runner / 发布文档专员 / 20000 / 200000
+S2 running copy captured: 正在校验 hire-request.v1alpha1 契约…
+S4 success feedback rendered
+tree shows docs-runner after reload: true
+staged skeleton employee.json exists: true
+budget.json mode: 600
+applied org.json contains docs-runner: true (reportTo=repo-owner)
+audit entries: 2, hire entry recorded: true
+stub saw hire validate: true, org apply: true, unexpected calls: false

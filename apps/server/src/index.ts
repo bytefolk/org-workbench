@@ -27,6 +27,7 @@ const ctx: ControlPlaneContext = {
   bus: new EventBus(),
   driver,
   turnDriver: driver,
+  hireDriver: driver,
   turnStore: new TurnStore(),
   runningTurns: new RunningTurnRegistry(),
   sessionStore: new SessionStore(),

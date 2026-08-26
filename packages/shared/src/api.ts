@@ -20,6 +20,7 @@ export const routes = {
   orgBackups: "/org/backups",
   orgRestore: "/org/restore",
   orgUndo: "/org/undo",
+  hire: "/hire",
   positions: "/positions",
   reports: "/reports",
   sessions: "/sessions",
@@ -45,6 +46,7 @@ export const sseEventTypes = [
   "turn.indeterminate",
   "escalation.created",
   "evidence.created",
+  "hire.progress",
 ] as const;
 
 export type SseEventType = (typeof sseEventTypes)[number];

@@ -8,7 +8,6 @@ import {
   isPositionId,
 } from "@org-workbench/shared";
 import type {
-  AddPositionChange,
   ChangeManifest,
   DeletePositionChange,
   MovePositionChange,
@@ -18,6 +17,7 @@ import type {
   OrgChange,
   OrgLayoutFile,
   OrgRole,
+  PositionBudget,
   ReorderPositionsChange,
 } from "@org-workbench/shared";
 import type { ControlPlaneContext } from "../context.js";
@@ -96,7 +96,7 @@ async function applyChangeManifestUnlocked(
   const ws = ctx.workspace.requireOpen();
   const manifest = validateManifest(rawBody);
   const structural = manifest.changes.filter(
-    (change): change is AddPositionChange | MovePositionChange | DeletePositionChange =>
+    (change): change is MovePositionChange | DeletePositionChange =>
       change.op !== "reorder",
   );
   const reorders = manifest.changes.filter(
@@ -145,10 +145,8 @@ async function applyChangeManifestUnlocked(
     const order = applyReordersToLayout(ctx.workspace.getLayout(), reorders);
     await ctx.workspace.setLayoutOrder(order);
   }
-  const hasHireOrDelete = structural.some(
-    (change) => change.op === "add" || change.op === "delete",
-  );
-  if (hasHireOrDelete) {
+  const hasDelete = structural.some((change) => change.op === "delete");
+  if (hasDelete) {
     await clearUndoEntry(ws.dir);
   } else {
     const inverseMoves = structural.map((change) => ({
@@ -310,14 +308,7 @@ function validateProposalChanges(
 ): void {
   const parents = new Map(proposal.map((position) => [position.id, position.reportTo]));
   for (const change of manifest.changes) {
-    if (change.op === "add") {
-      const id = change.position.id;
-      if (parents.has(id)) {
-        throw conflict(stagingConflictCodes.positionExists, `add: position already exists: ${id}`);
-      }
-      requireParent(parents, change.position.reportTo, "add");
-      parents.set(id, change.position.reportTo);
-    } else if (change.op === "move") {
+    if (change.op === "move") {
       if (!parents.has(change.id)) {
         throw conflict(stagingConflictCodes.positionMissing, `move: position not found: ${change.id}`);
       }
@@ -435,13 +426,6 @@ async function materializeProposal(
     const current = new Map(
       (await scanProposalTree(workspaceDir)).map((position) => [position.id, position]),
     );
-    if (change.op === "add") {
-      const parent = change.position.reportTo === null ? null : current.get(change.position.reportTo);
-      const destination = path.join(parent?.directory ?? positionsRoot, change.position.id);
-      await assertDestinationAvailable(destination);
-      await writePositionSkeleton(destination, change);
-      continue;
-    }
     const source = current.get(change.id);
     if (!source) throw conflict(stagingConflictCodes.positionMissing, `${change.op}: position not found: ${change.id}`);
     if (change.op === "move") {
@@ -458,7 +442,7 @@ async function materializeProposal(
   }
 }
 
-async function assertDestinationAvailable(destination: string): Promise<void> {
+export async function assertDestinationAvailable(destination: string): Promise<void> {
   try {
     await fs.lstat(destination);
   } catch (error) {
@@ -469,7 +453,6 @@ async function assertDestinationAvailable(destination: string): Promise<void> {
 }
 
 function changeDigest(change: OrgChange): { op: string; id: string } {
-  if (change.op === "add") return { op: change.op, id: change.position.id };
   if (change.op === "reorder") return { op: change.op, id: change.parentId ?? "_root" };
   return { op: change.op, id: change.id };
 }
@@ -488,37 +471,12 @@ function validateManifest(rawBody: unknown): ChangeManifest {
   for (const [index, rawChange] of body.changes.entries()) {
     if (typeof rawChange !== "object" || rawChange === null) throw invalid(`changes[${index}] must be an object`);
     const change = rawChange as Record<string, unknown>;
-    if (change.op === "add") validateAdd(index, change);
-    else if (change.op === "move") validateMove(index, change);
+    if (change.op === "move") validateMove(index, change);
     else if (change.op === "delete") validateDelete(index, change);
     else if (change.op === "reorder") validateReorder(index, change);
-    else throw invalid(`changes[${index}].op must be add | move | delete | reorder`);
+    else throw invalid(`changes[${index}].op must be move | delete | reorder (hire moved to POST /hire, #33)`);
   }
   return rawBody as ChangeManifest;
-}
-
-function validateAdd(index: number, change: Record<string, unknown>): void {
-  const invalid = (message: string): OrgApiError =>
-    new OrgApiError(errorCodes.manifest_invalid, 400, `changes[${index}]: ${message}`);
-  const position = change.position;
-  if (typeof position !== "object" || position === null) throw invalid("position must be an object");
-  const p = position as Record<string, unknown>;
-  if (!isPositionId(p.id)) throw invalid("position.id is invalid");
-  if (typeof p.name !== "string" || p.name.length === 0) throw invalid("position.name required");
-  if (typeof p.description !== "string" || p.description.length === 0) throw invalid("position.description required");
-  if (p.reportTo !== null && !isPositionId(p.reportTo)) throw invalid("position.reportTo must be a position id | null");
-  if (p.mode !== "read_only" && p.mode !== "approval_required") throw invalid("position.mode is invalid");
-  if (typeof p.memoryScope !== "string") throw invalid("position.memoryScope must be a string");
-  for (const key of ["toolAllow", "toolDeny"] as const) {
-    const value = p[key];
-    if (!Array.isArray(value) || value.some((entry) => typeof entry !== "string")) throw invalid(`position.${key} must be string[]`);
-  }
-  if (typeof p.budget !== "object" || p.budget === null) throw invalid("position.budget required");
-  const budget = p.budget as Record<string, unknown>;
-  for (const scope of ["perTask", "perDay"] as const) {
-    const value = budget[scope];
-    if (typeof value !== "object" || value === null || Array.isArray(value)) throw invalid(`position.budget.${scope} must be an object`);
-  }
 }
 
 function validateMove(index: number, change: Record<string, unknown>): void {
@@ -553,8 +511,22 @@ function validateReorder(index: number, change: Record<string, unknown>): void {
   }
 }
 
-async function writePositionSkeleton(dir: string, change: AddPositionChange): Promise<void> {
-  const role = change.position;
+/** Position inputs the hire route accepts; the skeleton is deterministic in these. */
+export interface SkeletonPosition {
+  id: string;
+  name: string;
+  description: string;
+  mode: "read_only" | "approval_required";
+  budget: PositionBudget;
+}
+
+/**
+ * Deterministic employee-package skeleton content (#33): the hire route
+ * digests `employee.json` into hire-request.v1alpha1 `packageRef.digest`
+ * BEFORE staging, then stages these exact bytes — so the sealed reference
+ * always matches the on-disk package.
+ */
+export function buildPositionSkeletonFiles(role: SkeletonPosition): Map<string, string> {
   const employee: Record<string, unknown> = {
     $schema: "https://raw.githubusercontent.com/fullstack-ai-infra/digital-employee/main/configs/employee-package.schema.json",
     schemaVersion: "employee-package.v1alpha1",
@@ -596,19 +568,26 @@ async function writePositionSkeleton(dir: string, change: AddPositionChange): Pr
     },
   };
   const skill = `---\nname: ${role.id}\ndescription: ${JSON.stringify(role.description)}\n---\n\n# ${role.name}\n\n${role.description}\n`;
-  const files = new Map<string, string>([
+  return new Map<string, string>([
     ["employee.json", `${JSON.stringify(employee, null, 2)}\n`],
     ["SKILL.md", skill],
     ["schemas/input.schema.json", `${JSON.stringify(inputSchema, null, 2)}\n`],
     ["schemas/output.schema.json", `${JSON.stringify(outputSchema, null, 2)}\n`],
     ["knowledge/README.md", "# Approved knowledge\n\nReplace this generated placeholder with reviewed knowledge.\n"],
+    ["budget.json", `${JSON.stringify(role.budget, null, 2)}\n`],
   ]);
+}
+
+export async function writeSkeletonFiles(dir: string, files: Map<string, string>): Promise<void> {
   for (const [relative, content] of files) {
     const target = path.join(dir, relative);
     await fs.mkdir(path.dirname(target), { recursive: true });
-    await fs.writeFile(target, content, "utf8");
+    if (relative === "budget.json") {
+      await writePrivateAtomic(target, content);
+    } else {
+      await fs.writeFile(target, content, "utf8");
+    }
   }
-  await writePrivateAtomic(path.join(dir, "budget.json"), `${JSON.stringify(role.budget, null, 2)}\n`);
 }
 
 async function writePrivateAtomic(file: string, content: string): Promise<void> {
