@@ -2,6 +2,7 @@ export * from "./api.js";
 export * from "./errors.js";
 export * from "./org-tree.js";
 export * from "./position-id.js";
+export * from "./pending-approval.js";
 export * from "./change-manifest.js";
 export * from "./hire.js";
 export * from "./org-layout.js";

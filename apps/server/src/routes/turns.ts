@@ -4,6 +4,7 @@ import {
   OrgApiError,
   errorCodes,
   turnEngines,
+  validatePendingApproval,
 } from "@org-workbench/shared";
 import type {
   EngineEvent,
@@ -19,10 +20,6 @@ import { createTurnEnvelope } from "../turns/envelope.js";
 import { assertPositionId } from "../turns/store.js";
 
 const MAX_INPUT_BYTES = 256 * 1024;
-// Mirrors the digital-employee #193 envelope first gate bounds
-// (apps/cli/turn/envelope.ts: MAX_ID_LENGTH, MAX_APPROVAL_REASON_BYTES).
-const MAX_APPROVAL_ID_LENGTH = 256;
-const MAX_APPROVAL_REASON_BYTES = 1024;
 
 export interface TurnPostBody {
   positionId: string;
@@ -36,66 +33,17 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 
-/** Required+optional key check mirroring driver-cli.ts exactKeys. */
-function hasExactKeys(value: Record<string, unknown>, required: string[], optional: string[] = []): boolean {
-  const allowed = new Set([...required, ...optional]);
-  return required.every((key) => key in value) && Object.keys(value).every((key) => allowed.has(key));
-}
-
 /**
- * Fail-closed boundary validation for the #193 verdict field, mirroring the
- * upstream envelope first gate; the engine remains the byte-exact backstop.
+ * Fail-closed boundary validation for the #193 verdict field. The checks live
+ * in @org-workbench/shared/pending-approval (#45: single source shared with
+ * the desktop IPC boundary); the engine remains the byte-exact backstop.
  */
 export function assertPendingApproval(raw: unknown): TurnPendingApproval {
-  if (!isRecord(raw)) {
-    throw new OrgApiError(errorCodes.turn_request_invalid, 400, "pendingApproval must be a JSON object");
+  const checked = validatePendingApproval(raw);
+  if (!checked.ok) {
+    throw new OrgApiError(errorCodes.turn_request_invalid, 400, checked.message);
   }
-  if (!hasExactKeys(raw, ["approvalId", "decision", "decidedBy"], ["scope", "reason", "expiresAt"])) {
-    throw new OrgApiError(
-      errorCodes.turn_request_invalid,
-      400,
-      "pendingApproval accepts approvalId, decision, decidedBy plus optional scope, reason, expiresAt",
-    );
-  }
-  if (
-    typeof raw.approvalId !== "string" ||
-    raw.approvalId.trim().length === 0 ||
-    raw.approvalId.length > MAX_APPROVAL_ID_LENGTH
-  ) {
-    throw new OrgApiError(errorCodes.turn_request_invalid, 400, "pendingApproval.approvalId is invalid");
-  }
-  if (raw.decision !== "granted" && raw.decision !== "denied") {
-    throw new OrgApiError(errorCodes.turn_request_invalid, 400, "pendingApproval.decision must be granted or denied");
-  }
-  if (raw.decidedBy !== "operator") {
-    throw new OrgApiError(errorCodes.turn_request_invalid, 400, "pendingApproval.decidedBy must be operator");
-  }
-  if (raw.scope !== undefined && raw.scope !== "once" && raw.scope !== "run") {
-    throw new OrgApiError(errorCodes.turn_request_invalid, 400, "pendingApproval.scope must be once or run when present");
-  }
-  if (
-    raw.reason !== undefined &&
-    (typeof raw.reason !== "string" ||
-      raw.reason.trim().length === 0 ||
-      Buffer.byteLength(raw.reason, "utf8") > MAX_APPROVAL_REASON_BYTES)
-  ) {
-    throw new OrgApiError(
-      errorCodes.turn_request_invalid,
-      400,
-      "pendingApproval.reason must be a non-empty UTF-8 string no larger than 1024 bytes",
-    );
-  }
-  if (raw.expiresAt !== undefined && (typeof raw.expiresAt !== "string" || Number.isNaN(Date.parse(raw.expiresAt)))) {
-    throw new OrgApiError(errorCodes.turn_request_invalid, 400, "pendingApproval.expiresAt must be a valid ISO 8601 timestamp");
-  }
-  return {
-    approvalId: raw.approvalId,
-    decision: raw.decision,
-    decidedBy: "operator",
-    ...(raw.scope !== undefined ? { scope: raw.scope } : {}),
-    ...(raw.reason !== undefined ? { reason: raw.reason } : {}),
-    ...(raw.expiresAt !== undefined ? { expiresAt: raw.expiresAt } : {}),
-  };
+  return checked.value;
 }
 
 function parsePostBody(raw: unknown): TurnPostBody {
