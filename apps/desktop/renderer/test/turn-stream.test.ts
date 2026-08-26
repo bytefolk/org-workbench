@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   EMPTY_TURN_STREAM,
   applyTurnEvent,
+  beginGroupRun,
   beginPendingTurn,
   cancelPendingTurn,
   settlePendingTurn,
@@ -145,5 +146,91 @@ describe("turn stream reducer", () => {
       payload: { runId: "run-1", timestamp: "2026-08-24T05:00:01.500Z", type: "usage", totalTokens: "many" },
     });
     expect(invalid.runs["run-1"]?.totalTokens).toBeNull();
+  });
+});
+
+// #51 S1: personal dialog (1:1) must not regress after #52 group routing landed.
+// The group branch in applyTurnEvent keys on a non-empty string groupRef; these
+// cases pin the personal path under serialization edges and interleaved traffic.
+describe("personal dialog baseline regression (#51)", () => {
+  it("attributes deltas via pending when groupRef is null or empty", () => {
+    for (const groupRef of [null, ""]) {
+      let state = beginPendingTurn(EMPTY_TURN_STREAM, pending);
+      state = applyTurnEvent(state, started(1, "run-1"));
+      state = applyTurnEvent(state, {
+        seq: 2,
+        type: "turn.model.delta",
+        payload: { runId: "run-1", timestamp: "2026-08-24T05:00:01.000Z", type: "model.delta", text: "个人增量", groupRef },
+      });
+      expect(state.runs["run-1"]?.text).toBe("个人增量");
+      expect(state.runs["run-1"]?.groupRef).toBeUndefined();
+    }
+  });
+
+  it("scopes personal turn.indeterminate to the pending-bound run when positionId is absent", () => {
+    let state = beginPendingTurn(EMPTY_TURN_STREAM, pending);
+    state = applyTurnEvent(state, started(1, "run-1"));
+    state = {
+      ...state,
+      runs: {
+        ...state.runs,
+        "run-2": { positionId: "docs-writer", engine: "qoder", input: "其他岗位", text: "别处", startedAt: "2026-08-24T05:00:00.000Z", totalTokens: null },
+      },
+    };
+    state = applyTurnEvent(state, {
+      seq: 2,
+      type: "turn.indeterminate",
+      payload: { turnId: "turn-1", code: "turn_driver_failure", envelopeDigest: "sha256:x" },
+    });
+    expect(Object.keys(state.runs)).toEqual(["run-2"]);
+  });
+
+  it("keeps personal pending attribution and text when group traffic interleaves", () => {
+    let state = beginPendingTurn(EMPTY_TURN_STREAM, pending);
+    state = applyTurnEvent(state, started(1, "run-1"));
+    state = applyTurnEvent(state, delta(2, "run-1", "个人前半"));
+    state = beginGroupRun(state, {
+      groupRef: "conv-1",
+      turnId: "g-turn-1",
+      positionId: "docs-writer",
+      engine: "qoder",
+      input: "群聊任务",
+    });
+    // First group engine event re-keys the seed buffer under the engine runId.
+    state = applyTurnEvent(state, {
+      seq: 3,
+      type: "turn.model.delta",
+      payload: { runId: "g-run-1", timestamp: "2026-08-24T05:00:02.000Z", type: "model.delta", text: "群成员增量", groupRef: "conv-1", turnId: "g-turn-1" },
+    });
+    // Personal stream continues on the same channel afterwards.
+    state = applyTurnEvent(state, delta(4, "run-1", "+个人后半"));
+
+    expect(state.runs["run-1"]?.text).toBe("个人前半+个人后半");
+    expect(state.runs["run-1"]?.positionId).toBe("repo-owner");
+    expect(state.runs["run-1"]?.groupRef).toBeUndefined();
+    expect(state.runs["g-run-1"]?.text).toBe("群成员增量");
+    expect(state.runs["g-run-1"]?.groupRef).toBe("conv-1");
+    expect(state.runs["g-turn-1"]).toBeUndefined();
+    expect(state.pending?.runId).toBe("run-1");
+  });
+
+  it("removes only the group run on a group-scoped turn.indeterminate", () => {
+    let state = beginPendingTurn(EMPTY_TURN_STREAM, pending);
+    state = applyTurnEvent(state, started(1, "run-1"));
+    state = beginGroupRun(state, {
+      groupRef: "conv-1",
+      turnId: "g-turn-1",
+      positionId: "docs-writer",
+      engine: "qoder",
+      input: "群聊任务",
+    });
+    state = applyTurnEvent(state, {
+      seq: 2,
+      type: "turn.indeterminate",
+      payload: { turnId: "g-turn-1", groupRef: "conv-1", positionId: "docs-writer", code: "turn_driver_failure", envelopeDigest: "sha256:x" },
+    });
+    expect(state.runs["g-turn-1"]).toBeUndefined();
+    expect(state.runs["run-1"]?.positionId).toBe("repo-owner");
+    expect(state.pending?.runId).toBe("run-1");
   });
 });
