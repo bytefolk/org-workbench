@@ -17,6 +17,7 @@ const os = require("node:os");
 const path = require("node:path");
 const { rendererEntryPath } = require("./runtime-paths.cjs");
 const { validateRestoreRequest } = require("./org-ipc.cjs");
+const { validateHireRequest } = require("./hire-ipc.cjs");
 const { turnHistoryPath, validateCancelRequest, validateCreateTurnRequest } = require("./turn-ipc.cjs");
 const {
   sessionListPath,
@@ -267,6 +268,12 @@ ipcMain.handle("owb:org:restore", async (_event, backupId) => {
 });
 
 ipcMain.handle("owb:org:undo", async () => apiRequest("/org/undo", { method: "POST", body: {} }));
+
+ipcMain.handle("owb:hire:create", async (_event, request) => {
+  const validated = validateHireRequest(request);
+  if (!validated.ok) return validated.response;
+  return apiRequest("/hire", { method: "POST", body: validated.request });
+});
 
 ipcMain.handle("owb:reports:get", async () => apiRequest("/reports"));
 

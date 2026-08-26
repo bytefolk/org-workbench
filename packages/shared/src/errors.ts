@@ -51,6 +51,8 @@ export const errorCodes = {
   session_storage_failed: "session_storage_failed",
   /** A local reports source is malformed or crosses a safe path boundary. */
   reports_data_invalid: "reports_data_invalid",
+  /** POST /hire request shape violates the frozen hire channel contract (#33). */
+  hire_request_invalid: "hire_request_invalid",
   /** Route not found. */
   not_found: "not_found",
   /** Method not allowed on a known route. */

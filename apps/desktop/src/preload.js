@@ -10,6 +10,7 @@ contextBridge.exposeInMainWorld("owb", {
   orgBackups: () => ipcRenderer.invoke("owb:org:backups"),
   orgRestore: (backupId) => ipcRenderer.invoke("owb:org:restore", backupId),
   orgUndo: () => ipcRenderer.invoke("owb:org:undo"),
+  hire: (request) => ipcRenderer.invoke("owb:hire:create", request),
   reports: () => ipcRenderer.invoke("owb:reports:get"),
   position: (positionId) => ipcRenderer.invoke("owb:position:get", positionId),
   createTurn: (request) => ipcRenderer.invoke("owb:turn:create", request),
