@@ -210,6 +210,34 @@
   color: var(--ui-foreground);
 }
 
+/* #53 DS-34-001 §1.3/§7: hover group-chat entry; same reveal rhythm as the
+   hire entry, single token surface only. */
+.ui-org-tree__group {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 18px;
+  height: 18px;
+  border: none;
+  border-radius: var(--ui-radius-sm, 6px);
+  background: transparent;
+  color: var(--ui-foreground-muted);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity var(--ui-duration-fast, 120ms) var(--ui-ease, ease);
+}
+
+.ui-org-tree__row:hover .ui-org-tree__group,
+.ui-org-tree__group:focus-visible {
+  opacity: 1;
+}
+
+.ui-org-tree__group:hover {
+  background: var(--ui-surface-inset);
+  color: var(--ui-foreground);
+}
+
 .ui-org-tree--empty {
   align-items: center;
   justify-content: center;
