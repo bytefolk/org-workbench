@@ -55,6 +55,10 @@ interface PositionCardState {
   notFound: boolean;
 }
 
+/** Resume-turn input for approval verdicts; the verdict itself travels in the
+ * envelope's pendingApproval field, so this text stays a neutral continuation. */
+const APPROVAL_RESUME_INPUT = "[审批裁决] 请继续执行上一回合暂停的动作";
+
 /**
  * D1 renderer: AppShell four-zone layout (spec §1) — ModuleRail (org active,
  * memory/docs placeholders), Topbar (breadcrumbs + engine status + budget
@@ -390,6 +394,9 @@ export function App() {
         sessionId,
         engine: request.engine,
         input: request.input,
+        ...(request.pendingApproval !== undefined
+          ? { pendingApproval: request.pendingApproval }
+          : {}),
       });
       if (res.status !== 200) {
         const message = apiErrorMessage(res.body, "回合创建失败");
@@ -439,6 +446,29 @@ export function App() {
       setTurnCancelling(false);
     }
   }, []);
+
+  /** Operator verdict (issue #25 Slice B): the verdict is a new resume turn
+   * whose sealed envelope carries pendingApproval; granted defaults scope to
+   * "once" upstream, denied carries the optional reason only. */
+  const verdictTurn = useCallback(
+    async (turn: TurnRecord, decision: "granted" | "denied", reason?: string) => {
+      const request = turn.approvalRequest;
+      if (request === undefined) return;
+      await createTurn({
+        positionId: turn.positionId,
+        engine: turn.engine,
+        input: APPROVAL_RESUME_INPUT,
+        pendingApproval: {
+          approvalId: request.approvalId,
+          decision,
+          decidedBy: "operator",
+          ...(decision === "granted" ? { scope: "once" as const } : {}),
+          ...(reason !== undefined ? { reason } : {}),
+        },
+      });
+    },
+    [createTurn],
+  );
 
   const openWorkspace = useCallback(async () => {
     await window.owb.openWorkspace();
@@ -785,6 +815,7 @@ export function App() {
             onSelectEngine={setTurnEngine}
             onCreateTurn={createTurn}
             onCancelTurn={cancelTurn}
+            onVerdictTurn={verdictTurn}
             cancelling={turnCancelling}
             onSelectSession={selectSession}
             onCreateSession={createSession}

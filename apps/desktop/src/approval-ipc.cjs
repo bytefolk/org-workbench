@@ -1,0 +1,67 @@
+// Shared fail-closed validation for the #193 pendingApproval verdict field.
+// Mirrors the digital-employee envelope first gate
+// (apps/cli/turn/envelope.ts parseTurnEnvelope pendingApproval checks).
+const MAX_APPROVAL_ID_LENGTH = 256;
+const MAX_APPROVAL_REASON_BYTES = 1024;
+
+function invalid(message) {
+  return { status: 400, body: { code: "turn_request_invalid", message, retryable: false } };
+}
+
+function validatePendingApproval(value) {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) {
+    return { ok: false, response: invalid("pendingApproval must be an object") };
+  }
+  const keys = Object.keys(value).sort().join(",");
+  const allowedShapes = [
+    "approvalId,decidedBy,decision",
+    "approvalId,decidedBy,decision,scope",
+    "approvalId,decidedBy,decision,reason",
+    "approvalId,decidedBy,decision,expiresAt",
+    "approvalId,decidedBy,decision,reason,scope",
+    "approvalId,decidedBy,decision,expiresAt,scope",
+    "approvalId,decidedBy,decision,expiresAt,reason",
+    "approvalId,decidedBy,decision,expiresAt,reason,scope",
+  ];
+  if (!allowedShapes.includes(keys)) {
+    return {
+      ok: false,
+      response: invalid("pendingApproval accepts approvalId, decision, decidedBy plus optional scope, reason, expiresAt"),
+    };
+  }
+  if (typeof value.approvalId !== "string" || value.approvalId.trim().length === 0 ||
+      value.approvalId.length > MAX_APPROVAL_ID_LENGTH) {
+    return { ok: false, response: invalid("pendingApproval.approvalId is invalid") };
+  }
+  if (value.decision !== "granted" && value.decision !== "denied") {
+    return { ok: false, response: invalid("pendingApproval.decision must be granted or denied") };
+  }
+  if (value.decidedBy !== "operator") {
+    return { ok: false, response: invalid("pendingApproval.decidedBy must be operator") };
+  }
+  if (value.scope !== undefined && value.scope !== "once" && value.scope !== "run") {
+    return { ok: false, response: invalid("pendingApproval.scope must be once or run when present") };
+  }
+  if (value.reason !== undefined &&
+      (typeof value.reason !== "string" || value.reason.trim().length === 0 ||
+       Buffer.byteLength(value.reason, "utf8") > MAX_APPROVAL_REASON_BYTES)) {
+    return { ok: false, response: invalid("pendingApproval.reason must be non-empty and no larger than 1024 bytes") };
+  }
+  if (value.expiresAt !== undefined &&
+      (typeof value.expiresAt !== "string" || Number.isNaN(Date.parse(value.expiresAt)))) {
+    return { ok: false, response: invalid("pendingApproval.expiresAt must be a valid ISO 8601 timestamp") };
+  }
+  return {
+    ok: true,
+    value: {
+      approvalId: value.approvalId,
+      decision: value.decision,
+      decidedBy: "operator",
+      ...(value.scope !== undefined ? { scope: value.scope } : {}),
+      ...(value.reason !== undefined ? { reason: value.reason } : {}),
+      ...(value.expiresAt !== undefined ? { expiresAt: value.expiresAt } : {}),
+    },
+  };
+}
+
+module.exports = { validatePendingApproval };

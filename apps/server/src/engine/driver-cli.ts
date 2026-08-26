@@ -29,6 +29,12 @@ const MAX_DIAGNOSTIC_BYTES = 8 * 1024;
 const MAX_TERMINAL_OUTPUT_BYTES = MAX_ESCAPED_MODEL_BYTES;
 const PROCESS_KILL_GRACE_MS = 250;
 const ENGINE_CODE_PATTERN = /^[a-z0-9][a-z0-9._-]{0,127}$/;
+// Mirrors the digital-employee engine approval bounds (#187): contracts.ts
+// APPROVAL_DESCRIPTION_MAX_BYTES / APPROVAL_TARGET_MAX_BYTES and MAX_ID_LENGTH.
+const APPROVAL_ID_MAX_LENGTH = 256;
+const APPROVAL_ACTION_KINDS = new Set(["exec", "write", "network", "tool"]);
+const APPROVAL_DESCRIPTION_MAX_BYTES = 1024;
+const APPROVAL_TARGET_MAX_BYTES = 512;
 const TERMINAL_REASONS = new Set<TurnTerminalReason>([
   "goal_met",
   "invalid_output_exhausted",
@@ -92,6 +98,22 @@ function baseEvent(raw: Record<string, unknown>): { runId: string; timestamp: st
 
 function nonNegativeInteger(value: unknown): value is number {
   return Number.isSafeInteger(value) && (value as number) >= 0;
+}
+
+function boundedApprovalId(value: unknown): value is string {
+  return typeof value === "string" && value.trim().length > 0 && value.length <= APPROVAL_ID_MAX_LENGTH;
+}
+
+function boundedNonEmptyText(value: unknown, maxBytes: number): value is string {
+  return (
+    typeof value === "string" &&
+    value.trim().length > 0 &&
+    Buffer.byteLength(value, "utf8") <= maxBytes
+  );
+}
+
+function optionalIsoTimestamp(value: unknown): boolean {
+  return value === undefined || (typeof value === "string" && !Number.isNaN(Date.parse(value)));
 }
 
 function parseEngineEvent(line: string): EngineEvent {
@@ -182,6 +204,85 @@ function parseEngineEvent(line: string): EngineEvent {
           retryable: unknownEvent.error.retryable,
           terminalReason: unknownEvent.error.terminalReason as TurnTerminalReason,
         },
+      };
+    }
+    // Additive mirror of the engine.v1 #187 approval events; the frozen five
+    // shapes above are unchanged.
+    case "approval.requested": {
+      exactKeys(
+        unknownEvent,
+        ["type", "runId", "timestamp", "approvalId", "action"],
+        ["reason", "expiresAt"],
+      );
+      if (!isRecord(unknownEvent.action)) {
+        throw new EngineProtocolError("engine.v1 approval.requested action is invalid");
+      }
+      exactKeys(unknownEvent.action, ["kind", "description"], ["target"]);
+      if (
+        !boundedApprovalId(unknownEvent.approvalId) ||
+        !APPROVAL_ACTION_KINDS.has(unknownEvent.action.kind as string) ||
+        !boundedNonEmptyText(unknownEvent.action.description, APPROVAL_DESCRIPTION_MAX_BYTES) ||
+        (unknownEvent.action.target !== undefined &&
+          !boundedNonEmptyText(unknownEvent.action.target, APPROVAL_TARGET_MAX_BYTES)) ||
+        (unknownEvent.reason !== undefined &&
+          !boundedNonEmptyText(unknownEvent.reason, APPROVAL_DESCRIPTION_MAX_BYTES)) ||
+        !optionalIsoTimestamp(unknownEvent.expiresAt)
+      ) {
+        throw new EngineProtocolError("engine.v1 approval.requested fields are invalid or unbounded");
+      }
+      return {
+        ...base,
+        type: "approval.requested",
+        approvalId: unknownEvent.approvalId,
+        action: {
+          kind: unknownEvent.action.kind as "exec" | "write" | "network" | "tool",
+          description: unknownEvent.action.description,
+          ...(unknownEvent.action.target !== undefined
+            ? { target: unknownEvent.action.target }
+            : {}),
+        },
+        ...(unknownEvent.reason !== undefined ? { reason: unknownEvent.reason } : {}),
+        ...(unknownEvent.expiresAt !== undefined
+          ? { expiresAt: unknownEvent.expiresAt as string }
+          : {}),
+      };
+    }
+    case "approval.granted":
+      exactKeys(unknownEvent, ["type", "runId", "timestamp", "approvalId", "grantedBy", "scope"]);
+      if (
+        !boundedApprovalId(unknownEvent.approvalId) ||
+        unknownEvent.grantedBy !== "operator" ||
+        (unknownEvent.scope !== "once" && unknownEvent.scope !== "run")
+      ) {
+        throw new EngineProtocolError("engine.v1 approval.granted fields are invalid");
+      }
+      return {
+        ...base,
+        type: "approval.granted",
+        approvalId: unknownEvent.approvalId,
+        grantedBy: "operator",
+        scope: unknownEvent.scope,
+      };
+    case "approval.denied": {
+      exactKeys(
+        unknownEvent,
+        ["type", "runId", "timestamp", "approvalId", "deniedBy"],
+        ["reason"],
+      );
+      if (
+        !boundedApprovalId(unknownEvent.approvalId) ||
+        unknownEvent.deniedBy !== "operator" ||
+        (unknownEvent.reason !== undefined &&
+          !boundedNonEmptyText(unknownEvent.reason, APPROVAL_DESCRIPTION_MAX_BYTES))
+      ) {
+        throw new EngineProtocolError("engine.v1 approval.denied fields are invalid");
+      }
+      return {
+        ...base,
+        type: "approval.denied",
+        approvalId: unknownEvent.approvalId,
+        deniedBy: "operator",
+        ...(unknownEvent.reason !== undefined ? { reason: unknownEvent.reason } : {}),
       };
     }
     default:

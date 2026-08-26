@@ -238,11 +238,11 @@ event: org.updated
 data: {"seq":4,"type":"org.updated","at":"...","payload":{...}}
 ```
 
-事件词汇（v0 冻结 + D3 加法）：`org.updated` / `turn.started` / `turn.model.delta` / `turn.usage` / `turn.completed` / `turn.failed` / `turn.indeterminate` / `escalation.created` / `evidence.created`。D3 的前五类引擎事件以已严格校验的 `engine.v1` 原始事件作为 `payload`；进程级不确定结果使用控制面 `turn.indeterminate`，不会伪造 engine 终态，也不会自动重试。
+事件词汇（v0 冻结 + D3 加法 + #25 加法）：`org.updated` / `turn.started` / `turn.model.delta` / `turn.usage` / `turn.completed` / `turn.failed` / `turn.indeterminate` / `turn.approval.requested` / `turn.approval.granted` / `turn.approval.denied` / `escalation.created` / `evidence.created`。D3 的前五类引擎事件以已严格校验的 `engine.v1` 原始事件作为 `payload`；`turn.approval.*` 三类逐字镜像上游 #187 加法引入的 `engine.v1` `approval.requested` / `approval.granted` / `approval.denied` 事件（#25 Slice B 加法），经控制面同一严格校验后作为 `payload` 广播，不引入新词汇形态。进程级不确定结果使用控制面 `turn.indeterminate`，不会伪造 engine 终态，也不会自动重试。
 
 ### 2.11 `POST /turns` / `GET /turns` — D3 本地回合控制面
 
-`POST /turns` 请求（只允许下列三个字段）：
+`POST /turns` 请求（只允许下列三个字段；#25 Slice B 加法允许可选 `pendingApproval`，见 2.11.2）：
 
 ```json
 { "positionId": "repo-owner", "input": "Summarize the open issues.", "engine": "qoder" }
@@ -285,6 +285,32 @@ Electron renderer 只通过枚举式 `createTurn({positionId,input,engine})` 与
 - 命中时控制面终止引擎子进程（SIGTERM，250ms 后 SIGKILL），回合经既有路径落为 `indeterminate`，诊断码 `turn_cancelled`（与 `turn_timeout` 同类的本地诊断码，不属于 `errorCodes` 稳定码表），并复用冻结的 `turn.indeterminate` SSE 词汇广播；不新增 SSE 事件类型。
 - 响应 200：`{ "cancelled": true, "positionId": "<id>" }`。
 - 同一 `POST /turns` 请求语义不变：被中断的回合仍以完整 `turn-record.v1`（status `indeterminate`）作为该请求的 200 响应返回。
+
+#### 2.11.2 `pendingApproval` — 审批裁决随回合传入（#25 Slice B 加法修订）
+
+`POST /turns` 与 `POST /sessions/:sessionId/turns` 在既有字段之外允许一个可选字段 `pendingApproval`，逐字镜像上游 #193 加法的 `turn-envelope.v1` 可选字段（其形状即引擎 `TurnPendingApprovalInput`）：
+
+```json
+{
+  "positionId": "repo-owner",
+  "input": "[审批裁决] 请继续执行上一回合暂停的动作",
+  "engine": "qoder",
+  "pendingApproval": {
+    "approvalId": "<≤256 非空，来自 approval.requested>",
+    "decision": "granted",
+    "decidedBy": "operator",
+    "scope": "once",
+    "reason": "<可选，非空，≤1024 字节>",
+    "expiresAt": "<可选，ISO 8601>"
+  }
+}
+```
+
+- 必填：`approvalId`（非空、≤256）、`decision`（`granted`|`denied`）、`decidedBy`（常量 `"operator"`）；可选：`scope`（`once`|`run`）、`reason`（非空、≤1024 字节）、`expiresAt`（ISO 8601）。`additionalProperties: false`，字段集合只允许逐字镜像上游校验的八种排序键形状。
+- 边界校验 fail closed：任何形状违例（缺字段、额外字段、越界、`decidedBy` 非 `"operator"`、非法枚举、非法时间戳）在 spawn 之前以 400 `turn_request_invalid` 拒绝（不新增错误码，不新增 SSE 事件类型）。
+- 校验通过的 `pendingApproval` 进入 `turn-envelope.v1` 正文并参与 `envelopeDigest`（canonical JSON + SHA-256，与上游逐字节一致）；未携带时信封与摘要与既有行为逐字节不变。
+- 控制面不解释裁决语义、不在途注入、不自动重试；裁决只随下一个新回合的信封传递，引擎首门校验失败（`engine.input_invalid`）按既有 spawn 前失败路径处理。
+- Electron renderer 的审批卡片（批准/拒绝）即经既有 `createTurn` / session turn IPC 携带该字段发起续跑回合；IPC 层执行同一镜像校验，不新增通用通道。
 
 ### 2.12 `/sessions` — 显式 Workbench session（#12 R2 加法）
 

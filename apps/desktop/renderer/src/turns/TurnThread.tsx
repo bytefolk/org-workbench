@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Empty } from "antd";
-import { AlertTriangle, Check, Clock3, RotateCcw, ShieldQuestion } from "lucide-react";
+import { AlertTriangle, Check, Clock3, RotateCcw, ShieldAlert, ShieldQuestion } from "lucide-react";
 import { engineLabel } from "./TurnPanel";
 import type { TurnRecord, TurnStatus } from "./types";
 
@@ -9,6 +9,8 @@ export interface TurnThreadProps {
   retrying?: boolean;
   canRetry?: (turn: TurnRecord) => boolean;
   onRetry?: (turn: TurnRecord) => void;
+  /** Operator verdict for a turn settled as engine.approval_required. */
+  onVerdict?: (turn: TurnRecord, decision: "granted" | "denied", reason?: string) => void;
 }
 
 const STATUS_COPY: Record<TurnStatus, string> = {
@@ -16,6 +18,13 @@ const STATUS_COPY: Record<TurnStatus, string> = {
   completed: "已完成",
   failed: "失败",
   indeterminate: "状态未知",
+};
+
+const APPROVAL_KIND_COPY: Record<string, string> = {
+  exec: "命令执行",
+  write: "写入操作",
+  network: "网络访问",
+  tool: "工具调用",
 };
 
 function StatusIcon({ status }: { status: TurnStatus }) {
@@ -58,8 +67,68 @@ function StatusLine({ turn }: { turn: TurnRecord }) {
   );
 }
 
+/** Approval verdict card (#187 Option 1): the verdict always starts a new
+ * sealed-envelope resume turn; there is no in-run channel by contract. */
+function ApprovalCard({
+  turn,
+  busy,
+  onVerdict,
+}: {
+  turn: TurnRecord;
+  busy: boolean;
+  onVerdict: (turn: TurnRecord, decision: "granted" | "denied", reason?: string) => void;
+}) {
+  const [reason, setReason] = useState("");
+  const request = turn.approvalRequest;
+  if (request === undefined) return null;
+  const trimmedReason = reason.trim();
+  return (
+    <div className="owb-turn__approval" role="group" aria-label="审批请求">
+      <p className="owb-turn__approval-title">
+        <ShieldAlert aria-hidden="true" size={13} />
+        等待审批 · {APPROVAL_KIND_COPY[request.kind] ?? request.kind}
+      </p>
+      <p className="owb-turn__approval-description owb-clamp-2" title={request.description}>
+        {request.description}
+      </p>
+      {request.target ? (
+        <p className="owb-turn__approval-target" title={request.target}>{request.target}</p>
+      ) : null}
+      {request.expiresAt ? (
+        <p className="owb-turn__approval-expires">过期时间 {new Date(request.expiresAt).toLocaleString()}</p>
+      ) : null}
+      <input
+        className="owb-turn__approval-reason"
+        aria-label="拒绝理由（可选）"
+        placeholder="拒绝理由（可选）"
+        value={reason}
+        disabled={busy}
+        onChange={(event) => setReason(event.target.value)}
+      />
+      <div className="owb-turn__approval-actions">
+        <button
+          type="button"
+          className="owb-turn__approval-grant"
+          disabled={busy}
+          onClick={() => onVerdict(turn, "granted")}
+        >
+          批准并继续
+        </button>
+        <button
+          type="button"
+          className="owb-turn__approval-deny"
+          disabled={busy}
+          onClick={() => onVerdict(turn, "denied", trimmedReason.length > 0 ? trimmedReason : undefined)}
+        >
+          拒绝
+        </button>
+      </div>
+    </div>
+  );
+}
+
 /** Local, append-only turn history. It never infers recall or delegation. */
-export function TurnThread({ turns, retrying = false, canRetry, onRetry }: TurnThreadProps) {
+export function TurnThread({ turns, retrying = false, canRetry, onRetry, onVerdict }: TurnThreadProps) {
   if (turns.length === 0) {
     return (
       <div className="owb-turn-thread owb-turn-thread--empty">
@@ -126,7 +195,13 @@ export function TurnThread({ turns, retrying = false, canRetry, onRetry }: TurnT
                 </dl>
               ) : null}
 
-              {retryable && onRetry ? (
+              {turn.approvalRequest !== undefined && onVerdict ? (
+                <ApprovalCard
+                  turn={turn}
+                  busy={retrying || canRetry?.(turn) === false}
+                  onVerdict={onVerdict}
+                />
+              ) : retryable && onRetry ? (
                 <button
                   type="button"
                   className="owb-turn__retry"

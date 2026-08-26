@@ -55,3 +55,75 @@ composer hint restored: 将通过 Qoder 创建一个新回合
 同一回合在 `/events` 线上捕获到：`turn.started` ×1、`turn.model.delta` ×2、
 `turn.usage` ×1、`turn.indeterminate` ×1（payload.code=turn_cancelled），
 与 renderer 渲染状态一致（无重复、无乱序）。
+
+---
+
+# Issue #25 Slice B 实机取证（控制面 E3：审批卡片裁决往返）
+
+以 `/tmp/owb-approval-e3/stub.mjs`（`digital-employee turn run` 形态，输出严格
+engine.v1 #187 事件序列）经 `ORG_WORKBENCH_DIGITAL_EMPLOYEE_CLI` 注入独立启动的
+loopback 控制面（`node apps/server/dist/src/index.js --port 0`），curl 驱动全链路。
+stub 会重算入站信封的 canonical-JSON sha256 摘要，与自身信封指纹不符即 exit 1——
+即裁决必须真的被封进下一回合信封才能驱动续跑。stub 与驱动脚本仅存 /tmp，不入仓库。
+
+stub 行为：无 `pendingApproval` → `run.started → approval.requested(appr-e3, exec,
+"rm -rf build", target scripts/clean.sh, reason, expiresAt) → run.failed
+engine.approval_required(retryable)`；带 `pendingApproval` → 回显裁决并
+`run.completed {result:"resumed", verdictDecision, verdictScope}`。
+
+## turn 1：无裁决 → 审批门（#187 Option 1 终态-续跑）
+
+```
+status: failed | error: engine.approval_required | retryable: true
+events: run.started -> approval.requested -> run.failed
+approval: "appr-e3" {"kind":"exec","description":"rm -rf build","target":"scripts/clean.sh"}
+envelopeDigest: sha256:445e8c7fbe5bf8a3b845b176a188de5a368dd6a50886c474b8395936b74e3707
+```
+
+请求 run 以 retryable `run.failed(engine.approval_required)` 结算；无 in-run 通道。
+
+## turn 2：续跑回合携带 granted 裁决
+
+POST /turns 携带 `pendingApproval {approvalId:"appr-e3", decision:"granted",
+decidedBy:"operator", scope:"once"}`：
+
+```
+status: completed | output: {"result":"resumed","verdictDecision":"granted","verdictScope":"once"}
+events: run.started -> model.delta -> run.completed
+envelopeDigest: sha256:3db8db237e304fc3b5974f65d9fc2e38e8e96dc2a34df3457ecc3da9b013bbe7
+```
+
+stub 端信封摘要自检通过（裁决确实封入信封），引擎侧回显裁决。两回合摘要不同，
+证明 pendingApproval 参与 canonical 摘要（与上游 #193 computeEnvelopeDigest
+逐字节交叉验证：含裁决向量 sha256:bb59fc99…8187，无裁决冻结向量 sha256:86df4dc7…c8c7 不变）。
+
+## 边界违规：decidedBy ≠ operator → spawn 前 fail closed
+
+```
+400
+{"code":"turn_request_invalid","message":"pendingApproval.decidedBy must be operator","retryable":false}
+```
+
+未新增错误码 / SSE 类型；违规不触达引擎（测试矩阵 12 例均断言零 spawn）。
+
+## 历史回读（写后即读不回退）
+
+```
+turns: 51b7e2d9:failed:engine.approval_required | c66f88aa:completed:-
+```
+
+含 approval.* 事件的回合记录持久化后 GET /turns 原样读回
+（store 读校验已镜像 approval 三事件边界；回归测试
+`turn records containing approval events persist and read back intact`）。
+
+## 线上事件核对（SSE wire capture）
+
+```
+SSE turn.approval.requested -> approval.requested
+SSE turn.failed -> run.failed engine.approval_required
+SSE turn.completed -> run.completed
+```
+
+renderer 侧审批卡片（kind 文案、批准/拒绝、裁决转续跑回合）由
+`apps/desktop/renderer/test/approval.test.tsx`（4 例）与
+`apps/desktop/test/approval-ipc.test.cjs`（3 例）覆盖。

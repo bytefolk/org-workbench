@@ -9,6 +9,7 @@ import type {
   ReportsResponse,
   TurnEngine,
   TurnHistory,
+  TurnPendingApproval,
   TurnRecord,
   WorkbenchSession,
   WorkbenchSessionList,
@@ -38,14 +39,14 @@ export interface OwbBridge {
   orgUndo(): Promise<OwbApiResponse<OrgUndoResult>>;
   reports(): Promise<OwbApiResponse<ReportsResponse>>;
   position(positionId: string): Promise<OwbApiResponse>;
-  createTurn(request: { positionId: string; input: string; engine: TurnEngine }): Promise<OwbApiResponse<TurnRecord>>;
+  createTurn(request: { positionId: string; input: string; engine: TurnEngine; pendingApproval?: TurnPendingApproval }): Promise<OwbApiResponse<TurnRecord>>;
   cancelTurn(positionId: string): Promise<OwbApiResponse<{ cancelled: boolean; positionId: string }>>;
   turnHistory(positionId: string): Promise<OwbApiResponse<TurnHistory>>;
   createSession(request: { positionId: string }): Promise<OwbApiResponse<WorkbenchSession>>;
   sessions(positionId: string): Promise<OwbApiResponse<WorkbenchSessionList>>;
   session(sessionId: string): Promise<OwbApiResponse<WorkbenchSession>>;
   rotateSession(sessionId: string): Promise<OwbApiResponse<WorkbenchSession>>;
-  createSessionTurn(request: { sessionId: string; input: string; engine: TurnEngine }): Promise<OwbApiResponse<TurnRecord>>;
+  createSessionTurn(request: { sessionId: string; input: string; engine: TurnEngine; pendingApproval?: TurnPendingApproval }): Promise<OwbApiResponse<TurnRecord>>;
   sessionTurnHistory(sessionId: string): Promise<OwbApiResponse<TurnHistory>>;
   sseStatus(): Promise<"connecting" | "connected">;
   onEvent(callback: (event: unknown) => void): () => void;

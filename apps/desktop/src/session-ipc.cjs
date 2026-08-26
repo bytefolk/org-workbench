@@ -1,4 +1,5 @@
 const { isPositionId } = require("@org-workbench/shared/position-id");
+const { validatePendingApproval } = require("./approval-ipc.cjs");
 
 const SESSION_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 const TURN_ENGINES = new Set(["qoder", "claude-code", "claude-local"]);
@@ -21,9 +22,15 @@ function validateSessionCreateRequest(value) {
 }
 
 function validateSessionTurnRequest(value) {
-  if (value === null || typeof value !== "object" || Array.isArray(value) ||
-      Object.keys(value).sort().join(",") !== "engine,input,sessionId") {
-    return { ok: false, response: invalid("turn_request_invalid", "session turn accepts exactly sessionId, input, and engine") };
+  if (value === null || typeof value !== "object" || Array.isArray(value)) {
+    return { ok: false, response: invalid("turn_request_invalid", "session turn must be an object") };
+  }
+  const keys = Object.keys(value).sort().join(",");
+  if (keys !== "engine,input,sessionId" && keys !== "engine,input,pendingApproval,sessionId") {
+    return {
+      ok: false,
+      response: invalid("turn_request_invalid", "session turn accepts exactly sessionId, input, engine, and optional pendingApproval"),
+    };
   }
   if (!validateSessionId(value.sessionId)) {
     return { ok: false, response: invalid("session_request_invalid", "sessionId is invalid") };
@@ -35,10 +42,20 @@ function validateSessionTurnRequest(value) {
   if (typeof value.engine !== "string" || !TURN_ENGINES.has(value.engine)) {
     return { ok: false, response: invalid("turn_engine_unsupported", "engine must be qoder, claude-code, or claude-local") };
   }
+  let pendingApproval;
+  if (value.pendingApproval !== undefined) {
+    const checked = validatePendingApproval(value.pendingApproval);
+    if (!checked.ok) return { ok: false, response: checked.response };
+    pendingApproval = checked.value;
+  }
   return {
     ok: true,
     sessionId: value.sessionId,
-    request: { input: value.input, engine: value.engine },
+    request: {
+      input: value.input,
+      engine: value.engine,
+      ...(pendingApproval !== undefined ? { pendingApproval } : {}),
+    },
   };
 }
 
