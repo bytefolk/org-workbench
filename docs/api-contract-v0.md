@@ -106,12 +106,6 @@
 {
   "schemaVersion": "change-manifest.v1",
   "changes": [
-    { "op": "add", "position": {
-        "id": "docs-writer", "name": "Docs Writer", "description": "...",
-        "reportTo": "repo-owner", "mode": "read_only", "memoryScope": "/",
-        "toolAllow": ["Read"], "toolDeny": [],
-        "budget": { "perTask": { "tokens": 20000 }, "perDay": { "iterations": 64 } },
-        "metadata": {} } },
     { "op": "move", "id": "issue-researcher", "reportTo": "docs-writer" },
     { "op": "delete", "id": "community-operator" },
     { "op": "reorder", "parentId": "repo-owner", "order": ["release-engineer", "community-operator", "issue-researcher"] }
@@ -119,13 +113,13 @@
 }
 ```
 
-语义：add=招聘（**必须携带预算声明**，REQ-006，缺预算 → 400 `manifest_invalid`）；move=改汇报线（`reportTo:null` 表示直挂 `positions/` 根）；delete=裁撤；reorder=同级兄弟顺序调整（#32 加法，`parentId:null` 表示 `positions/` 根，`order` 必须恰好等于该父级当前全部子岗位集合）。组织/预算合法性由 digital-employee（`org apply`）裁决；客户端只做请求形状和目录操作可执行性预检。
+语义：清单只接受 `move` / `delete` / `reorder` 三种操作。招聘（原 `add`）已于 #33 迁移到 `POST /hire`（§2.14，hire-request.v1alpha1 契约面）；携带 `add` 的清单按未知操作 400 `manifest_invalid` 拒绝。move=改汇报线（`reportTo:null` 表示直挂 `positions/` 根）；delete=裁撤；reorder=同级兄弟顺序调整（#32 加法，`parentId:null` 表示 `positions/` 根，`order` 必须恰好等于该父级当前全部子岗位集合）。组织/预算合法性由 digital-employee（`org apply`）裁决；客户端只做请求形状和目录操作可执行性预检。
 
-reorder 语义补充（#32）：兄弟顺序是 org-workbench 自治语义，不属于引擎组织契约。顺序持久化在控制面自有的 `.digital-employee/org-layout.v1.json` 覆盖层（原子 tmp+rename，0600），引擎与 qoder sync 永不触碰该文件。纯 reorder 清单不调用引擎、不改 `.digital-employee/org.json`；集合校验失败 → 422 `org_reorder_set_mismatch`。reorder 可与结构操作混排，结构部分仍走引擎原子应用，成功后再落覆盖层。每次成功的 reorder/move 调整保存单步 undo 条目；add/delete 会清空该条目（结构恢复走 2.6 裁撤恢复区）。
+reorder 语义补充（#32）：兄弟顺序是 org-workbench 自治语义，不属于引擎组织契约。顺序持久化在控制面自有的 `.digital-employee/org-layout.v1.json` 覆盖层（原子 tmp+rename，0600），引擎与 qoder sync 永不触碰该文件。纯 reorder 清单不调用引擎、不改 `.digital-employee/org.json`；集合校验失败 → 422 `org_reorder_set_mismatch`。reorder 可与结构操作混排，结构部分仍走引擎原子应用，成功后再落覆盖层。每次成功的 reorder/move 调整保存单步 undo 条目；delete 会清空该条目（结构恢复走 2.6 裁撤恢复区）。
 
 执行序列（目录提案＋引擎应用态）：
 
-1. 完整预检清单（重名/缺位/环/owner/`maxDepth=8`）→ 2. 直接物化 `positions/` 提案树（add 写岗位骨架和 0600 `budget.json`；move rename；delete 移入 `.digital-employee/backup/`）→ 3. spawn 钉版 `digital-employee org apply <workspace> --json` → 4. 成功：重载 `.digital-employee/org.json` 并广播 `org.updated`；失败：稳定码透传、提案树保留，不自动回滚。
+1. 完整预检清单（重名/缺位/环/owner/`maxDepth=8`）→ 2. 直接物化 `positions/` 提案树（move rename；delete 移入 `.digital-employee/backup/`）→ 3. spawn 钉版 `digital-employee org apply <workspace> --json` → 4. 成功：重载 `.digital-employee/org.json` 并广播 `org.updated`；失败：稳定码透传、提案树保留，不自动回滚（被拒的 delete 包保留在裁撤恢复区，走 2.6 显式恢复）。
 
 应用态纪律：`.digital-employee/org.json`、`org-audit.jsonl`、`permissions.json` 只由引擎写。拒绝时三者字节级零变更。旧 staging 与 `apply-log.ndjson` 停写。
 
@@ -238,7 +232,7 @@ event: org.updated
 data: {"seq":4,"type":"org.updated","at":"...","payload":{...}}
 ```
 
-事件词汇（v0 冻结 + D3 加法 + #25 加法）：`org.updated` / `turn.started` / `turn.model.delta` / `turn.usage` / `turn.completed` / `turn.failed` / `turn.indeterminate` / `turn.approval.requested` / `turn.approval.granted` / `turn.approval.denied` / `escalation.created` / `evidence.created`。D3 的前五类引擎事件以已严格校验的 `engine.v1` 原始事件作为 `payload`；`turn.approval.*` 三类逐字镜像上游 #187 加法引入的 `engine.v1` `approval.requested` / `approval.granted` / `approval.denied` 事件（#25 Slice B 加法），经控制面同一严格校验后作为 `payload` 广播，不引入新词汇形态。进程级不确定结果使用控制面 `turn.indeterminate`，不会伪造 engine 终态，也不会自动重试。
+事件词汇（v0 冻结 + D3 加法 + #25 加法 + #33 加法）：`org.updated` / `turn.started` / `turn.model.delta` / `turn.usage` / `turn.completed` / `turn.failed` / `turn.indeterminate` / `turn.approval.requested` / `turn.approval.granted` / `turn.approval.denied` / `escalation.created` / `evidence.created` / `hire.progress`（#33 加法）。D3 的前五类引擎事件以已严格校验的 `engine.v1` 原始事件作为 `payload`；`turn.approval.*` 三类逐字镜像上游 #187 加法引入的 `engine.v1` `approval.requested` / `approval.granted` / `approval.denied` 事件（#25 Slice B 加法），经控制面同一严格校验后作为 `payload` 广播，不引入新词汇形态。进程级不确定结果使用控制面 `turn.indeterminate`，不会伪造 engine 终态，也不会自动重试。`hire.progress` 是控制面自产进展提示，`payload` 只含 `positionId` 与 `phase`（`validate` / `stage` / `apply`），不含百分比与终态；缺事件时前端停留上一相位，60 秒无任何事件按本地诊断码 `hire_timeout` 失败（不进入 §3 稳定码表，同 `turn_cancelled` 惯例）。
 
 ### 2.11 `POST /turns` / `GET /turns` — D3 本地回合控制面
 
@@ -343,9 +337,46 @@ Workbench 只 spawn 钉定 `context@f63f57f`（或兼容后续 main）的公共 
 
 `sourceLocator=context://occurrences/<occurrenceId>@1` 只是 source audit reference，不冒充 `context read` 所需的 item-unique `/artifacts/<artifactId>` locator。Workbench 不打开或共享 Context SQLite，也不做 recall/model injection/memory write。
 
+### 2.14 `POST /hire` — 创建员工（#33 加法，hire-request.v1alpha1 契约面）
+
+唯一创建通道：招聘不再经变更清单（§2.5 已移除 `add`）。消费 digital-employee #194/#198（merge b3d54bf）的 hire-request.v1alpha1 **静态参考信封面**；上游 CLI 只有 `hire validate <file> [--json]`，无 spawn/run/审批事件，本端点不虚构任何上游不存在的调用形态。
+
+请求（只允许下列字段，缺一即 400 `hire_request_invalid`）：
+
+```json
+{
+  "positionId": "docs-writer",
+  "name": "Docs Writer",
+  "description": "Keeps documentation current.",
+  "reportTo": "repo-owner",
+  "mode": "approval_required",
+  "budget": { "perTask": { "tokens": 20000 }, "perDay": { "tokens": 200000, "iterations": 64 } },
+  "deadline": "2026-08-27T00:00:00.000Z"
+}
+```
+
+- `positionId` 镜像 digital-employee 岗位 ID 契约（`^[a-z0-9]+(?:-[a-z0-9]+)*$`，≤64）；`reportTo` 为岗位 ID 或 `null`（`null` 解析为企业负责人，`targetParentId=owner`）。
+- `budget.perTask.tokens` / `perDay.tokens` 必填正整数且 ≤1,000,000,000；`iterations` 选填；`mode` 只允许 `read_only` / `approval_required`；`deadline` 选填 ISO 时间。
+
+执行序列（两道静态闸门，全部 fail-closed）：
+
+1. 形状/冲突预检 → 重名 409 `hire_position_exists`；`reportTo` 幽灵岗位 400。
+2. 控制面组装岗位骨架并封装 hire-request.v1alpha1 信封：`workspaceRef`、`packageRef{name, version:"v1alpha1", digest}`（digest 为骨架 `employee.json` 字节的 SHA-256，先于 staging 计算）、`targetParentId`、`budget`、`requestedBy:"operator"`、`deadline?`、`envelopeDigest`（canonical JSON + SHA-256，与 turn-envelope.v1 同算法）。信封词表只由控制面组装，renderer 不构造、不扩展。
+3. 闸门一：`digital-employee hire validate <envelope> --json`（静态校验，先于任何副作用）。引擎不可用 → 503 `engine_unavailable`（retryable=true）；构建缺 hire 面 → 503 `engine_capability_missing`；上游拒绝 → 422 原样透传上游稳定码。
+4. 闸门二：staging 骨架到 `positions/` 提案树（0600 `budget.json`），再走与 move/delete 同一接缝的 `digital-employee org apply <workspace> --json` 引擎裁决；失败 → 422 透传稳定码并回滚已 staging 的目录，不留半吊子岗位。
+5. 成功：重载 `.digital-employee/org.json`、追加 org-layout 兄弟序、广播 `org.updated`（changes 含 `{op:"hire"}`），并在全程按相位广播 `hire.progress`。
+
+成功响应 200：
+
+```json
+{ "status": "hired", "positionId": "docs-writer", "version": { "seq": 5, "updatedAt": "..." } }
+```
+
+失败响应 400/409/422/503 遵循 §1 统一错误体；上游稳定码原样透传，客户端不重命名。执行中不可取消（上游静态面无中止语义）；renderer 四态机（发起/执行/审批/结果）中审批相位为保留位——hire 通道上游无 approval 语义，永不触发，turn 内审批归 #25 Slice B。
+
 ## 3. 稳定错误码登记表
 
-控制面自产码（本契约定义）：`unauthorized`、`body_invalid`、`workspace_invalid`、`workspace_not_open`、`manifest_invalid`、`organization_invalid`、`engine_unavailable`（retryable=true）、`engine_capability_missing`、`engine_failed`、`position_missing`、`restore_invalid`、`restore_conflict`、`reports_data_invalid`、`turn_request_invalid`、`turn_engine_unsupported`、`turn_position_invalid`、`turn_storage_failed`、`session_request_invalid`、`session_missing`、`session_conflict`、`session_storage_failed`、`not_found`、`method_not_allowed`、`internal`；turn-record 内的稳定结果码包括 `turn_process_exit_1`、`turn_process_failed`、`turn_engine_unavailable`、`turn_timeout`、`turn_protocol_invalid`、`turn_driver_failure`、`turn_interrupted`；Context export state 的稳定失败码为 `context_adapter_failed`，不进入 HTTP 错误响应；提案预检码：`org_apply_position_exists`、`org_apply_position_missing`、`org_apply_cycle`、`org_apply_owner_delete`、`org_apply_max_depth`、`org_apply_destination_exists`、`org_reorder_set_mismatch`（#32 加法）。
+控制面自产码（本契约定义）：`unauthorized`、`body_invalid`、`workspace_invalid`、`workspace_not_open`、`manifest_invalid`、`organization_invalid`、`engine_unavailable`（retryable=true）、`engine_capability_missing`、`engine_failed`、`position_missing`、`restore_invalid`、`restore_conflict`、`reports_data_invalid`、`turn_request_invalid`、`turn_engine_unsupported`、`turn_position_invalid`、`turn_storage_failed`、`session_request_invalid`、`session_missing`、`session_conflict`、`session_storage_failed`、`not_found`、`method_not_allowed`、`internal`；turn-record 内的稳定结果码包括 `turn_process_exit_1`、`turn_process_failed`、`turn_engine_unavailable`、`turn_timeout`、`turn_protocol_invalid`、`turn_driver_failure`、`turn_interrupted`；Context export state 的稳定失败码为 `context_adapter_failed`，不进入 HTTP 错误响应；提案预检码：`org_apply_position_exists`、`org_apply_position_missing`、`org_apply_cycle`、`org_apply_owner_delete`、`org_apply_max_depth`、`org_apply_destination_exists`、`org_reorder_set_mismatch`（#32 加法）；hire 通道码（#33 加法）：`hire_request_invalid`（400 形状级）、`hire_position_exists`（409 重名）。
 引擎透传码：以 digital-employee 稳定码为准（`workspace_org_*` 等），原样透传，不在本表重定义。
 
 ## 4. 安全基线（随契约冻结）
@@ -365,7 +396,8 @@ Workbench 只 spawn 钉定 `context@f63f57f`（或兼容后续 main）的公共 
 |---|---|
 | `organization` / 岗位字段 / 汇报线 | digital-employee workspace-org.v1（apps/cli/workspace/templates.ts RenderedOrganization） |
 | 岗位预算声明 | #157 R3（DEC-DE-157-002）＋ V1 预算设计（perTask/perDay，令牌/迭代次数） |
-| 变更清单 add/move/delete 语义 | #157 REQ-005（目录驱动 apply）；校验闸门在引擎 |
+| 变更清单 move/delete/reorder 语义 | #157 REQ-005（目录驱动 apply）；校验闸门在引擎；`add` 已于 #33 迁出 |
+| `hire-request.v1alpha1` 信封 / `POST /hire` | digital-employee #194/#198（merge b3d54bf）静态参考信封面；`hire validate` + `org apply` 双静态闸门 |
 | 引擎稳定错误码 | digital-employee fail-closed 码惯例（`workspace_*`） |
 | `turn.*` / `escalation.created` / `evidence.created` | 引擎 S1 回合契约（#165）＋ #157 REQ-007 升级接缝（D3/D4 点亮） |
 | `workbench-session.v1` / 显式 rotate | org-workbench #12 R2；仅本地边界，下游由 digital-employee #161 消费 |

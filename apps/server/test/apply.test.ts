@@ -2,31 +2,8 @@ import assert from "node:assert/strict";
 import fs from "node:fs/promises";
 import path from "node:path";
 import test from "node:test";
-import type { OrgApplyFailure, OrgApplySuccess, OrganizationFile } from "@org-workbench/shared";
+import type { OrgApplyFailure, OrganizationFile } from "@org-workbench/shared";
 import { FakeDriver, api, copyExampleWorkspace, startTestServer } from "./helpers.js";
-
-const HIRE_CHANGE = {
-  op: "add",
-  position: {
-    id: "docs-writer",
-    name: "Docs Writer",
-    description: "Keeps documentation current.",
-    reportTo: "repo-owner",
-    mode: "read_only",
-    memoryScope: "/",
-    toolAllow: ["Read", "Grep"],
-    toolDeny: [],
-    budget: {
-      perTask: { tokens: 20000, iterations: 8 },
-      perDay: { tokens: 200000, iterations: 64 },
-    },
-  },
-} as const;
-
-const ADD_DOCS_WRITER = {
-  schemaVersion: "change-manifest.v1",
-  changes: [HIRE_CHANGE],
-};
 
 const STATE_FILES = ["org.json", "org-audit.jsonl", "permissions.json"] as const;
 
@@ -84,22 +61,24 @@ async function emulateEngineApply(dir: string): Promise<void> {
   const moved: Array<{ id: string; from: string | null; to: string | null }> = [];
   const dismissed: OrganizationFile["roles"] = [];
   if ((await exists(docsPath)) && !docs) {
+    const employee = await readJson<{ description?: string; policy?: { mode?: string } }>(path.join(docsPath, "employee.json"));
+    const budget = await readJson<OrganizationFile["roles"][number]["budget"]>(path.join(docsPath, "budget.json"));
     const role: OrganizationFile["roles"][number] = {
-      id: HIRE_CHANGE.position.id,
-      name: HIRE_CHANGE.position.name,
-      description: HIRE_CHANGE.position.description,
-      reportTo: HIRE_CHANGE.position.reportTo,
+      id: "docs-writer",
+      name: "Docs Writer",
+      description: employee.description ?? "",
+      reportTo: "repo-owner",
       package: {
-        name: HIRE_CHANGE.position.id,
+        name: "docs-writer",
         version: "0.1.0",
         digest: "sha256:fixture",
         localReference: docsPath,
       },
-      mode: HIRE_CHANGE.position.mode,
-      memoryScope: HIRE_CHANGE.position.memoryScope,
-      toolAllow: [...HIRE_CHANGE.position.toolAllow],
-      toolDeny: [...HIRE_CHANGE.position.toolDeny],
-      budget: structuredClone(HIRE_CHANGE.position.budget),
+      mode: employee.policy?.mode === "read_only" ? "read_only" : "approval_required",
+      memoryScope: "/",
+      toolAllow: [],
+      toolDeny: [],
+      budget,
       metadata: {},
     };
     model.roles.push(role);
@@ -178,16 +157,22 @@ test("org apply: rejection keeps the proposal tree and applied state is byte-ide
     await api(server.baseUrl, "/workspace/open", { method: "POST", token: server.token, body: { path: dir } });
     const before = await appliedBytes(dir);
     const res = await api(server.baseUrl, "/org/apply", {
-      method: "POST", token: server.token, body: ADD_DOCS_WRITER,
+      method: "POST", token: server.token,
+      body: { schemaVersion: "change-manifest.v1", changes: [{ op: "delete", id: "community-operator" }] },
     });
     assert.equal(res.status, 422);
     const body = res.body as OrgApplyFailure;
     assert.equal(body.code, "workspace_org_budget_missing");
     assert.deepEqual(driver.calls, [dir], "engine receives workspace, not staging");
     await assertAppliedBytes(dir, before);
-    const proposal = path.join(dir, "positions", "repo-owner", "docs-writer");
-    assert.ok((await fs.stat(path.join(proposal, "employee.json"))).isFile());
-    assert.equal((await fs.stat(path.join(proposal, "budget.json"))).mode & 0o777, 0o600);
+    const backups = await fs.readdir(path.join(dir, ".digital-employee", "backup"));
+    assert.ok(
+      backups.some((entry) => entry.startsWith("community-operator-")),
+      "rejected dismiss retains the package in the backup tray (no automatic rollback)",
+    );
+    assert.ok(
+      (await fs.stat(path.join(dir, ".digital-employee", "backup", backups.find((entry) => entry.startsWith("community-operator-"))!, "employee.json"))).isFile(),
+    );
     await assert.rejects(fs.stat(path.join(dir, ".digital-employee", "staging")));
     await assert.rejects(fs.stat(path.join(dir, ".digital-employee", "apply-log.ndjson")));
     assert.equal("rejectedStaging" in (body as unknown as Record<string, unknown>), false);
@@ -203,12 +188,20 @@ test("org apply: hire/move/dismiss materialize the proposal, reload applied org,
   try {
     await seedAppliedState(dir);
     await api(server.baseUrl, "/workspace/open", { method: "POST", token: server.token, body: { path: dir } });
-    const hire = await api(server.baseUrl, "/org/apply", {
-      method: "POST", token: server.token, body: ADD_DOCS_WRITER,
+    const hire = await api(server.baseUrl, "/hire", {
+      method: "POST", token: server.token,
+      body: {
+        positionId: "docs-writer",
+        name: "Docs Writer",
+        description: "Keeps documentation current.",
+        reportTo: "repo-owner",
+        mode: "read_only",
+        budget: { perTask: { tokens: 20000, iterations: 8 }, perDay: { tokens: 200000, iterations: 64 } },
+      },
     });
     assert.equal(hire.status, 200);
-    const hired = hire.body as OrgApplySuccess;
-    assert.equal(hired.changesApplied, 1);
+    const hired = hire.body as { status: string; version: { updatedAt: string } };
+    assert.equal(hired.status, "hired");
     assert.ok((await readApplied(dir)).roles.some((role) => role.id === "docs-writer"));
     assert.equal((await api(server.baseUrl, "/org/tree", { token: server.token }).then((res) => res.body) as { updatedAt: string }).updatedAt, hired.version.updatedAt);
 
@@ -369,27 +362,24 @@ test("org apply: shape/conflict failures do not mutate proposal tree or call eng
   try {
     await seedAppliedState(dir);
     await api(server.baseUrl, "/workspace/open", { method: "POST", token: server.token, body: { path: dir } });
-    const noBudget = {
+    // The former `add` op is gone: employee creation flows only through POST /hire.
+    const legacyAdd = {
       schemaVersion: "change-manifest.v1",
       changes: [{ op: "add", position: {
         id: "no-budget", name: "No Budget", description: "x", reportTo: "repo-owner",
-        mode: "read_only", memoryScope: "/", toolAllow: [], toolDeny: [],
+        mode: "read_only", budget: { perTask: { tokens: 1 }, perDay: { tokens: 2 } },
       } }],
     };
-    assert.equal((await api(server.baseUrl, "/org/apply", { method: "POST", token: server.token, body: noBudget })).status, 400);
-    const duplicate = {
-      schemaVersion: "change-manifest.v1",
-      changes: [{ ...HIRE_CHANGE, position: { ...HIRE_CHANGE.position, id: "repo-owner" } }],
-    };
-    const duplicateRes = await api(server.baseUrl, "/org/apply", { method: "POST", token: server.token, body: duplicate });
-    assert.equal((duplicateRes.body as { code: string }).code, "org_apply_position_exists");
+    const legacyRes = await api(server.baseUrl, "/org/apply", { method: "POST", token: server.token, body: legacyAdd });
+    assert.equal(legacyRes.status, 400);
+    assert.equal((legacyRes.body as { code: string }).code, "manifest_invalid");
     const ownerRes = await api(server.baseUrl, "/org/apply", {
       method: "POST", token: server.token,
       body: { schemaVersion: "change-manifest.v1", changes: [{ op: "delete", id: "repo-owner" }] },
     });
     assert.equal((ownerRes.body as { code: string }).code, "org_apply_owner_delete");
     assert.equal(driver.calls.length, 0);
-    await assert.rejects(fs.stat(path.join(dir, "positions", "repo-owner", "docs-writer")));
+    await assert.rejects(fs.stat(path.join(dir, "positions", "repo-owner", "no-budget")));
   } finally {
     await server.close();
   }
@@ -409,28 +399,29 @@ test("org apply: position ids use the digital-employee authority pattern", async
     await api(server.baseUrl, "/workspace/open", {
       method: "POST", token: server.token, body: { path: dir },
     });
-    const valid = {
-      schemaVersion: "change-manifest.v1",
-      changes: [{ ...HIRE_CHANGE, position: { ...HIRE_CHANGE.position, id: "7x" } }],
-    };
-    const accepted = await api(server.baseUrl, "/org/apply", {
-      method: "POST", token: server.token, body: valid,
+    const hireBody = (positionId: string) => ({
+      positionId,
+      name: "Docs Writer",
+      description: "Keeps documentation current.",
+      reportTo: "repo-owner",
+      mode: "read_only",
+      budget: { perTask: { tokens: 20000 }, perDay: { tokens: 200000 } },
+    });
+    const accepted = await api(server.baseUrl, "/hire", {
+      method: "POST", token: server.token, body: hireBody("7x"),
     });
     assert.equal(accepted.status, 422);
     assert.equal((accepted.body as { code: string }).code, "fixture_rejected_after_manifest_validation");
     assert.deepEqual(driver.calls, [dir]);
 
     for (const id of ["a--b", "a-"]) {
-      const rejected = await api(server.baseUrl, "/org/apply", {
+      const rejected = await api(server.baseUrl, "/hire", {
         method: "POST",
         token: server.token,
-        body: {
-          schemaVersion: "change-manifest.v1",
-          changes: [{ ...HIRE_CHANGE, position: { ...HIRE_CHANGE.position, id } }],
-        },
+        body: hireBody(id),
       });
       assert.equal(rejected.status, 400);
-      assert.equal((rejected.body as { code: string }).code, "manifest_invalid");
+      assert.equal((rejected.body as { code: string }).code, "hire_request_invalid");
     }
     assert.deepEqual(driver.calls, [dir]);
   } finally {

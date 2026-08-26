@@ -1,4 +1,4 @@
-import type { OrgApplyDriver, TurnRunDriver } from "@org-workbench/shared";
+import type { HireValidateDriver, OrgApplyDriver, TurnRunDriver } from "@org-workbench/shared";
 import type { EventBus } from "./bus.js";
 import type { WorkspaceState } from "./workspace-state.js";
 import type { ServerConfig } from "./config.js";
@@ -15,6 +15,8 @@ export interface ControlPlaneContext {
   driver: OrgApplyDriver;
   /** D3 engine spawn seam; only qoder/claude-code are accepted by the route. */
   turnDriver: TurnRunDriver;
+  /** #33 hire seam: static fail-closed `hire validate` of hire-request.v1alpha1. */
+  hireDriver: HireValidateDriver;
   /** Workspace-local conversation/turn persistence. */
   turnStore: TurnStore;
   /** Abort hooks for in-flight turns, keyed by positionId; backs POST /turns/cancel. */

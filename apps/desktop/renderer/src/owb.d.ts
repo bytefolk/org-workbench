@@ -3,6 +3,8 @@
 import type {
   HealthResponse,
   ChangeManifest,
+  HirePositionRequest,
+  HireResult,
   OrgBackupsResponse,
   OrgRestoreResult,
   OrgUndoResult,
@@ -37,6 +39,7 @@ export interface OwbBridge {
   orgBackups(): Promise<OwbApiResponse<OrgBackupsResponse>>;
   orgRestore(backupId: string): Promise<OwbApiResponse<OrgRestoreResult>>;
   orgUndo(): Promise<OwbApiResponse<OrgUndoResult>>;
+  hire(request: HirePositionRequest): Promise<OwbApiResponse<HireResult>>;
   reports(): Promise<OwbApiResponse<ReportsResponse>>;
   position(positionId: string): Promise<OwbApiResponse>;
   createTurn(request: { positionId: string; input: string; engine: TurnEngine; pendingApproval?: TurnPendingApproval }): Promise<OwbApiResponse<TurnRecord>>;

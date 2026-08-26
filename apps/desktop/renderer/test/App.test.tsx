@@ -43,6 +43,10 @@ function installBridge(overrides: Partial<OwbBridge> = {}): OwbBridge {
     workspace: vi.fn().mockResolvedValue({ status: 200, body: { open: false } }),
     orgTree: vi.fn().mockResolvedValue({ status: 200, body: null }),
     orgApply: vi.fn().mockResolvedValue({ status: 500, body: { code: "internal" } }),
+    hire: vi.fn().mockResolvedValue({
+      status: 500,
+      body: { status: "failed", code: "internal", message: "unexpected", retryable: false },
+    }),
     orgBackups: vi.fn().mockResolvedValue({ status: 200, body: { schemaVersion: "org-backups.v1", backups: [] } }),
     orgRestore: vi.fn().mockResolvedValue({ status: 404, body: { code: "restore_invalid" } }),
     orgUndo: vi.fn().mockResolvedValue({ status: 404, body: { code: "not_found", message: "nothing undoable" } }),
@@ -389,23 +393,35 @@ describe("App runtime bridge", () => {
     expect(await screen.findByText("没有可撤销的组织调整")).toBeInTheDocument();
   });
 
-  it("keeps hire disabled until token budgets are complete, then applies one add manifest", async () => {
+  it("keeps hire disabled until token budgets are complete, then hires through POST /hire (hire-request.v1alpha1)", async () => {
+    const hire = vi.fn().mockResolvedValue({
+      status: 200,
+      body: { status: "hired", positionId: "docs-writer", version: { seq: 6, updatedAt: "2026-08-26T00:00:00.000Z" } },
+    });
     const orgApply = vi.fn().mockResolvedValue({ status: 200, body: { status: "applied" } });
-    openedBridge({ orgApply, turnHistory: vi.fn().mockResolvedValue({ status: 200, body: history([]) }) });
+    openedBridge({ hire, orgApply, turnHistory: vi.fn().mockResolvedValue({ status: 200, body: history([]) }) });
     render(<App />);
-    fireEvent.click(await screen.findByRole("button", { name: "招聘岗位" }));
-    expect(screen.getByRole("button", { name: "确认招聘" })).toBeDisabled();
-    fireEvent.change(screen.getByLabelText("岗位 ID"), { target: { value: "docs-writer" } });
-    fireEvent.change(screen.getByLabelText("岗位名称"), { target: { value: "文档负责人" } });
-    fireEvent.change(screen.getByLabelText("职责描述"), { target: { value: "维护文档" } });
-    fireEvent.change(screen.getByLabelText("单任务 tokens"), { target: { value: "20000" } });
-    fireEvent.change(screen.getByLabelText("单日 tokens"), { target: { value: "200000" } });
-    expect(screen.getByRole("button", { name: "确认招聘" })).toBeEnabled();
-    fireEvent.click(screen.getByRole("button", { name: "确认招聘" }));
-    await waitFor(() => expect(orgApply).toHaveBeenCalledWith(expect.objectContaining({
-      schemaVersion: "change-manifest.v1",
-      changes: [expect.objectContaining({ op: "add", position: expect.objectContaining({ id: "docs-writer", budget: { perTask: { tokens: 20000 }, perDay: { tokens: 200000 } } }) })],
-    })));
+    fireEvent.click(await screen.findByRole("button", { name: "创建员工" }));
+    expect(await screen.findByRole("button", { name: "开始创建" })).toBeDisabled();
+    fireEvent.change(screen.getByPlaceholderText("员工姓名（≤24 字）"), { target: { value: "文档负责人" } });
+    fireEvent.change(screen.getByPlaceholderText("小写字母、数字与连字符，≤64 位"), { target: { value: "docs-writer" } });
+    fireEvent.change(screen.getByPlaceholderText("≤500 字"), { target: { value: "维护文档" } });
+    const [taskTokens, dayTokens] = screen.getAllByPlaceholderText("正整数");
+    fireEvent.change(taskTokens!, { target: { value: "20000" } });
+    expect(screen.getByRole("button", { name: "开始创建" })).toBeDisabled();
+    fireEvent.change(dayTokens!, { target: { value: "200000" } });
+    expect(screen.getByRole("button", { name: "开始创建" })).toBeEnabled();
+    fireEvent.click(screen.getByRole("button", { name: "开始创建" }));
+    await waitFor(() => expect(hire).toHaveBeenCalledWith({
+      positionId: "docs-writer",
+      name: "文档负责人",
+      description: "维护文档",
+      reportTo: "repo-owner",
+      mode: "approval_required",
+      budget: { perTask: { tokens: 20000 }, perDay: { tokens: 200000 } },
+    }));
+    expect(orgApply).not.toHaveBeenCalled();
+    expect(await screen.findByText("文档负责人 已加入团队（hire-request.v1alpha1 契约面）")).toBeInTheDocument();
   });
 
   it("requires dismissal confirmation and invokes one-click restore through typed IPC", async () => {

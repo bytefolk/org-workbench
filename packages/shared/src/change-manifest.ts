@@ -1,32 +1,16 @@
 /**
  * Change manifest contract (change-manifest.v1) — the shape POST /org/apply accepts.
  *
- * Semantics follow #157 R3: add = hire (MUST carry a budget declaration,
- * REQ-006), move = re-report, delete = disband. Validation of budget fullness
- * and structural lawfulness lives in digital-employee `org apply` — the client
+ * Semantics follow #157 R3 as amended by #33: move = re-report, delete =
+ * disband, reorder = same-parent sibling ordering. The former `add` op (hire)
+ * is removed — employee creation flows exclusively through POST /hire and the
+ * hire-request.v1alpha1 governance envelope (digital-employee #194/#198); a
+ * manifest carrying `add` is rejected as an unknown op. Validation of
+ * structural lawfulness lives in digital-employee `org apply` — the client
  * only enforces the manifest shape and never pre-judges the outcome.
  */
 
-import type { PositionBudget, PositionMode } from "./org-tree.js";
-
 export const CHANGE_MANIFEST_SCHEMA_VERSION = "change-manifest.v1" as const;
-
-export interface AddPositionChange {
-  op: "add";
-  position: {
-    id: string;
-    name: string;
-    description: string;
-    reportTo: string | null;
-    mode: PositionMode;
-    memoryScope: string;
-    toolAllow: string[];
-    toolDeny: string[];
-    /** REQ-006: hire without budget is a manifest-level rejection. */
-    budget: PositionBudget;
-    metadata?: Record<string, string>;
-  };
-}
 
 export interface MovePositionChange {
   op: "move";
@@ -55,7 +39,6 @@ export interface ReorderPositionsChange {
 }
 
 export type OrgChange =
-  | AddPositionChange
   | MovePositionChange
   | DeletePositionChange
   | ReorderPositionsChange;
