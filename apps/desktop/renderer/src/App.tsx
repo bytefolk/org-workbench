@@ -680,12 +680,28 @@ export function App() {
       theme={{
         algorithm: theme.defaultAlgorithm,
         token: {
-          colorPrimary: "#1677FF",
+          // DS-31-001 处方2：全应用单一强调色，一次定死（Linear lavender 纪律样本）；
+          // AI 紫 #722ed1 仍仅限 AI affordance，不在此列。design-system seed 同步由设计线跟进。
+          colorPrimary: "#5E6AD2",
           colorSuccess: "#52C41A",
           colorWarning: "#FAAD14",
           colorError: "#FF4D4F",
-          colorInfo: "#1677FF",
+          colorInfo: "#5E6AD2",
+          colorLink: "#5E6AD2",
+          // DS-31-001 处方3：warm hairline 取代 antd 默认灰边。
+          colorBorder: "#E8E6E2",
+          colorBorderSecondary: "#EEECE9",
           borderRadius: 6,
+          // DS-31-001 处方4：动效三档 120/150/200ms，全 ease-out，禁 >300ms。
+          motionDurationFast: "0.12s",
+          motionDurationMid: "0.15s",
+          motionDurationSlow: "0.2s",
+          motionEaseInOut: "cubic-bezier(0.215, 0.61, 0.355, 1)",
+          motionEaseOut: "cubic-bezier(0.215, 0.61, 0.355, 1)",
+          // DS-31-001 处方6：控件统一 36px，紧凑行内 28px（Raycast 口径）。
+          controlHeight: 36,
+          controlHeightSM: 28,
+          controlHeightLG: 40,
           fontFamily:
             "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif",
         },
