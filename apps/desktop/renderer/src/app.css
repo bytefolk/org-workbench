@@ -1,4 +1,26 @@
-/* org-workbench D1 renderer layout helpers (semantic tokens only). */
+/* org-workbench D1 renderer layout helpers (semantic tokens only).
+ *
+ * DS-31-001 六处方的 token 取值统一定在 antd-skin.css（ADR-0002 唯一 skin 面）；
+ * 本文件只保留处方的应用面规则（处方5 负字距、处方4 自定义元素动效）。 */
+
+/* 处方5 标题负字距：≥16px 标题收紧字距；12-13px 辅助文字保持原值。 */
+.owb-reports__hero h1,
+.owb-modal__header h2,
+.owb-turn-panel__header h2 {
+  letter-spacing: -0.01em;
+}
+
+/* 处方4 动效应用面：自定义交互元素 hover/焦点 120ms ease-out；
+   antd 组件动效经 ConfigProvider motion token 收敛到同一三档体系。 */
+.owb-modal__close,
+.owb-report-tabs button,
+.owb-turn__retry,
+.owb-turn__approval-grant,
+.owb-turn__approval-deny {
+  transition: background-color var(--owb-duration-fast) var(--owb-ease-out),
+    border-color var(--owb-duration-fast) var(--owb-ease-out),
+    color var(--owb-duration-fast) var(--owb-ease-out);
+}
 
 .owb-rail-brand {
   display: inline-flex;
@@ -98,7 +120,7 @@
   border: 1px solid var(--ui-border-strong);
   border-radius: var(--ui-radius-xl, 18px);
   background: var(--ui-surface);
-  box-shadow: var(--ui-shadow-xl, 0 24px 64px rgb(0 0 0 / 24%));
+  box-shadow: var(--ui-shadow-lg);
   padding: var(--ui-space-5, 20px);
 }
 
@@ -388,7 +410,8 @@
   min-height: 520px;
 }
 
-/* D3 position conversation — a compact, evidence-first operations console. */
+/* D3 position conversation — a compact, evidence-first operations console.
+   处方3：网格内内容卡不带阴影，1px hairline + 亮度阶即分层。 */
 
 .owb-turn-panel {
   min-height: 0;
@@ -398,7 +421,6 @@
   border: 1px solid var(--ui-border);
   border-radius: var(--ui-radius-lg, 14px);
   background: var(--ui-surface);
-  box-shadow: var(--ui-shadow-sm);
   overflow: hidden;
 }
 
@@ -782,7 +804,7 @@
   gap: 6px;
   margin-top: 10px;
   border: 1px solid var(--ui-border);
-  border-left: 3px solid var(--ui-accent, #2563eb);
+  border-left: 3px solid var(--ui-primary);
   border-radius: var(--ui-radius-md, 10px);
   background: var(--ui-surface);
   padding: 10px 12px;
@@ -844,9 +866,9 @@
 }
 
 .owb-turn__approval-grant {
-  background: var(--ui-accent, #2563eb);
-  border-color: var(--ui-accent, #2563eb);
-  color: var(--ui-accent-foreground, #ffffff);
+  background: var(--ui-primary);
+  border-color: var(--ui-primary);
+  color: var(--ui-primary-foreground);
 }
 
 .owb-turn__approval-grant:hover:not(:disabled),

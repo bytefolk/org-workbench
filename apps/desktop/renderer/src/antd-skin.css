@@ -1,36 +1,45 @@
 /* antd-skin.css — org-workbench consumer skin over @fullstack-ai-infra/ui.
  *
- * ADR-0002: Ant Design is the shared design language. Token values below are
- * the antd official light palette (v6 default theme); semantic roles from the
+ * ADR-0002: Ant Design is the shared design language. Semantic roles from the
  * design system (AI affordance, health states) survive as antd palette hues.
  * The layout/pattern layer stays custom (DL5: 布局不是 antd 的强项，不换);
  * theming happens here via --ui-* variables, never ad-hoc in components.
+ *
+ * DS-31-001（#31 质感整改六处方）落点：
+ *   处方1 画布两阶（暖白壳层 + 白卡面，sidebar/内容亮度差 ≥2%）；
+ *   处方2 强调色一次定死（Linear lavender #5e6ad2；AI 紫保持专属）；
+ *   处方3 warm hairline 分层 + 阴影额度收紧（md 仅拖拽预览/dropdown，lg 仅 modal/drawer）；
+ *   处方4 动效三档 token（120/150/200ms，ease-out）。
+ * antd cssinjs 侧的同值 token 在 App.tsx ConfigProvider 中同步（colorPrimary/
+ * colorBorder/motion*/controlHeight）；design-system seed 同步由设计线跟进。
  */
 
 :root,
 [data-theme="light"] {
   color-scheme: light;
 
-  /* Neutral / layout surfaces (antd neutral color map) */
-  --ui-canvas: #f5f5f5;
-  --ui-canvas-subtle: #fafafa;
-  --ui-navigation: #ffffff;
+  /* 处方1 画布两阶：暖白壳层，sidebar 阶，内容卡面白面 */
+  --ui-canvas: #f8f7f5;
+  --ui-canvas-subtle: #f3f1ed;
+  --ui-navigation: #edeae5;
   --ui-surface: #ffffff;
   --ui-surface-raised: #ffffff;
-  --ui-surface-inset: #fafafa;
+  --ui-surface-inset: #faf9f8;
   --ui-foreground: rgba(0, 0, 0, 0.88);
   --ui-foreground-muted: rgba(0, 0, 0, 0.65);
   --ui-foreground-subtle: rgba(0, 0, 0, 0.45);
-  --ui-border: #d9d9d9;
+
+  /* 处方3 warm hairline：分层靠 1px 描边 + 亮度阶 */
+  --ui-border: #e8e6e2;
   --ui-border-strong: #bfbfbf;
 
-  /* Primary (antd blue-6) */
-  --ui-primary: #1677ff;
-  --ui-primary-hover: #4096ff;
+  /* 处方2 单一强调色：Linear lavender 纪律样本，全应用只此一处定值 */
+  --ui-primary: #5e6ad2;
+  --ui-primary-hover: #6f7ad8;
   --ui-primary-foreground: #ffffff;
-  --ui-primary-soft: #e6f4ff;
+  --ui-primary-soft: #edeffc;
 
-  /* AI affordance (antd purple-6; semantic role preserved) */
+  /* AI affordance (antd purple-6; semantic role preserved — 处方2 豁免项) */
   --ui-ai: #722ed1;
   --ui-ai-strong: #531dab;
   --ui-ai-hover: #9254de;
@@ -38,8 +47,8 @@
   --ui-ai-soft: #f9f0ff;
 
   /* Health states (antd official semantic colors) */
-  --ui-info: #1677ff;
-  --ui-info-soft: #e6f4ff;
+  --ui-info: #5e6ad2;
+  --ui-info-soft: #edeffc;
   --ui-success: #52c41a;
   --ui-success-strong: #389e0d;
   --ui-success-soft: #f6ffed;
@@ -49,10 +58,10 @@
   --ui-danger: #ff4d4f;
   --ui-danger-soft: #fff2f0;
 
-  /* Interaction feedback */
+  /* Interaction feedback（强调色纪律：焦点/选区随主色） */
   --ui-overlay: rgba(0, 0, 0, 0.45);
-  --ui-focus: #1677ff;
-  --ui-selection: #e6f4ff;
+  --ui-focus: #5e6ad2;
+  --ui-selection: #edeffc;
 
   /* Radii aligned with antd borderRadius tokens (4 / 6 / 8 / 12) */
   --ui-radius-sm: 4px;
@@ -60,17 +69,19 @@
   --ui-radius-lg: 8px;
   --ui-radius-xl: 12px;
 
-  /* Shadows: antd boxShadow / boxShadowSecondary */
-  --ui-shadow-sm:
-    0 1px 2px 0 rgba(0, 0, 0, 0.03),
-    0 1px 6px -1px rgba(0, 0, 0, 0.02),
-    0 2px 4px 0 rgba(0, 0, 0, 0.02);
+  /* 处方3 阴影额度收紧（暖调）：内容卡一律 hairline，不消费 sm；
+     sm 仅为 DS 组件（rail 活跃项）保留微阴影，md 仅拖拽预览/dropdown，
+     lg 仅 modal/drawer。 */
+  --ui-shadow-sm: 0 1px 2px 0 rgba(31, 30, 27, 0.05);
   --ui-shadow-md:
-    0 6px 16px 0 rgba(0, 0, 0, 0.08),
-    0 3px 6px -4px rgba(0, 0, 0, 0.12),
-    0 9px 28px 8px rgba(0, 0, 0, 0.05);
-  --ui-shadow-lg:
-    0 12px 32px 0 rgba(0, 0, 0, 0.1),
-    0 6px 12px -6px rgba(0, 0, 0, 0.14),
-    0 16px 44px 12px rgba(0, 0, 0, 0.06);
+    0 6px 20px 0 rgba(31, 30, 27, 0.1),
+    0 2px 6px 0 rgba(31, 30, 27, 0.06);
+  --ui-shadow-lg: 0 24px 64px 0 rgba(31, 30, 27, 0.22);
+
+  /* 处方4 动效三档：120ms hover/焦点，150ms 状态切换，200ms 抽屉/面板；
+     全 ease-out，禁 >300ms。antd 侧经 ConfigProvider motion token 同值。 */
+  --owb-duration-fast: 120ms;
+  --owb-duration-mid: 150ms;
+  --owb-duration-slow: 200ms;
+  --owb-ease-out: cubic-bezier(0.215, 0.61, 0.355, 1);
 }
