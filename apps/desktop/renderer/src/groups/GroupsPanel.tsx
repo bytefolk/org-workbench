@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
-import { Button as AntButton, Input } from "antd";
+import { Button as AntButton, Input, Select as AntSelect } from "antd";
 import { ArrowUp, Plus, UserRoundPlus, UsersRound } from "lucide-react";
 import { hueForId } from "@org-workbench/ui";
 import type { GroupConversation, GroupConversationList, GroupTimeline } from "@org-workbench/shared";
-import { engineLabel } from "../turns/TurnPanel";
+import { engineLabel, engineSelectOptions } from "../turns/TurnPanel";
+import { EngineIcon } from "../turns/engine-icon";
 import { adaptTurnRecord } from "../turns/adapter";
 import type { LiveRunState } from "../turns/turnStream";
 import type { PositionMentionOption, TurnEngine, TurnEngineAvailability } from "../turns/types";
@@ -411,16 +412,18 @@ export function GroupsPanel({
                 {nonMembers.length > 0 ? (
                   <label className="owb-groups__add-member">
                     <UserRoundPlus aria-hidden="true" size={13} />
-                    <select
+                    <AntSelect
                       aria-label="拉人入群"
-                      value=""
-                      onChange={(event) => void addMember(event.target.value)}
-                    >
-                      <option value="">拉人…</option>
-                      {nonMembers.map((position) => (
-                        <option key={position.id} value={position.id}>{position.name}</option>
-                      ))}
-                    </select>
+                      value={undefined}
+                      placeholder="拉人…"
+                      onChange={(next) => {
+                        if (next) void addMember(next);
+                      }}
+                      options={nonMembers.map((position) => ({
+                        value: position.id,
+                        label: position.name,
+                      }))}
+                    />
                   </label>
                 ) : null}
               </aside>
@@ -448,7 +451,10 @@ export function GroupsPanel({
                       >
                         <header>
                           <span className="owb-groups__member-name">@{turn.positionName}</span>
-                          <span className="owb-groups__message-engine">{engineLabel(turn.engine)}</span>
+                          <span className="owb-groups__message-engine">
+                            <EngineIcon engine={turn.engine} />
+                            {engineLabel(turn.engine)}
+                          </span>
                           <time dateTime={turn.createdAt}>{new Date(turn.createdAt).toLocaleString()}</time>
                         </header>
                         {turn.output ? <p className="owb-groups__message-output">{turn.output}</p> : null}
@@ -467,7 +473,10 @@ export function GroupsPanel({
                 <article className="owb-groups__message owb-groups__message--member is-running" key={key} aria-live="polite">
                   <header>
                     <span className="owb-groups__member-name">@{turn.positionName}</span>
-                    <span className="owb-groups__message-engine">{engineLabel(turn.engine)}</span>
+                    <span className="owb-groups__message-engine">
+                      <EngineIcon engine={turn.engine} />
+                      {engineLabel(turn.engine)}
+                    </span>
                   </header>
                   {turn.output ? (
                     <p className="owb-groups__message-output">{turn.output}</p>
@@ -508,22 +517,12 @@ export function GroupsPanel({
               </div>
               <label className="owb-turn-engine">
                 <span className="owb-turn-control__label">Agent Host</span>
-                <select
+                <AntSelect
                   aria-label="选择 Agent Host"
                   value={engine}
-                  onChange={(event) => onSelectEngine(event.target.value as TurnEngine)}
-                >
-                  {GROUP_ENGINES.map((candidate) => (
-                    <option key={candidate} value={candidate}>
-                      {engineLabel(candidate)}
-                      {engineAvailability[candidate].ready
-                        ? " · Configured"
-                        : engineAvailability[candidate].configured
-                          ? " · Blocked"
-                          : " · Idle"}
-                    </option>
-                  ))}
-                </select>
+                  onChange={(next) => onSelectEngine(next as TurnEngine)}
+                  options={engineSelectOptions(GROUP_ENGINES, engineAvailability)}
+                />
               </label>
               <div className="owb-turn-composer__surface">
                 <Input.TextArea

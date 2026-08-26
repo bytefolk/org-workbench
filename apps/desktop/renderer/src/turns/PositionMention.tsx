@@ -1,3 +1,4 @@
+import { Select as AntSelect } from "antd";
 import { AtSign } from "lucide-react";
 import type { PositionMentionOption } from "./types";
 
@@ -20,21 +21,19 @@ export function PositionMention({
       <span className="owb-turn-control__label">对话岗位</span>
       <span className="owb-position-mention__field">
         <AtSign aria-hidden="true" size={14} />
-        <select
+        <AntSelect
           aria-label="选择对话岗位"
-          value={value ?? ""}
+          value={value ?? undefined}
+          placeholder="选择岗位"
           disabled={disabled}
-          onChange={(event) => {
-            if (event.target.value) onChange(event.target.value);
+          onChange={(next) => {
+            if (next) onChange(next);
           }}
-        >
-          <option value="">选择岗位</option>
-          {positions.map((position) => (
-            <option key={position.id} value={position.id}>
-              {position.name} · {position.id}
-            </option>
-          ))}
-        </select>
+          options={positions.map((position) => ({
+            value: position.id,
+            label: `${position.name} · ${position.id}`,
+          }))}
+        />
       </span>
     </label>
   );
