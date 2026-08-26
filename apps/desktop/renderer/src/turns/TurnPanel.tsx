@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState, type FormEvent } from "react";
-import { Button as AntButton, Input, Tag } from "antd";
+import { Button as AntButton, Input, Select as AntSelect, Tag } from "antd";
 import { ArrowUp, Database, GitBranch, MessagesSquare, Plus, RefreshCw, Square } from "lucide-react";
 import type { WorkbenchSession } from "@org-workbench/shared";
 import { PositionMention } from "./PositionMention";
+import { EngineIcon } from "./engine-icon";
 import { TurnThread } from "./TurnThread";
 import type {
   CreateTurnRequest,
@@ -47,6 +48,28 @@ const ENGINE_LABEL: Record<TurnEngine, string> = {
 
 export function engineLabel(engine: TurnEngine): string {
   return ENGINE_LABEL[engine];
+}
+
+/** antd Select options for the Agent Host pickers (#57): brand icon + label +
+ * availability suffix, shared by TurnPanel and GroupsPanel. */
+export function engineSelectOptions(
+  engines: readonly TurnEngine[],
+  engineAvailability: Record<TurnEngine, TurnEngineAvailability>,
+) {
+  return engines.map((candidate) => ({
+    value: candidate,
+    label: (
+      <span className="owb-engine-option">
+        <EngineIcon engine={candidate} />
+        {ENGINE_LABEL[candidate]}
+        {engineAvailability[candidate].ready
+          ? " · Configured"
+          : engineAvailability[candidate].configured
+            ? " · Blocked"
+            : " · Idle"}
+      </span>
+    ),
+  }));
 }
 
 export function TurnPanel({
@@ -156,23 +179,13 @@ export function TurnPanel({
         />
         <label className="owb-turn-engine">
           <span className="owb-turn-control__label">Agent Host</span>
-          <select
+          <AntSelect
             aria-label="选择 Agent Host"
             value={engine}
             disabled={!workspaceOpen}
-            onChange={(event) => onSelectEngine(event.target.value as TurnEngine)}
-          >
-            {(Object.keys(ENGINE_LABEL) as TurnEngine[]).map((candidate) => (
-              <option key={candidate} value={candidate}>
-                {ENGINE_LABEL[candidate]}
-                {engineAvailability[candidate].ready
-                  ? " · Configured"
-                  : engineAvailability[candidate].configured
-                    ? " · Blocked"
-                    : " · Idle"}
-              </option>
-            ))}
-          </select>
+            onChange={(next) => onSelectEngine(next as TurnEngine)}
+            options={engineSelectOptions(Object.keys(ENGINE_LABEL) as TurnEngine[], engineAvailability)}
+          />
         </label>
       </div>
 
@@ -180,19 +193,19 @@ export function TurnPanel({
         <div className="owb-session-controls" aria-label="岗位会话">
           <label>
             <span className="owb-turn-control__label">本地会话</span>
-            <select
+            <AntSelect
               aria-label="选择本地会话"
-              value={selectedSessionId ?? ""}
+              value={selectedSessionId ?? undefined}
+              placeholder="尚未创建会话"
               disabled={!workspaceOpen || !selectedPosition || sessionBusy || sessions.length === 0}
-              onChange={(event) => onSelectSession?.(event.target.value)}
-            >
-              {sessions.length === 0 ? <option value="">尚未创建会话</option> : null}
-              {sessions.map((session, index) => (
-                <option key={session.sessionId} value={session.sessionId}>
-                  {session.status === "active" ? "当前" : "只读"} · 会话 {sessions.length - index} · {session.sessionId.slice(0, 8)}
-                </option>
-              ))}
-            </select>
+              onChange={(next) => {
+                if (next) onSelectSession?.(next);
+              }}
+              options={sessions.map((session, index) => ({
+                value: session.sessionId,
+                label: `${session.status === "active" ? "当前" : "只读"} · 会话 ${sessions.length - index} · ${session.sessionId.slice(0, 8)}`,
+              }))}
+            />
           </label>
           {activeSession ? (
             <AntButton
