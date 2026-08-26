@@ -120,7 +120,7 @@ describe("issue #20 two-line clamp + tooltip", () => {
   it("exposes the full error text through title on failed turns", () => {
     const failed: TurnRecord = { ...shortTurn, id: "turn-fail", status: "failed", output: undefined, error: LONG };
     const { container } = render(<TurnThread turns={[failed]} />);
-    const error = container.querySelector(".owb-turn__error");
+    const error = container.querySelector(".owb-bubble__error");
     expect(error?.className).toContain("owb-clamp-2");
     expect(error?.getAttribute("title")).toBe(LONG);
   });

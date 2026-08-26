@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Empty } from "antd";
-import { AlertTriangle, Check, ChevronRight, Clock3, RotateCcw, ShieldAlert, ShieldQuestion } from "lucide-react";
+import { AlertTriangle, Check, ChevronRight, Clock3, RotateCcw, ShieldAlert, ShieldQuestion, UserRound } from "lucide-react";
 import { engineLabel } from "./TurnPanel";
 import { EngineIcon } from "./engine-icon";
 import { PositionAvatar } from "../PositionAvatar";
@@ -17,7 +17,7 @@ export interface TurnThreadProps {
    * into a decided state so the operator cannot submit duplicate or
    * contradictory verdicts after a history reload. */
   decidedApprovalIds?: ReadonlySet<string>;
-  /** Position avatar colors (org-tree deterministic hues; #53/#61). */
+  /** Position avatar colors for chat bubbles (org-tree hues; #53/#61). */
   positionColors?: Record<string, string>;
 }
 
@@ -59,6 +59,16 @@ function Elapsed({ since }: { since: string }) {
   return <>{minutes}:{padded}</>;
 }
 
+/** Settled-turn duration (completedAt − createdAt), m:ss. */
+function settledDuration(turn: TurnRecord): string | null {
+  if (turn.status === "running" || !turn.completedAt) return null;
+  const ms = new Date(turn.completedAt).getTime() - new Date(turn.createdAt).getTime();
+  if (!Number.isFinite(ms) || ms < 0) return null;
+  const seconds = Math.floor(ms / 1_000);
+  return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
+}
+
+/** Running status line (engine badge · elapsed · tokens) — spec ②. */
 function StatusLine({ turn }: { turn: TurnRecord }) {
   return (
     <p className="owb-turn__statusline">
@@ -78,8 +88,9 @@ function StatusLine({ turn }: { turn: TurnRecord }) {
   );
 }
 
-/** Running bubble typing indicator (#61). The text node stays for screen
- * readers; the animated dots are decorative. */
+/** Running bubble typing indicator (#61, spec ②): three 6px dots, 150ms
+ * stagger, 1.05s ease-out loop — 处方4 聊天例外（见 ADR-0005）。Screen-reader
+ * copy stays intact. */
 export function TypingIndicator() {
   return (
     <span className="owb-bubble__typing" role="status">
@@ -93,9 +104,9 @@ export function TypingIndicator() {
   );
 }
 
-/** Approval verdict card (#187 Option 1): the verdict always starts a new
- * sealed-envelope resume turn; there is no in-run channel by contract.
- * Rendered embedded inside the employee bubble (#61). */
+/** Approval verdict card (#187 Option 1, spec ③): embedded inside the
+ * employee bubble; the verdict always starts a new sealed-envelope resume
+ * turn — there is no in-run channel by contract. */
 function ApprovalCard({
   turn,
   busy,
@@ -112,7 +123,7 @@ function ApprovalCard({
   if (request === undefined) return null;
   const trimmedReason = reason.trim();
   return (
-    <div className="owb-turn__approval" role="group" aria-label="审批请求">
+    <div className={`owb-turn__approval${decided ? " is-decided" : ""}`} role="group" aria-label="审批请求">
       <p className="owb-turn__approval-title">
         <ShieldAlert aria-hidden="true" size={13} />
         {decided ? "已裁决" : "等待审批"} · {APPROVAL_KIND_COPY[request.kind] ?? request.kind}
@@ -162,39 +173,51 @@ function ApprovalCard({
   );
 }
 
-/** Collapsible evidence block (#61): collapsed by default to keep the bubble
- * compact, but the envelope/evidence digests are never dropped — expanding
- * reveals them in full (auditability red line). */
+/** Collapsible evidence block under the bubble (#61, spec ⑤): collapsed by
+ * default into one mono summary line; expanding reveals the full digests.
+ * Evidence is never dropped — auditability red line. */
 function EvidenceBlock({ turn }: { turn: TurnRecord }) {
+  const [open, setOpen] = useState(false);
   if (!turn.envelopeDigest && !turn.evidenceDigest) return null;
+  const summaryParts = [
+    turn.envelopeDigest ? `Envelope ${shortDigest(turn.envelopeDigest)}` : null,
+    turn.evidenceDigest ? `Evidence ${shortDigest(turn.evidenceDigest)}` : null,
+  ].filter((part): part is string => part !== null);
   return (
-    <details className="owb-bubble__evidence">
-      <summary>
-        <ChevronRight aria-hidden="true" size={12} />
-        回合证据
-      </summary>
-      <dl className="owb-turn__evidence" aria-label="回合证据">
-        {turn.envelopeDigest ? (
-          <div>
-            <dt>Envelope</dt>
-            <dd title={turn.envelopeDigest}>{shortDigest(turn.envelopeDigest)}</dd>
-          </div>
-        ) : null}
-        {turn.evidenceDigest ? (
-          <div>
-            <dt>Evidence</dt>
-            <dd title={turn.evidenceDigest}>{shortDigest(turn.evidenceDigest)}</dd>
-          </div>
-        ) : null}
-      </dl>
-    </details>
+    <div className="owb-bubble__evidence">
+      <button
+        type="button"
+        className="owb-bubble__evidence-toggle"
+        aria-expanded={open}
+        onClick={() => setOpen((current) => !current)}
+      >
+        <ChevronRight aria-hidden="true" size={12} className={open ? "is-open" : undefined} />
+        <span className="owb-bubble__evidence-summary">⎘ 证据 · {summaryParts.join(" · ")}</span>
+      </button>
+      {open ? (
+        <dl className="owb-turn__evidence" aria-label="回合证据">
+          {turn.envelopeDigest ? (
+            <div>
+              <dt>Envelope</dt>
+              <dd title={turn.envelopeDigest}>{turn.envelopeDigest}</dd>
+            </div>
+          ) : null}
+          {turn.evidenceDigest ? (
+            <div>
+              <dt>Evidence</dt>
+              <dd title={turn.evidenceDigest}>{turn.evidenceDigest}</dd>
+            </div>
+          ) : null}
+        </dl>
+      ) : null}
+    </div>
   );
 }
 
-/** Local, append-only turn history rendered as a bubble chat (#61): the
- * operator message is a right-aligned bubble; the employee reply is a left
- * bubble carrying avatar + position name + engine label. It never infers
- * recall or delegation. */
+/** Local, append-only turn history rendered as a bubble chat (#61, 气泡规格
+ * 2026-08-26): operator right bubble + employee left bubble (avatar + name +
+ * engine label), six states, evidence collapsed under the bubble. It never
+ * infers recall or delegation. */
 export function TurnThread({ turns, retrying = false, canRetry, onRetry, onVerdict, decidedApprovalIds, positionColors }: TurnThreadProps) {
   if (turns.length === 0) {
     return (
@@ -213,18 +236,19 @@ export function TurnThread({ turns, retrying = false, canRetry, onRetry, onVerdi
   }
 
   return (
-    <ol className="owb-turn-thread" aria-label="本地回合历史">
+    <ol className="owb-turn-thread" role="log" aria-live="polite" aria-label="本地回合历史">
       {turns.map((turn) => {
         const retryable = turn.status === "failed" || turn.status === "indeterminate";
+        const duration = settledDuration(turn);
         return (
           <li className="owb-bubble-turn" key={turn.id} data-turn-id={turn.id}>
             <div className="owb-bubble-row owb-bubble-row--operator">
               <article className="owb-bubble owb-bubble--operator">
                 <p className="owb-bubble__text owb-clamp-2" title={turn.input}>{turn.input}</p>
-                <footer className="owb-bubble__meta">
-                  <time dateTime={turn.createdAt}>{new Date(turn.createdAt).toLocaleString()}</time>
-                </footer>
               </article>
+              <span className="owb-bubble__avatar owb-bubble__avatar--operator" title="操作员" aria-hidden="true">
+                <UserRound size={14} />
+              </span>
             </div>
 
             <div className="owb-bubble-row owb-bubble-row--employee">
@@ -234,11 +258,8 @@ export function TurnThread({ turns, retrying = false, canRetry, onRetry, onVerdi
                 name={turn.positionName}
                 className="owb-bubble__avatar"
               />
-              <article
-                className={`owb-bubble owb-bubble--employee is-${turn.status}`}
-                aria-live={turn.status === "running" ? "polite" : undefined}
-              >
-                <header className="owb-bubble__header">
+              <div className="owb-bubble__column">
+                <p className="owb-bubble__meta-line">
                   <span className="owb-bubble__name">{turn.positionName}</span>
                   <span className="owb-turn__engine">
                     <EngineIcon engine={turn.engine} />
@@ -248,38 +269,68 @@ export function TurnThread({ turns, retrying = false, canRetry, onRetry, onVerdi
                     <StatusIcon status={turn.status} />
                     {STATUS_COPY[turn.status]}
                   </span>
-                  <code title={turn.id}>{turn.id}</code>
-                </header>
+                  <time className="owb-bubble__time" dateTime={turn.createdAt}>
+                    {new Date(turn.createdAt).toLocaleString()}
+                  </time>
+                </p>
 
-                {turn.status === "running" ? <StatusLine turn={turn} /> : null}
-                {turn.output ? <p className="owb-turn__output owb-clamp-2" title={turn.output}>{turn.output}</p> : null}
-                {turn.status === "running" && !turn.output ? <TypingIndicator /> : null}
-                {turn.error ? <p className="owb-turn__error owb-clamp-2" title={turn.error}>{turn.error}</p> : null}
-                {turn.status === "indeterminate" ? (
-                  <p className="owb-turn__warning owb-clamp-2" title="运行器未返回可信终态。为避免重复执行，系统不会自动重试。">运行器未返回可信终态。为避免重复执行，系统不会自动重试。</p>
-                ) : null}
+                <article
+                  className={`owb-bubble owb-bubble--employee is-${turn.status}`}
+                  aria-live={turn.status === "running" ? "polite" : undefined}
+                >
+                  {turn.output ? <p className="owb-turn__output owb-clamp-2" title={turn.output}>{turn.output}</p> : null}
+                  {turn.status === "running" && !turn.output ? <TypingIndicator /> : null}
+                  {turn.status === "running" ? <StatusLine turn={turn} /> : null}
+                  {turn.error ? <div className="owb-bubble__error owb-clamp-2" title={turn.error}>{turn.error}</div> : null}
+                  {turn.status === "indeterminate" ? (
+                    <p className="owb-turn__warning owb-clamp-2" title="运行器未返回可信终态。为避免重复执行，系统不会自动重试。">
+                      <ShieldQuestion aria-hidden="true" size={13} />
+                      运行器未返回可信终态。为避免重复执行，系统不会自动重试。
+                    </p>
+                  ) : null}
+
+                  {turn.approvalRequest !== undefined && onVerdict ? (
+                    <ApprovalCard
+                      turn={turn}
+                      busy={retrying || canRetry?.(turn) === false}
+                      decided={decidedApprovalIds?.has(turn.approvalRequest.approvalId) === true}
+                      onVerdict={onVerdict}
+                    />
+                  ) : null}
+                </article>
+
+                <p className="owb-bubble__undermeta">
+                  <code title={turn.id}>{turn.id}</code>
+                  {duration ? (
+                    <>
+                      <span aria-hidden="true">·</span>
+                      <span>{duration}</span>
+                    </>
+                  ) : null}
+                  {turn.totalTokens !== undefined && turn.status !== "running" ? (
+                    <>
+                      <span aria-hidden="true">·</span>
+                      <span>{turn.totalTokens} tokens</span>
+                    </>
+                  ) : null}
+                </p>
 
                 <EvidenceBlock turn={turn} />
 
-                {turn.approvalRequest !== undefined && onVerdict ? (
-                  <ApprovalCard
-                    turn={turn}
-                    busy={retrying || canRetry?.(turn) === false}
-                    decided={decidedApprovalIds?.has(turn.approvalRequest.approvalId) === true}
-                    onVerdict={onVerdict}
-                  />
-                ) : retryable && onRetry ? (
-                  <button
-                    type="button"
-                    className="owb-turn__retry"
-                    disabled={retrying || canRetry?.(turn) === false}
-                    onClick={() => onRetry(turn)}
-                  >
-                    <RotateCcw aria-hidden="true" size={13} />
-                    创建新回合重试
-                  </button>
+                {turn.approvalRequest === undefined && retryable && onRetry ? (
+                  <div className="owb-bubble__retryrow">
+                    <button
+                      type="button"
+                      className="owb-turn__retry"
+                      disabled={retrying || canRetry?.(turn) === false}
+                      onClick={() => onRetry(turn)}
+                    >
+                      <RotateCcw aria-hidden="true" size={13} />
+                      创建新回合重试
+                    </button>
+                  </div>
                 ) : null}
-              </article>
+              </div>
             </div>
           </li>
         );

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { Button as AntButton, Input, Select as AntSelect } from "antd";
-import { ArrowUp, Plus, UserRoundPlus, UsersRound } from "lucide-react";
+import { ArrowUp, Plus, UserRound, UserRoundPlus, UsersRound } from "lucide-react";
 import { PositionAvatar } from "../PositionAvatar";
 import { TypingIndicator } from "../turns/TurnThread";
 import type { GroupConversation, GroupConversationList, GroupTimeline } from "@org-workbench/shared";
@@ -42,6 +42,17 @@ function groupLabel(group: GroupConversation, names: Record<string, string>): st
 }
 
 const GROUP_ENGINES: TurnEngine[] = ["qoder", "claude-code", "claude-local"];
+
+/** @mention highlight inside operator bubble text (spec §1/§6). */
+function renderMentionText(input: string) {
+  return input.split(/(@[\w-]+)/g).map((part, index) =>
+    part.startsWith("@") ? (
+      <mark key={index} className="owb-mention">{part}</mark>
+    ) : (
+      part
+    ),
+  );
+}
 
 function apiErrorMessage(body: unknown, fallback: string): string {
   if (body !== null && typeof body === "object" && !Array.isArray(body)) {
@@ -414,13 +425,24 @@ export function GroupsPanel({
             <div className="owb-groups__timeline" aria-label="群时间线" aria-busy={timelineLoading}>
               {displayItems.persisted.map((item) =>
                 item.kind === "user" ? (
-                  <div className="owb-bubble-row owb-bubble-row--operator" key={item.messageId}>
-                    <article className="owb-bubble owb-bubble--operator">
-                      <p className="owb-bubble__text">{item.input}</p>
-                      <footer className="owb-bubble__meta">
-                        <time dateTime={item.createdAt}>{new Date(item.createdAt).toLocaleString()}</time>
-                      </footer>
-                    </article>
+                  <div className="owb-bubble-turn" key={item.messageId}>
+                    {item.mentions.length > 0 ? (
+                      <p className="owb-groups__route-note">
+                        {item.mentions.map((memberId) => `@${positionNames[memberId] ?? memberId}`).join(" ")}
+                        {" "}→ 逐成员 spawn {item.mentions.length} 回合（显式路由，不广播）
+                      </p>
+                    ) : null}
+                    <div className="owb-bubble-row owb-bubble-row--operator">
+                      <article className="owb-bubble owb-bubble--operator">
+                        <p className="owb-bubble__text">{renderMentionText(item.input)}</p>
+                        <footer className="owb-bubble__meta">
+                          <time dateTime={item.createdAt}>{new Date(item.createdAt).toLocaleString()}</time>
+                        </footer>
+                      </article>
+                      <span className="owb-bubble__avatar owb-bubble__avatar--operator" title="操作员" aria-hidden="true">
+                        <UserRound size={14} />
+                      </span>
+                    </div>
                   </div>
                 ) : (
                   (() => {

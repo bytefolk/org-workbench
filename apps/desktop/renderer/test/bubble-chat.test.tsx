@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { GroupsPanel } from "../src/groups/GroupsPanel";
 import { TurnThread } from "../src/turns";
@@ -33,10 +33,13 @@ describe("TurnThread bubble structure (#61)", () => {
     expect(operator).not.toBeNull();
     expect(employee).not.toBeNull();
     expect(operator?.textContent).toContain("检查发布门禁");
-    // avatar sits beside the employee bubble inside the row
+    // operator avatar sits beside the right bubble
+    expect(container.querySelector(".owb-bubble__avatar--operator")).not.toBeNull();
+    // employee avatar sits beside the employee bubble inside the row
     expect(employeeRow?.querySelector(".owb-bubble__avatar")).not.toBeNull();
-    expect(employee?.querySelector(".owb-bubble__name")?.textContent).toBe("发布负责人");
-    expect(employee?.textContent).toContain("Qoder");
+    // 姓名/引擎标签在气泡上方的 meta 行（column 内）
+    expect(employeeRow?.querySelector(".owb-bubble__name")?.textContent).toBe("发布负责人");
+    expect(employeeRow?.textContent).toContain("Qoder");
   });
 
   it("shows the typing indicator while the employee turn is running", () => {
@@ -46,17 +49,21 @@ describe("TurnThread bubble structure (#61)", () => {
     expect(typing.textContent).toContain("正在等待岗位完成本回合");
   });
 
-  it("keeps evidence auditable inside a collapsed-by-default block", () => {
+  it("keeps evidence auditable: collapsed by default, expanding reveals full mono digests", () => {
     const { container } = render(
       <TurnThread turns={[turn({ id: "ev-1", envelopeDigest: "sha256:env", evidenceDigest: "sha256:evi" })]} />,
     );
-    const details = container.querySelector("details.owb-bubble__evidence") as HTMLDetailsElement | null;
-    expect(details).not.toBeNull();
-    expect(details?.open).toBe(false);
-    // Digests stay in the DOM (auditability red line — collapsible, never dropped).
-    expect(container.querySelector('[title="sha256:env"]')).not.toBeNull();
-    expect(container.querySelector('[title="sha256:evi"]')).not.toBeNull();
-    expect(screen.getByText("回合证据")).toBeInTheDocument();
+    const toggle = container.querySelector(".owb-bubble__evidence-toggle") as HTMLButtonElement | null;
+    expect(toggle).not.toBeNull();
+    expect(toggle?.getAttribute("aria-expanded")).toBe("false");
+    // Collapsed: full digests not yet in the document, summary carries them.
+    expect(container.querySelector(".owb-turn__evidence")).toBeNull();
+    expect(toggle?.textContent).toContain("sha256:env");
+    fireEvent.click(toggle as HTMLButtonElement);
+    expect(toggle?.getAttribute("aria-expanded")).toBe("true");
+    const digests = Array.from(container.querySelectorAll(".owb-turn__evidence dd")).map((dd) => dd.textContent);
+    expect(digests).toContain("sha256:env");
+    expect(digests).toContain("sha256:evi");
   });
 
   it("embeds the approval card inside the employee bubble", () => {
@@ -166,5 +173,8 @@ describe("group chat bubbles with member identity (#61)", () => {
     expect(memberRow?.textContent).toContain("发布已检查。");
     const operatorRow = container.querySelector(".owb-bubble-row--operator .owb-bubble--operator");
     expect(operatorRow?.textContent).toContain("各位同步进度");
+    // operator avatar + per-member route note (explicit routing, never broadcast)
+    expect(container.querySelector(".owb-bubble__avatar--operator")).not.toBeNull();
+    expect(container.textContent).toContain("逐成员 spawn 1 回合（显式路由，不广播）");
   });
 });
