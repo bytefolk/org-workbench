@@ -580,9 +580,7 @@
   margin: 0;
   padding: var(--ui-space-4, 16px);
   overflow-y: auto;
-  background:
-    linear-gradient(var(--ui-border), var(--ui-border)) 30px 0 / 1px 100% no-repeat,
-    var(--ui-surface-inset);
+  background: var(--ui-surface-inset);
   list-style: none;
 }
 
@@ -605,36 +603,86 @@
   font-size: var(--ui-text-xs, 12px);
 }
 
-.owb-turn {
-  position: relative;
-  display: grid;
+/* --- Bubble chat (#61): operator right bubble / employee left bubble --- */
+.owb-bubble-turn {
+  display: flex;
+  flex-direction: column;
   gap: var(--ui-space-2, 8px);
-  padding-left: 28px;
 }
 
-.owb-turn::before {
-  content: "";
-  position: absolute;
-  top: 13px;
-  left: 10px;
-  width: 8px;
-  height: 8px;
-  border: 2px solid var(--ui-surface-inset);
-  border-radius: 50%;
-  background: var(--ui-primary);
-  box-shadow: 0 0 0 1px var(--ui-border);
+.owb-bubble-row {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--ui-space-2, 8px);
+  min-width: 0;
 }
 
-.owb-turn__request,
-.owb-turn__response {
+.owb-bubble-row--operator {
+  justify-content: flex-end;
+}
+
+.owb-bubble-row--employee {
+  justify-content: flex-start;
+}
+
+.owb-bubble {
+  max-width: min(560px, 78%);
+  min-width: 0;
   border: 1px solid var(--ui-border);
-  border-radius: var(--ui-radius-md, 10px);
-  background: var(--ui-surface);
-  padding: 10px 12px;
+  border-radius: var(--ui-radius-lg, 14px);
+  padding: 8px 12px;
+  font-size: var(--ui-text-sm, 13px);
+  line-height: 1.55;
 }
 
-.owb-turn__request header,
-.owb-turn__response header {
+.owb-bubble--operator {
+  background: var(--ui-primary);
+  border-color: var(--ui-primary);
+  color: var(--ui-primary-foreground);
+  border-bottom-right-radius: var(--ui-radius-sm, 6px);
+}
+
+.owb-bubble--operator .owb-bubble__text {
+  margin: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.owb-bubble--operator .owb-bubble__meta {
+  margin-top: 4px;
+  color: var(--ui-primary-foreground);
+  opacity: 0.72;
+  font-size: var(--ui-text-xs, 12px);
+}
+
+.owb-bubble--employee {
+  background: var(--ui-surface);
+  border-bottom-left-radius: var(--ui-radius-sm, 6px);
+}
+
+.owb-bubble--employee.is-running {
+  border-color: var(--ui-primary);
+}
+
+.owb-bubble--employee.is-failed,
+.owb-bubble--employee.is-indeterminate {
+  border-color: var(--ui-warning);
+}
+
+.owb-bubble__avatar {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  color: #fff;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.owb-bubble__header {
   display: flex;
   align-items: center;
   gap: var(--ui-space-2, 8px);
@@ -643,26 +691,95 @@
   font-size: var(--ui-text-xs, 12px);
 }
 
-.owb-turn__request time,
-.owb-turn__response code {
-  margin-left: auto;
-  flex: 0 0 auto;
+.owb-bubble__name {
+  color: var(--ui-foreground);
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.owb-turn__response code {
-  max-width: 46%;
+.owb-bubble__header code {
+  margin-left: auto;
+  flex: 0 1 auto;
+  max-width: 40%;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   font-size: 11px;
 }
 
-.owb-turn__mention {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  color: var(--ui-primary);
-  font-weight: 600;
+/* Typing indicator (#61): decorative dots + screen-reader text. */
+.owb-bubble__typing {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 6px;
+  color: var(--ui-foreground-muted);
+  font-size: var(--ui-text-xs, 12px);
+}
+
+.owb-bubble__typing-dots {
+  display: inline-flex;
+  gap: 3px;
+}
+
+.owb-bubble__typing-dots i {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--ui-foreground-muted);
+  animation: owb-typing 1.2s infinite ease-in-out;
+}
+
+.owb-bubble__typing-dots i:nth-child(2) {
+  animation-delay: 0.15s;
+}
+
+.owb-bubble__typing-dots i:nth-child(3) {
+  animation-delay: 0.3s;
+}
+
+@keyframes owb-typing {
+  0%, 60%, 100% {
+    opacity: 0.25;
+    transform: translateY(0);
+  }
+  30% {
+    opacity: 1;
+    transform: translateY(-2px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .owb-bubble__typing-dots i {
+    animation: none;
+  }
+}
+
+/* Collapsible evidence (#61): collapsed by default, but envelope/evidence
+   digests are never dropped — expanding reveals them in full (audit red line). */
+.owb-bubble__evidence {
+  margin-top: 8px;
+  border-top: 1px dashed var(--ui-border);
+  padding-top: 4px;
+}
+
+.owb-bubble__evidence summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+  color: var(--ui-foreground-muted);
+  font-size: var(--ui-text-xs, 12px);
+}
+
+.owb-bubble__evidence summary svg {
+  transition: transform var(--owb-duration-fast, 120ms) var(--owb-ease-out, ease);
+}
+
+.owb-bubble__evidence[open] summary svg {
+  transform: rotate(90deg);
 }
 
 .owb-turn__engine {
@@ -1215,72 +1332,7 @@
   background: var(--ui-surface-inset);
 }
 
-.owb-groups__message {
-  max-width: 78%;
-  padding: 8px 10px;
-  border: 1px solid var(--ui-border);
-  border-radius: var(--ui-radius-md, 10px);
-  background: var(--ui-surface);
-  font-size: var(--ui-text-sm, 13px);
-}
-
-.owb-groups__message--user {
-  align-self: flex-end;
-  background: var(--ui-primary-soft);
-}
-
-.owb-groups__message--user p {
-  margin: 0;
-  white-space: pre-wrap;
-}
-
-.owb-groups__message time {
-  display: block;
-  margin-top: 4px;
-  font-size: var(--ui-text-xs, 12px);
-  color: var(--ui-foreground-muted);
-}
-
-.owb-groups__message--member header {
-  display: flex;
-  align-items: center;
-  gap: var(--ui-space-2, 8px);
-  margin-bottom: 4px;
-}
-
-.owb-groups__member-name {
-  font-weight: 600;
-}
-
-.owb-groups__message-engine,
-.owb-groups__message--member time {
-  font-size: var(--ui-text-xs, 12px);
-  color: var(--ui-foreground-muted);
-}
-
-.owb-groups__message-output {
-  margin: 0;
-  white-space: pre-wrap;
-}
-
-.owb-groups__message-error {
-  margin: 4px 0 0;
-  color: var(--ui-danger);
-}
-
-.owb-groups__message-warning {
-  margin: 4px 0 0;
-  color: var(--ui-warning);
-}
-
-.owb-groups__message-pending {
-  margin: 0;
-  color: var(--ui-foreground-muted);
-}
-
-.owb-groups__message.is-running {
-  border-color: var(--ui-accent);
-}
+/* Group timeline messages share the #61 bubble classes (.owb-bubble*). */
 
 .owb-groups__mention-picker {
   display: flex;

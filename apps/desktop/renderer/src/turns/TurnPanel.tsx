@@ -35,6 +35,8 @@ export interface TurnPanelProps {
   /** Approval ids whose verdict was already dispatched this session; their
    * cards settle into a decided state (no duplicate verdicts). */
   decidedApprovalIds?: ReadonlySet<string>;
+  /** Position avatar colors for chat bubbles (org-tree hues; #53/#61). */
+  positionColors?: Record<string, string>;
   onSelectSession?: (sessionId: string) => void;
   onCreateSession?: () => void | Promise<void>;
   onRotateSession?: (sessionId: string) => void | Promise<void>;
@@ -90,6 +92,7 @@ export function TurnPanel({
   onCancelTurn,
   onVerdictTurn,
   decidedApprovalIds,
+  positionColors,
   onSelectSession,
   onCreateSession,
   onRotateSession,
@@ -243,6 +246,7 @@ export function TurnPanel({
         onRetry={(turn) => void retry(turn)}
         onVerdict={onVerdictTurn === undefined ? undefined : (turn, decision, reason) => void onVerdictTurn(turn, decision, reason)}
         decidedApprovalIds={decidedApprovalIds}
+        positionColors={positionColors}
       />
 
       <form className="owb-turn-composer" onSubmit={(event) => void submit(event)}>

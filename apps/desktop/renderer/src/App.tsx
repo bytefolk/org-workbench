@@ -884,6 +884,7 @@ export function App() {
             onCancelTurn={cancelTurn}
             onVerdictTurn={verdictTurn}
             decidedApprovalIds={decidedApprovals}
+            positionColors={positionColors}
             cancelling={turnCancelling}
             onSelectSession={selectSession}
             onCreateSession={createSession}

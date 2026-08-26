@@ -1,8 +1,9 @@
 import { useEffect, useState } from "react";
 import { Empty } from "antd";
-import { AlertTriangle, Check, Clock3, RotateCcw, ShieldAlert, ShieldQuestion } from "lucide-react";
+import { AlertTriangle, Check, ChevronRight, Clock3, RotateCcw, ShieldAlert, ShieldQuestion } from "lucide-react";
 import { engineLabel } from "./TurnPanel";
 import { EngineIcon } from "./engine-icon";
+import { PositionAvatar } from "../PositionAvatar";
 import type { TurnRecord, TurnStatus } from "./types";
 
 export interface TurnThreadProps {
@@ -16,6 +17,8 @@ export interface TurnThreadProps {
    * into a decided state so the operator cannot submit duplicate or
    * contradictory verdicts after a history reload. */
   decidedApprovalIds?: ReadonlySet<string>;
+  /** Position avatar colors (org-tree deterministic hues; #53/#61). */
+  positionColors?: Record<string, string>;
 }
 
 const STATUS_COPY: Record<TurnStatus, string> = {
@@ -75,8 +78,24 @@ function StatusLine({ turn }: { turn: TurnRecord }) {
   );
 }
 
+/** Running bubble typing indicator (#61). The text node stays for screen
+ * readers; the animated dots are decorative. */
+export function TypingIndicator() {
+  return (
+    <span className="owb-bubble__typing" role="status">
+      <span className="owb-bubble__typing-dots" aria-hidden="true">
+        <i />
+        <i />
+        <i />
+      </span>
+      正在等待岗位完成本回合…
+    </span>
+  );
+}
+
 /** Approval verdict card (#187 Option 1): the verdict always starts a new
- * sealed-envelope resume turn; there is no in-run channel by contract. */
+ * sealed-envelope resume turn; there is no in-run channel by contract.
+ * Rendered embedded inside the employee bubble (#61). */
 function ApprovalCard({
   turn,
   busy,
@@ -143,8 +162,40 @@ function ApprovalCard({
   );
 }
 
-/** Local, append-only turn history. It never infers recall or delegation. */
-export function TurnThread({ turns, retrying = false, canRetry, onRetry, onVerdict, decidedApprovalIds }: TurnThreadProps) {
+/** Collapsible evidence block (#61): collapsed by default to keep the bubble
+ * compact, but the envelope/evidence digests are never dropped — expanding
+ * reveals them in full (auditability red line). */
+function EvidenceBlock({ turn }: { turn: TurnRecord }) {
+  if (!turn.envelopeDigest && !turn.evidenceDigest) return null;
+  return (
+    <details className="owb-bubble__evidence">
+      <summary>
+        <ChevronRight aria-hidden="true" size={12} />
+        回合证据
+      </summary>
+      <dl className="owb-turn__evidence" aria-label="回合证据">
+        {turn.envelopeDigest ? (
+          <div>
+            <dt>Envelope</dt>
+            <dd title={turn.envelopeDigest}>{shortDigest(turn.envelopeDigest)}</dd>
+          </div>
+        ) : null}
+        {turn.evidenceDigest ? (
+          <div>
+            <dt>Evidence</dt>
+            <dd title={turn.evidenceDigest}>{shortDigest(turn.evidenceDigest)}</dd>
+          </div>
+        ) : null}
+      </dl>
+    </details>
+  );
+}
+
+/** Local, append-only turn history rendered as a bubble chat (#61): the
+ * operator message is a right-aligned bubble; the employee reply is a left
+ * bubble carrying avatar + position name + engine label. It never infers
+ * recall or delegation. */
+export function TurnThread({ turns, retrying = false, canRetry, onRetry, onVerdict, decidedApprovalIds, positionColors }: TurnThreadProps) {
   if (turns.length === 0) {
     return (
       <div className="owb-turn-thread owb-turn-thread--empty">
@@ -166,73 +217,70 @@ export function TurnThread({ turns, retrying = false, canRetry, onRetry, onVerdi
       {turns.map((turn) => {
         const retryable = turn.status === "failed" || turn.status === "indeterminate";
         return (
-          <li className="owb-turn" key={turn.id} data-turn-id={turn.id}>
-            <article className="owb-turn__request">
-              <header>
-                <span className="owb-turn__mention">@{turn.positionName}</span>
-                <span className="owb-turn__engine">
-                  <EngineIcon engine={turn.engine} />
-                  {engineLabel(turn.engine)}
-                </span>
-                <time dateTime={turn.createdAt}>{new Date(turn.createdAt).toLocaleString()}</time>
-              </header>
-              <p className="owb-clamp-2" title={turn.input}>{turn.input}</p>
-            </article>
+          <li className="owb-bubble-turn" key={turn.id} data-turn-id={turn.id}>
+            <div className="owb-bubble-row owb-bubble-row--operator">
+              <article className="owb-bubble owb-bubble--operator">
+                <p className="owb-bubble__text owb-clamp-2" title={turn.input}>{turn.input}</p>
+                <footer className="owb-bubble__meta">
+                  <time dateTime={turn.createdAt}>{new Date(turn.createdAt).toLocaleString()}</time>
+                </footer>
+              </article>
+            </div>
 
-            <article className={`owb-turn__response is-${turn.status}`} aria-live={turn.status === "running" ? "polite" : undefined}>
-              <header>
-                <span className="owb-turn__status">
-                  <StatusIcon status={turn.status} />
-                  {STATUS_COPY[turn.status]}
-                </span>
-                <code title={turn.id}>{turn.id}</code>
-              </header>
-              {turn.status === "running" ? <StatusLine turn={turn} /> : null}
-              {turn.output ? <p className="owb-turn__output owb-clamp-2" title={turn.output}>{turn.output}</p> : null}
-              {turn.status === "running" && !turn.output ? (
-                <p className="owb-turn__pending owb-clamp-2" title="正在等待岗位完成本回合…">正在等待岗位完成本回合…</p>
-              ) : null}
-              {turn.error ? <p className="owb-turn__error owb-clamp-2" title={turn.error}>{turn.error}</p> : null}
-              {turn.status === "indeterminate" ? (
-                <p className="owb-turn__warning owb-clamp-2" title="运行器未返回可信终态。为避免重复执行，系统不会自动重试。">运行器未返回可信终态。为避免重复执行，系统不会自动重试。</p>
-              ) : null}
+            <div className="owb-bubble-row owb-bubble-row--employee">
+              <PositionAvatar
+                colors={positionColors}
+                id={turn.positionId}
+                name={turn.positionName}
+                className="owb-bubble__avatar"
+              />
+              <article
+                className={`owb-bubble owb-bubble--employee is-${turn.status}`}
+                aria-live={turn.status === "running" ? "polite" : undefined}
+              >
+                <header className="owb-bubble__header">
+                  <span className="owb-bubble__name">{turn.positionName}</span>
+                  <span className="owb-turn__engine">
+                    <EngineIcon engine={turn.engine} />
+                    {engineLabel(turn.engine)}
+                  </span>
+                  <span className="owb-turn__status">
+                    <StatusIcon status={turn.status} />
+                    {STATUS_COPY[turn.status]}
+                  </span>
+                  <code title={turn.id}>{turn.id}</code>
+                </header>
 
-              {turn.envelopeDigest || turn.evidenceDigest ? (
-                <dl className="owb-turn__evidence" aria-label="回合证据">
-                  {turn.envelopeDigest ? (
-                    <div>
-                      <dt>Envelope</dt>
-                      <dd title={turn.envelopeDigest}>{shortDigest(turn.envelopeDigest)}</dd>
-                    </div>
-                  ) : null}
-                  {turn.evidenceDigest ? (
-                    <div>
-                      <dt>Evidence</dt>
-                      <dd title={turn.evidenceDigest}>{shortDigest(turn.evidenceDigest)}</dd>
-                    </div>
-                  ) : null}
-                </dl>
-              ) : null}
+                {turn.status === "running" ? <StatusLine turn={turn} /> : null}
+                {turn.output ? <p className="owb-turn__output owb-clamp-2" title={turn.output}>{turn.output}</p> : null}
+                {turn.status === "running" && !turn.output ? <TypingIndicator /> : null}
+                {turn.error ? <p className="owb-turn__error owb-clamp-2" title={turn.error}>{turn.error}</p> : null}
+                {turn.status === "indeterminate" ? (
+                  <p className="owb-turn__warning owb-clamp-2" title="运行器未返回可信终态。为避免重复执行，系统不会自动重试。">运行器未返回可信终态。为避免重复执行，系统不会自动重试。</p>
+                ) : null}
 
-              {turn.approvalRequest !== undefined && onVerdict ? (
-                <ApprovalCard
-                  turn={turn}
-                  busy={retrying || canRetry?.(turn) === false}
-                  decided={decidedApprovalIds?.has(turn.approvalRequest.approvalId) === true}
-                  onVerdict={onVerdict}
-                />
-              ) : retryable && onRetry ? (
-                <button
-                  type="button"
-                  className="owb-turn__retry"
-                  disabled={retrying || canRetry?.(turn) === false}
-                  onClick={() => onRetry(turn)}
-                >
-                  <RotateCcw aria-hidden="true" size={13} />
-                  创建新回合重试
-                </button>
-              ) : null}
-            </article>
+                <EvidenceBlock turn={turn} />
+
+                {turn.approvalRequest !== undefined && onVerdict ? (
+                  <ApprovalCard
+                    turn={turn}
+                    busy={retrying || canRetry?.(turn) === false}
+                    decided={decidedApprovalIds?.has(turn.approvalRequest.approvalId) === true}
+                    onVerdict={onVerdict}
+                  />
+                ) : retryable && onRetry ? (
+                  <button
+                    type="button"
+                    className="owb-turn__retry"
+                    disabled={retrying || canRetry?.(turn) === false}
+                    onClick={() => onRetry(turn)}
+                  >
+                    <RotateCcw aria-hidden="true" size={13} />
+                    创建新回合重试
+                  </button>
+                ) : null}
+              </article>
+            </div>
           </li>
         );
       })}
