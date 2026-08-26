@@ -33,6 +33,7 @@ import {
   adaptTurnHistory,
   adaptTurnRecord,
   applyTurnEvent,
+  approvalResumeInput,
   beginPendingTurn,
   cancelPendingTurn,
   resetStreamSeq,
@@ -54,10 +55,6 @@ interface PositionCardState {
   data: PositionCardData | null;
   notFound: boolean;
 }
-
-/** Resume-turn input for approval verdicts; the verdict itself travels in the
- * envelope's pendingApproval field, so this text stays a neutral continuation. */
-const APPROVAL_RESUME_INPUT = "[审批裁决] 请继续执行上一回合暂停的动作";
 
 /**
  * D1 renderer: AppShell four-zone layout (spec §1) — ModuleRail (org active,
@@ -99,6 +96,10 @@ export function App() {
   const [reportsError, setReportsError] = useState<string | null>(null);
   const [orgBusy, setOrgBusy] = useState(false);
   const [orgFeedback, setOrgFeedback] = useState<{ tone: "info" | "warn"; text: string } | null>(null);
+  /** Approvals whose verdict was already sealed into a resume turn. The
+   * server record never persists pendingApproval, so this client-side set is
+   * the only source for settling the verdict card into a terminal state. */
+  const [decidedApprovals, setDecidedApprovals] = useState<ReadonlySet<string>>(new Set());
   /** Tree-node "+" hire entry (#32 AC-004): undefined = closed, otherwise the preset reportTo. */
   const [treeHireParent, setTreeHireParent] = useState<string | null | undefined>(undefined);
 
@@ -181,6 +182,7 @@ export function App() {
       setSelectedSessionId(null);
       selectedSessionIdRef.current = null;
       setTurnError(null);
+      setDecidedApprovals(new Set());
       setBackups([]);
       setReports(null);
       setReportsError(null);
@@ -449,15 +451,18 @@ export function App() {
 
   /** Operator verdict (issue #25 Slice B): the verdict is a new resume turn
    * whose sealed envelope carries pendingApproval; granted defaults scope to
-   * "once" upstream, denied carries the optional reason only. */
+   * "once" upstream, denied carries the optional reason only. A verdict is
+   * only marked decided after the resume turn is created, so a failed
+   * creation leaves the card actionable. */
   const verdictTurn = useCallback(
     async (turn: TurnRecord, decision: "granted" | "denied", reason?: string) => {
       const request = turn.approvalRequest;
       if (request === undefined) return;
-      await createTurn({
+      if (decidedApprovals.has(request.approvalId)) return;
+      const created = await createTurn({
         positionId: turn.positionId,
         engine: turn.engine,
-        input: APPROVAL_RESUME_INPUT,
+        input: approvalResumeInput(decision, reason),
         pendingApproval: {
           approvalId: request.approvalId,
           decision,
@@ -466,8 +471,11 @@ export function App() {
           ...(reason !== undefined ? { reason } : {}),
         },
       });
+      if (created !== false) {
+        setDecidedApprovals((current) => new Set(current).add(request.approvalId));
+      }
     },
-    [createTurn],
+    [createTurn, decidedApprovals],
   );
 
   const openWorkspace = useCallback(async () => {
@@ -816,6 +824,7 @@ export function App() {
             onCreateTurn={createTurn}
             onCancelTurn={cancelTurn}
             onVerdictTurn={verdictTurn}
+            decidedApprovalIds={decidedApprovals}
             cancelling={turnCancelling}
             onSelectSession={selectSession}
             onCreateSession={createSession}

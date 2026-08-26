@@ -31,6 +31,9 @@ export interface TurnPanelProps {
   onCancelTurn?: (positionId: string) => void | Promise<void>;
   /** Operator verdict for a turn settled as engine.approval_required (#25 Slice B). */
   onVerdictTurn?: (turn: TurnRecord, decision: "granted" | "denied", reason?: string) => void | Promise<void>;
+  /** Approval ids whose verdict was already dispatched this session; their
+   * cards settle into a decided state (no duplicate verdicts). */
+  decidedApprovalIds?: ReadonlySet<string>;
   onSelectSession?: (sessionId: string) => void;
   onCreateSession?: () => void | Promise<void>;
   onRotateSession?: (sessionId: string) => void | Promise<void>;
@@ -63,6 +66,7 @@ export function TurnPanel({
   onCreateTurn,
   onCancelTurn,
   onVerdictTurn,
+  decidedApprovalIds,
   onSelectSession,
   onCreateSession,
   onRotateSession,
@@ -225,6 +229,7 @@ export function TurnPanel({
         canRetry={(turn) => workspaceOpen && engineAvailability[turn.engine].ready && (!sessionMode || selectedSession?.status === "active")}
         onRetry={(turn) => void retry(turn)}
         onVerdict={onVerdictTurn === undefined ? undefined : (turn, decision, reason) => void onVerdictTurn(turn, decision, reason)}
+        decidedApprovalIds={decidedApprovalIds}
       />
 
       <form className="owb-turn-composer" onSubmit={(event) => void submit(event)}>

@@ -860,6 +860,12 @@
   cursor: not-allowed;
 }
 
+.owb-turn__approval-decided {
+  margin: 0;
+  color: var(--ui-foreground-muted);
+  font-size: var(--ui-text-xs, 12px);
+}
+
 .owb-turn-composer {
   display: grid;
   gap: 5px;

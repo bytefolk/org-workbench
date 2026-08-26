@@ -36,6 +36,12 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 
+/** Required+optional key check mirroring driver-cli.ts exactKeys. */
+function hasExactKeys(value: Record<string, unknown>, required: string[], optional: string[] = []): boolean {
+  const allowed = new Set([...required, ...optional]);
+  return required.every((key) => key in value) && Object.keys(value).every((key) => allowed.has(key));
+}
+
 /**
  * Fail-closed boundary validation for the #193 verdict field, mirroring the
  * upstream envelope first gate; the engine remains the byte-exact backstop.
@@ -44,18 +50,7 @@ export function assertPendingApproval(raw: unknown): TurnPendingApproval {
   if (!isRecord(raw)) {
     throw new OrgApiError(errorCodes.turn_request_invalid, 400, "pendingApproval must be a JSON object");
   }
-  const keys = Object.keys(raw).sort();
-  const keyShape = keys.join(",");
-  if (
-    keyShape !== "approvalId,decidedBy,decision" &&
-    keyShape !== "approvalId,decidedBy,decision,scope" &&
-    keyShape !== "approvalId,decidedBy,decision,reason" &&
-    keyShape !== "approvalId,decidedBy,decision,expiresAt" &&
-    keyShape !== "approvalId,decidedBy,decision,reason,scope" &&
-    keyShape !== "approvalId,decidedBy,decision,expiresAt,scope" &&
-    keyShape !== "approvalId,decidedBy,decision,expiresAt,reason" &&
-    keyShape !== "approvalId,decidedBy,decision,expiresAt,reason,scope"
-  ) {
+  if (!hasExactKeys(raw, ["approvalId", "decision", "decidedBy"], ["scope", "reason", "expiresAt"])) {
     throw new OrgApiError(
       errorCodes.turn_request_invalid,
       400,

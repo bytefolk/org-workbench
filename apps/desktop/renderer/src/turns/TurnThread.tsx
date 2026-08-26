@@ -11,6 +11,10 @@ export interface TurnThreadProps {
   onRetry?: (turn: TurnRecord) => void;
   /** Operator verdict for a turn settled as engine.approval_required. */
   onVerdict?: (turn: TurnRecord, decision: "granted" | "denied", reason?: string) => void;
+  /** Approval ids whose verdict was already dispatched; their cards settle
+   * into a decided state so the operator cannot submit duplicate or
+   * contradictory verdicts after a history reload. */
+  decidedApprovalIds?: ReadonlySet<string>;
 }
 
 const STATUS_COPY: Record<TurnStatus, string> = {
@@ -72,10 +76,12 @@ function StatusLine({ turn }: { turn: TurnRecord }) {
 function ApprovalCard({
   turn,
   busy,
+  decided,
   onVerdict,
 }: {
   turn: TurnRecord;
   busy: boolean;
+  decided: boolean;
   onVerdict: (turn: TurnRecord, decision: "granted" | "denied", reason?: string) => void;
 }) {
   const [reason, setReason] = useState("");
@@ -86,7 +92,7 @@ function ApprovalCard({
     <div className="owb-turn__approval" role="group" aria-label="审批请求">
       <p className="owb-turn__approval-title">
         <ShieldAlert aria-hidden="true" size={13} />
-        等待审批 · {APPROVAL_KIND_COPY[request.kind] ?? request.kind}
+        {decided ? "已裁决" : "等待审批"} · {APPROVAL_KIND_COPY[request.kind] ?? request.kind}
       </p>
       <p className="owb-turn__approval-description owb-clamp-2" title={request.description}>
         {request.description}
@@ -97,38 +103,44 @@ function ApprovalCard({
       {request.expiresAt ? (
         <p className="owb-turn__approval-expires">过期时间 {new Date(request.expiresAt).toLocaleString()}</p>
       ) : null}
-      <input
-        className="owb-turn__approval-reason"
-        aria-label="拒绝理由（可选）"
-        placeholder="拒绝理由（可选）"
-        value={reason}
-        disabled={busy}
-        onChange={(event) => setReason(event.target.value)}
-      />
-      <div className="owb-turn__approval-actions">
-        <button
-          type="button"
-          className="owb-turn__approval-grant"
-          disabled={busy}
-          onClick={() => onVerdict(turn, "granted")}
-        >
-          批准并继续
-        </button>
-        <button
-          type="button"
-          className="owb-turn__approval-deny"
-          disabled={busy}
-          onClick={() => onVerdict(turn, "denied", trimmedReason.length > 0 ? trimmedReason : undefined)}
-        >
-          拒绝
-        </button>
-      </div>
+      {decided ? (
+        <p className="owb-turn__approval-decided">裁决已随新回合发出，同一审批不再接受重复裁决</p>
+      ) : (
+        <>
+          <input
+            className="owb-turn__approval-reason"
+            aria-label="拒绝理由（可选）"
+            placeholder="拒绝理由（可选）"
+            value={reason}
+            disabled={busy}
+            onChange={(event) => setReason(event.target.value)}
+          />
+          <div className="owb-turn__approval-actions">
+            <button
+              type="button"
+              className="owb-turn__approval-grant"
+              disabled={busy}
+              onClick={() => onVerdict(turn, "granted")}
+            >
+              批准并继续
+            </button>
+            <button
+              type="button"
+              className="owb-turn__approval-deny"
+              disabled={busy}
+              onClick={() => onVerdict(turn, "denied", trimmedReason.length > 0 ? trimmedReason : undefined)}
+            >
+              拒绝
+            </button>
+          </div>
+        </>
+      )}
     </div>
   );
 }
 
 /** Local, append-only turn history. It never infers recall or delegation. */
-export function TurnThread({ turns, retrying = false, canRetry, onRetry, onVerdict }: TurnThreadProps) {
+export function TurnThread({ turns, retrying = false, canRetry, onRetry, onVerdict, decidedApprovalIds }: TurnThreadProps) {
   if (turns.length === 0) {
     return (
       <div className="owb-turn-thread owb-turn-thread--empty">
@@ -199,6 +211,7 @@ export function TurnThread({ turns, retrying = false, canRetry, onRetry, onVerdi
                 <ApprovalCard
                   turn={turn}
                   busy={retrying || canRetry?.(turn) === false}
+                  decided={decidedApprovalIds?.has(turn.approvalRequest.approvalId) === true}
                   onVerdict={onVerdict}
                 />
               ) : retryable && onRetry ? (

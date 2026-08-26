@@ -2,7 +2,7 @@ import { fireEvent, render, screen } from "@testing-library/react";
 import { useState } from "react";
 import { describe, expect, it, vi } from "vitest";
 import type { TurnRecord as ApiTurnRecord } from "@org-workbench/shared";
-import { TurnPanel } from "../src/turns";
+import { TurnPanel, approvalResumeInput } from "../src/turns";
 import type { CreateTurnRequest, TurnEngine, TurnPanelProps, TurnRecord } from "../src/turns";
 import { adaptTurnRecord } from "../src/turns/adapter";
 
@@ -76,9 +76,10 @@ const availability: TurnPanelProps["engineAvailability"] = {
   "claude-local": { configured: true, ready: true },
 };
 
-function VerdictPanel({ turns, onVerdictTurn }: {
+function VerdictPanel({ turns, onVerdictTurn, decidedApprovalIds }: {
   turns: TurnRecord[];
   onVerdictTurn: (turn: TurnRecord, decision: "granted" | "denied", reason?: string) => void;
+  decidedApprovalIds?: ReadonlySet<string>;
 }) {
   const [positionId, setPositionId] = useState<string | null>("repo-owner");
   const [engine, setEngine] = useState<TurnEngine>("qoder");
@@ -94,9 +95,22 @@ function VerdictPanel({ turns, onVerdictTurn }: {
       onSelectEngine={setEngine}
       onCreateTurn={(request: CreateTurnRequest) => void request}
       onVerdictTurn={onVerdictTurn}
+      decidedApprovalIds={decidedApprovalIds}
     />
   );
 }
+
+describe("approvalResumeInput wording", () => {
+  it("keeps granted as a neutral continuation sentence", () => {
+    expect(approvalResumeInput("granted")).toBe("[审批裁决] 请继续执行上一回合暂停的动作");
+    expect(approvalResumeInput("granted", "ignored")).toBe("[审批裁决] 请继续执行上一回合暂停的动作");
+  });
+
+  it("gives denied its own wording and carries the reason when given", () => {
+    expect(approvalResumeInput("denied")).toBe("[审批裁决] 已拒绝上一回合暂停的动作");
+    expect(approvalResumeInput("denied", "超出岗位授权")).toBe("[审批裁决] 已拒绝：超出岗位授权");
+  });
+});
 
 describe("TurnPanel approval verdict card", () => {
   it("renders the mirrored request and starts a verdict via the buttons, suppressing plain retry", () => {
@@ -120,6 +134,61 @@ describe("TurnPanel approval verdict card", () => {
     fireEvent.click(screen.getByRole("button", { name: "拒绝" }));
     expect(onVerdictTurn).toHaveBeenCalledTimes(2);
     expect(onVerdictTurn).toHaveBeenLastCalledWith(turn, "denied", "超出岗位授权");
+  });
+
+  it("settles the card into a decided state once the verdict has been dispatched", () => {
+    const turn = adaptTurnRecord(apiRecord({}), "代码库负责人");
+    const onVerdictTurn = vi.fn();
+    render(
+      <VerdictPanel
+        turns={[turn]}
+        onVerdictTurn={onVerdictTurn}
+        decidedApprovalIds={new Set(["appr-1"])}
+      />,
+    );
+
+    const card = screen.getByRole("group", { name: "审批请求" });
+    expect(card).toHaveTextContent("已裁决 · 命令执行");
+    expect(card).toHaveTextContent("裁决已随新回合发出，同一审批不再接受重复裁决");
+    expect(screen.queryByRole("button", { name: "批准并继续" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "拒绝" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("textbox", { name: "拒绝理由（可选）" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /创建新回合重试/ })).not.toBeInTheDocument();
+    expect(onVerdictTurn).not.toHaveBeenCalled();
+  });
+
+  it("locks the card after a successful verdict so a contradictory verdict cannot follow", () => {
+    function DecidingPanel({ turns, onVerdictTurn }: {
+      turns: TurnRecord[];
+      onVerdictTurn: (turn: TurnRecord, decision: "granted" | "denied", reason?: string) => void;
+    }) {
+      // Mirrors App.tsx: once the resume turn is created, the approval id
+      // joins the decided set and the card invalidates.
+      const [decided, setDecided] = useState<ReadonlySet<string>>(new Set());
+      return (
+        <VerdictPanel
+          turns={turns}
+          decidedApprovalIds={decided}
+          onVerdictTurn={(turn, decision, reason) => {
+            onVerdictTurn(turn, decision, reason);
+            const approvalId = turn.approvalRequest?.approvalId;
+            if (approvalId !== undefined) setDecided((current) => new Set(current).add(approvalId));
+          }}
+        />
+      );
+    }
+
+    const turn = adaptTurnRecord(apiRecord({}), "代码库负责人");
+    const onVerdictTurn = vi.fn();
+    render(<DecidingPanel turns={[turn]} onVerdictTurn={onVerdictTurn} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "批准并继续" }));
+    expect(onVerdictTurn).toHaveBeenCalledTimes(1);
+    expect(onVerdictTurn).toHaveBeenCalledWith(turn, "granted", undefined);
+
+    expect(screen.queryByRole("button", { name: "批准并继续" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "拒绝" })).not.toBeInTheDocument();
+    expect(screen.getByRole("group", { name: "审批请求" })).toHaveTextContent("已裁决 · 命令执行");
   });
 
   it("keeps the plain retry path for failed turns without an approval request", () => {

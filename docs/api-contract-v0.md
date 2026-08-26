@@ -306,11 +306,11 @@ Electron renderer 只通过枚举式 `createTurn({positionId,input,engine})` 与
 }
 ```
 
-- 必填：`approvalId`（非空、≤256）、`decision`（`granted`|`denied`）、`decidedBy`（常量 `"operator"`）；可选：`scope`（`once`|`run`）、`reason`（非空、≤1024 字节）、`expiresAt`（ISO 8601）。`additionalProperties: false`，字段集合只允许逐字镜像上游校验的八种排序键形状。
+- 必填：`approvalId`（非空、≤256）、`decision`（`granted`|`denied`）、`decidedBy`（常量 `"operator"`）；可选：`scope`（`once`|`run`）、`reason`（非空、≤1024 字节）、`expiresAt`（ISO 8601）。`additionalProperties: false`；字段集合按「必填 + 可选」键集校验（与 driver-cli `exactKeys` 同构），等价于上游信封首门接受的字段集，额外字段一律拒绝。
 - 边界校验 fail closed：任何形状违例（缺字段、额外字段、越界、`decidedBy` 非 `"operator"`、非法枚举、非法时间戳）在 spawn 之前以 400 `turn_request_invalid` 拒绝（不新增错误码，不新增 SSE 事件类型）。
 - 校验通过的 `pendingApproval` 进入 `turn-envelope.v1` 正文并参与 `envelopeDigest`（canonical JSON + SHA-256，与上游逐字节一致）；未携带时信封与摘要与既有行为逐字节不变。
 - 控制面不解释裁决语义、不在途注入、不自动重试；裁决只随下一个新回合的信封传递，引擎首门校验失败（`engine.input_invalid`）按既有 spawn 前失败路径处理。
-- Electron renderer 的审批卡片（批准/拒绝）即经既有 `createTurn` / session turn IPC 携带该字段发起续跑回合；IPC 层执行同一镜像校验，不新增通用通道。
+- Electron renderer 的审批卡片（批准/拒绝）即经既有 `createTurn` / session turn IPC 携带该字段发起续跑回合；IPC 层执行同一镜像校验，不新增通用通道。`input` 为自由文本，renderer 按裁决分支出不同措辞：批准用「[审批裁决] 请继续执行上一回合暂停的动作」；拒绝用「[审批裁决] 已拒绝上一回合暂停的动作」（附理由时为「[审批裁决] 已拒绝：<理由>」），避免拒绝分支的续跑回合被误读为继续执行。同一审批的裁决一旦随续跑回合创建成功发出，renderer 将该卡片置为「已裁决」终态，不接受重复或矛盾裁决。
 
 ### 2.12 `/sessions` — 显式 Workbench session（#12 R2 加法）
 

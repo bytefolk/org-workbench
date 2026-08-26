@@ -12,18 +12,13 @@ function validatePendingApproval(value) {
   if (value === null || typeof value !== "object" || Array.isArray(value)) {
     return { ok: false, response: invalid("pendingApproval must be an object") };
   }
-  const keys = Object.keys(value).sort().join(",");
-  const allowedShapes = [
-    "approvalId,decidedBy,decision",
-    "approvalId,decidedBy,decision,scope",
-    "approvalId,decidedBy,decision,reason",
-    "approvalId,decidedBy,decision,expiresAt",
-    "approvalId,decidedBy,decision,reason,scope",
-    "approvalId,decidedBy,decision,expiresAt,scope",
-    "approvalId,decidedBy,decision,expiresAt,reason",
-    "approvalId,decidedBy,decision,expiresAt,reason,scope",
-  ];
-  if (!allowedShapes.includes(keys)) {
+  // Required+optional key check; equivalent to the upstream envelope gate's
+  // accepted field set, without hand-enumerating every sorted-key shape.
+  const required = ["approvalId", "decision", "decidedBy"];
+  const optional = ["scope", "reason", "expiresAt"];
+  const allowed = new Set([...required, ...optional]);
+  if (!required.every((key) => key in value) ||
+      !Object.keys(value).every((key) => allowed.has(key))) {
     return {
       ok: false,
       response: invalid("pendingApproval accepts approvalId, decision, decidedBy plus optional scope, reason, expiresAt"),
