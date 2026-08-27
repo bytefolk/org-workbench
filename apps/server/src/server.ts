@@ -3,6 +3,7 @@ import { OrgApiError, errorCodes, routes } from "@org-workbench/shared";
 import { bearerAuthorized } from "./auth.js";
 import type { ControlPlaneContext } from "./context.js";
 import { sendError, sendJson } from "./http.js";
+import { handleDocsList, handleDocsRead } from "./routes/docs.js";
 import { handleEvents } from "./routes/events.js";
 import {
   handleGroupAddMember,
@@ -187,6 +188,14 @@ async function dispatch(
     }
     if (pathname === routes.turns && method === "GET") {
       await handleTurnHistory(ctx, res, url);
+      return;
+    }
+    if (pathname === routes.docsList && method === "GET") {
+      await handleDocsList(ctx, res, url);
+      return;
+    }
+    if (pathname === routes.docsRead && method === "GET") {
+      await handleDocsRead(ctx, res, url);
       return;
     }
     if (pathname === routes.events && method === "GET") {

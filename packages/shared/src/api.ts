@@ -28,6 +28,9 @@ export const routes = {
   turnsCancel: "/turns/cancel",
   /** Additive S2 group-chat surface (#52, DS-34-001 rev-1 §1.2). */
   groups: "/groups",
+  /** Additive read-only document file routing (#35 S2, DS-35-001 rev-1 §5). */
+  docsList: "/docs/list",
+  docsRead: "/docs/read",
   events: "/events",
 } as const;
 
