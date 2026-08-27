@@ -31,6 +31,9 @@ export const routes = {
   /** Additive read-only document file routing (#35 S2, DS-35-001 rev-1 §5). */
   docsList: "/docs/list",
   docsRead: "/docs/read",
+  /** Additive create/resolve surface (#35 S4, DS-35-001 rev-1 §3/§5). */
+  docsCreate: "/docs/create",
+  docsResolve: "/docs/resolve",
   events: "/events",
 } as const;
 

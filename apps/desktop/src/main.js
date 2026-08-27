@@ -17,7 +17,12 @@ const os = require("node:os");
 const path = require("node:path");
 const { rendererEntryPath } = require("./runtime-paths.cjs");
 const { validateRestoreRequest } = require("./org-ipc.cjs");
-const { validateDocsListRequest, validateDocsReadRequest } = require("./docs-ipc.cjs");
+const {
+  validateDocsCreateRequest,
+  validateDocsListRequest,
+  validateDocsReadRequest,
+  validateDocsResolveRequest,
+} = require("./docs-ipc.cjs");
 const { validateHireRequest } = require("./hire-ipc.cjs");
 const { turnHistoryPath, validateCancelRequest, validateCreateTurnRequest } = require("./turn-ipc.cjs");
 const {
@@ -303,6 +308,19 @@ ipcMain.handle("owb:position:docs:read", async (_event, positionId, filePath) =>
   const validated = validateDocsReadRequest(positionId, filePath);
   if (!validated.ok) return validated.response;
   return apiRequest(validated.pathname);
+});
+
+// Minimal doc creation + doc-ref resolution (#35 S4): whitelisted, enumerated.
+ipcMain.handle("owb:position:docs:create", async (_event, request) => {
+  const validated = validateDocsCreateRequest(request);
+  if (!validated.ok) return validated.response;
+  return apiRequest("/docs/create", { method: "POST", body: validated.request });
+});
+
+ipcMain.handle("owb:docs:resolve", async (_event, request) => {
+  const validated = validateDocsResolveRequest(request);
+  if (!validated.ok) return validated.response;
+  return apiRequest("/docs/resolve", { method: "POST", body: validated.request });
 });
 
 ipcMain.handle("owb:turn:create", async (_event, request) => {

@@ -1,21 +1,25 @@
 import { useEffect, useState } from "react";
-import { Alert, Empty, List, Spin } from "antd";
+import { Alert, Empty, List, Spin, message } from "antd";
+import { formatDocRefUri } from "@org-workbench/shared/docs";
 import type { DocsFileEntry, DocsFileListResponse, DocsFileResponse } from "@org-workbench/shared";
 import { DocViewer } from "./DocViewer";
 
 /**
- * Document routing surface (#35 S2, DS-35-001 rev-1 §5): routes a position's
- * document files into the S1 DocViewer. Loaders are injected so the surface
- * stays testable without the preload bridge; ModuleRail entry wiring belongs
- * to S3 and is deliberately absent here.
+ * Document routing surface (#35 S2/S4, DS-35-001 rev-1 §3/§5): routes a
+ * position's document files into the S1 DocViewer. Loaders are injected so
+ * the surface stays testable without the preload bridge. S4 adds the
+ * `reloadToken` re-list trigger and a per-file doc-ref copy action; the
+ * reference shape stays the frozen doc-ref.v1alpha1.
  */
 export interface DocsPanelProps {
   positionId: string | null;
   listDocs(positionId: string): Promise<DocsFileListResponse>;
   readDoc(positionId: string, path: string): Promise<DocsFileResponse>;
+  /** Bumped by the creator to force a re-list after a successful create. */
+  reloadToken?: number;
 }
 
-export function DocsPanel({ positionId, listDocs, readDoc }: DocsPanelProps) {
+export function DocsPanel({ positionId, listDocs, readDoc, reloadToken = 0 }: DocsPanelProps) {
   const [files, setFiles] = useState<DocsFileEntry[]>([]);
   const [listing, setListing] = useState(false);
   const [listError, setListError] = useState<string | null>(null);
@@ -52,7 +56,7 @@ export function DocsPanel({ positionId, listDocs, readDoc }: DocsPanelProps) {
     return () => {
       cancelled = true;
     };
-  }, [positionId, listDocs]);
+  }, [positionId, listDocs, reloadToken]);
 
   const openFile = (path: string) => {
     if (positionId === null) return;
@@ -64,6 +68,20 @@ export function DocsPanel({ positionId, listDocs, readDoc }: DocsPanelProps) {
       .then((response) => setDoc(response))
       .catch((error) => setReadError(error instanceof Error ? error.message : String(error)))
       .finally(() => setReading(false));
+  };
+
+  const copyRef = async (entry: DocsFileEntry) => {
+    if (positionId === null) return;
+    const ref = JSON.stringify({
+      uri: formatDocRefUri(positionId, entry.path),
+      version: entry.modifiedAt,
+    });
+    try {
+      await navigator.clipboard.writeText(ref);
+      message.success("引用已复制");
+    } catch {
+      message.error("剪贴板不可用");
+    }
   };
 
   return (
@@ -80,7 +98,20 @@ export function DocsPanel({ positionId, listDocs, readDoc }: DocsPanelProps) {
               dataSource={files}
               locale={{ emptyText: "该岗位暂无文档" }}
               renderItem={(entry) => (
-                <List.Item key={entry.path}>
+                <List.Item
+                  key={entry.path}
+                  actions={[
+                    <button
+                      key="copy-ref"
+                      type="button"
+                      className="owb-docs-panel__copy-ref"
+                      aria-label={`复制引用 ${entry.path}`}
+                      onClick={() => copyRef(entry)}
+                    >
+                      复制引用
+                    </button>,
+                  ]}
+                >
                   <button
                     type="button"
                     className="owb-docs-panel__file"
