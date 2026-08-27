@@ -1,6 +1,9 @@
 /** Typed shape of the whitelisted preload bridge (window.owb). */
 
 import type {
+  AssetRecord,
+  AssetsCreateRequest,
+  AssetsListResponse,
   DocRef,
   DocsCreateRequest,
   DocsCreateResponse,
@@ -55,6 +58,9 @@ export interface OwbBridge {
   positionDocFile(positionId: string, filePath: string): Promise<OwbApiResponse<DocsFileResponse>>;
   createPositionDoc(request: DocsCreateRequest): Promise<OwbApiResponse<DocsCreateResponse>>;
   resolveDocRef(ref: DocRef): Promise<OwbApiResponse<DocsResolveResponse>>;
+  assetsList(): Promise<OwbApiResponse<AssetsListResponse>>;
+  assetsRead(assetId: string): Promise<OwbApiResponse<AssetRecord>>;
+  assetsCreate(request: AssetsCreateRequest): Promise<OwbApiResponse<AssetRecord>>;
   createTurn(request: { positionId: string; input: string; engine: TurnEngine; pendingApproval?: TurnPendingApproval }): Promise<OwbApiResponse<TurnRecord>>;
   cancelTurn(positionId: string): Promise<OwbApiResponse<{ cancelled: boolean; positionId: string }>>;
   turnHistory(positionId: string): Promise<OwbApiResponse<TurnHistory>>;

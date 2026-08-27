@@ -3,6 +3,7 @@ import { OrgApiError, errorCodes, routes } from "@org-workbench/shared";
 import { bearerAuthorized } from "./auth.js";
 import type { ControlPlaneContext } from "./context.js";
 import { sendError, sendJson } from "./http.js";
+import { handleAssetsCreate, handleAssetsList, handleAssetsRead } from "./routes/assets.js";
 import { handleDocsCreate, handleDocsList, handleDocsRead, handleDocsResolve } from "./routes/docs.js";
 import { handleEvents } from "./routes/events.js";
 import {
@@ -204,6 +205,18 @@ async function dispatch(
     }
     if (pathname === routes.docsResolve && method === "POST") {
       await handleDocsResolve(ctx, req, res);
+      return;
+    }
+    if (pathname === routes.assetsList && method === "GET") {
+      await handleAssetsList(ctx, res);
+      return;
+    }
+    if (pathname === routes.assetsRead && method === "GET") {
+      await handleAssetsRead(ctx, res, url);
+      return;
+    }
+    if (pathname === routes.assetsCreate && method === "POST") {
+      await handleAssetsCreate(ctx, req, res);
       return;
     }
     if (pathname === routes.events && method === "GET") {

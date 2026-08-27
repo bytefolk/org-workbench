@@ -93,6 +93,28 @@ export interface AssetRecord {
   docRef?: DocRef;
 }
 
+/**
+ * Asset-layer foundation surface (#36 S1, DS-36-001 rev-1 §5). Strictly
+ * additive over the #35 S4 frozen pieces: `doc` assets stay produced
+ * exclusively by document creation, so the create entrypoint only admits the
+ * non-document kinds; creation responses reuse `asset-record.v1` verbatim.
+ */
+export const ASSETS_LIST_SCHEMA_VERSION = "assets-list.v1" as const;
+
+export type AssetCreateKind = Exclude<AssetKind, "doc">;
+
+export interface AssetsCreateRequest {
+  kind: AssetCreateKind;
+  title: string;
+  sourceRef?: AssetSourceRef;
+}
+
+export interface AssetsListResponse {
+  schemaVersion: typeof ASSETS_LIST_SCHEMA_VERSION;
+  /** Deterministic: rebuilt from the landed records, sorted by createdAt then assetId. */
+  assets: AssetRecord[];
+}
+
 export interface DocsCreateRequest {
   positionId: string;
   path: string;

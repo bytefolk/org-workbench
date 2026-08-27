@@ -18,6 +18,11 @@ const path = require("node:path");
 const { rendererEntryPath } = require("./runtime-paths.cjs");
 const { validateRestoreRequest } = require("./org-ipc.cjs");
 const {
+  validateAssetsCreateRequest,
+  validateAssetsListRequest,
+  validateAssetsReadRequest,
+} = require("./assets-ipc.cjs");
+const {
   validateDocsCreateRequest,
   validateDocsListRequest,
   validateDocsReadRequest,
@@ -321,6 +326,25 @@ ipcMain.handle("owb:docs:resolve", async (_event, request) => {
   const validated = validateDocsResolveRequest(request);
   if (!validated.ok) return validated.response;
   return apiRequest("/docs/resolve", { method: "POST", body: validated.request });
+});
+
+// Asset-layer foundation (#36 S1): whitelisted, enumerated.
+ipcMain.handle("owb:assets:list", async () => {
+  const validated = validateAssetsListRequest();
+  if (!validated.ok) return validated.response;
+  return apiRequest(validated.pathname);
+});
+
+ipcMain.handle("owb:assets:read", async (_event, assetId) => {
+  const validated = validateAssetsReadRequest(assetId);
+  if (!validated.ok) return validated.response;
+  return apiRequest(validated.pathname);
+});
+
+ipcMain.handle("owb:assets:create", async (_event, request) => {
+  const validated = validateAssetsCreateRequest(request);
+  if (!validated.ok) return validated.response;
+  return apiRequest("/assets/create", { method: "POST", body: validated.request });
 });
 
 ipcMain.handle("owb:turn:create", async (_event, request) => {
