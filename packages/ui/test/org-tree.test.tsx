@@ -81,7 +81,10 @@ describe("OrgTree (D1 spec §2, frozen org-tree.v1)", () => {
     expect(screen.queryByText("repo-owner")).not.toBeInTheDocument();
   });
 
-  it("renders human display names and avatar initials from position cards", () => {
+  // #73: the row's identity block is 状态灯 + 文件夹图标 + 名称/id（设计稿
+  // .tr-led/.tr-folder/.nm）。The circular initial avatar was retired with the
+  // Control Plane v2 layout; avatarColors now tints the folder icon instead.
+  it("renders human display names, ids and the folder/status-light identity block", () => {
     const { container } = render(
       <OrgTree
         snapshot={SNAPSHOT}
@@ -93,17 +96,26 @@ describe("OrgTree (D1 spec §2, frozen org-tree.v1)", () => {
     expect(screen.getByText("issue-researcher")).toBeInTheDocument();
 
     const row = screen.getByText("issue-researcher").closest('[role="treeitem"]')!;
-    const avatar = row.querySelector(".ui-org-tree__avatar")!;
-    expect(avatar.textContent).toBe("议");
-    expect((avatar as HTMLElement).style.background).toContain("rgb(201, 106, 18)");
+    const icon = row.querySelector<HTMLElement>(".ui-org-tree__icon")!;
+    expect(icon.style.color).toContain("rgb(201, 106, 18)");
 
-    // Positions without a card name keep the id label and get a hue from the id.
+    // Idle rows carry a non-running status light; no live run was declared.
+    const led = row.querySelector(".ui-org-tree__led")!;
+    expect(led).toBeTruthy();
+    expect(led.className).not.toContain("is-running");
+
+    // Positions without a declared color keep the default icon tint.
     const ownerRow = screen.getByText("repo-owner").closest('[role="treeitem"]')!;
-    const ownerAvatar = ownerRow.querySelector(".ui-org-tree__avatar")!;
-    expect(ownerAvatar.textContent).toBe("R");
-    // jsdom serializes the deterministic hsl hue as rgb.
-    expect((ownerAvatar as HTMLElement).style.background).toBe("rgb(149, 37, 177)");
+    expect(ownerRow.querySelector<HTMLElement>(".ui-org-tree__icon")!.style.color).toBe("");
     expect(container.querySelector('[role="treeitem"] .ui-org-tree__name')).toBeTruthy();
+  });
+
+  it("breathes the status light only for positions with a live run (#73)", () => {
+    render(<OrgTree snapshot={SNAPSHOT} runningIds={new Set(["issue-researcher"])} />);
+    const running = screen.getByText("issue-researcher").closest('[role="treeitem"]')!;
+    expect(running.querySelector(".ui-org-tree__led")!.className).toContain("is-running");
+    const idle = screen.getByText("release-engineer").closest('[role="treeitem"]')!;
+    expect(idle.querySelector(".ui-org-tree__led")!.className).not.toContain("is-running");
   });
 
   it("renders the empty state when the tree has no positions", () => {

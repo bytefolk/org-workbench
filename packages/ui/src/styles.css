@@ -3,11 +3,13 @@
 
 /* ---------- OrgTree ---------- */
 
+/* 通栏树（设计稿 .tree: padding 6px 0 12px）：横向不留内边距，行的缩进由
+   .ui-org-tree__row 的 --d padding 负责，把宽度留给岗位名。 */
 .ui-org-tree {
   position: relative;
   display: flex;
   flex-direction: column;
-  padding: var(--ui-space-2, 8px);
+  padding: 6px 0 12px;
   gap: var(--ui-space-1, 4px);
   outline: none;
   overflow: auto;
@@ -24,18 +26,32 @@
 }
 
 .ui-org-tree__row {
+  --d: 0;
+  position: relative;
   display: flex;
   align-items: center;
-  gap: 4px;
-  min-height: 38px;
+  gap: 6px;
+  min-height: 30px;
+  /* 扁平行 + 深度缩进（设计稿/spec §2① 的 --d 契约）：行宽恒定不随层级压缩，
+     缩进只走 padding，连接线由 .ui-org-tree__conn 绝对定位绘制。 */
+  padding-left: calc(10px + var(--d) * 20px);
   padding-right: var(--ui-space-2, 8px);
-  border-radius: var(--ui-radius-md, 10px);
+  border-radius: 7px;
   cursor: pointer;
   color: var(--ui-foreground);
+  user-select: none;
+  font-size: 12.5px;
+  transition: background var(--owb-duration-fast, 120ms) var(--owb-ease-out, ease);
 }
 
 .ui-org-tree__row:hover {
-  background: var(--ui-surface-inset);
+  background: color-mix(in srgb, var(--ui-surface) 60%, transparent);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ui-org-tree__row {
+    transition: none;
+  }
 }
 
 .ui-org-tree__row:focus-visible {
@@ -45,7 +61,38 @@
 
 .ui-org-tree__row.is-selected {
   background: var(--ui-primary-soft);
-  box-shadow: inset 3px 0 0 var(--ui-primary);
+}
+
+.ui-org-tree__row.is-selected .ui-org-tree__name {
+  color: var(--ui-primary);
+  font-weight: 700;
+}
+
+/* 状态灯（设计稿 .tr-led）：岗位即端点的第一语言。诚实映射——
+ * running 来自在途回合，其余为 idle；离线态仅用于恢复区归档岗位。 */
+.ui-org-tree__led {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--ui-success);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--ui-success) 18%, transparent);
+}
+
+.ui-org-tree__led.is-running {
+  background: var(--ui-ai);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--ui-ai) 20%, transparent);
+  animation: ui-org-led-pulse 1.6s var(--owb-ease-out, ease) infinite;
+}
+
+@keyframes ui-org-led-pulse {
+  50% { opacity: 0.45; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ui-org-tree__led.is-running {
+    animation: none;
+  }
 }
 
 .ui-org-tree__row.is-draggable {
@@ -101,8 +148,8 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 20px;
-  height: 20px;
+  width: 16px;
+  height: 22px;
   flex: none;
   border: none;
   background: none;
@@ -124,118 +171,119 @@
   outline: 2px solid var(--ui-focus, Highlight);
 }
 
+/* 无子节点行的占位，宽度须与 toggle 一致，保证同级名称左缘对齐。 */
 .ui-org-tree__spacer {
-  width: 14px;
+  width: 16px;
   flex: none;
 }
 
+/* 设计稿 .tr-folder：文件夹图标在所有行都出现（"文件树即组织架构"），
+   企业根用 --ui-primary 描边区分。 */
 .ui-org-tree__icon {
-  display: inline-flex;
+  display: grid;
+  place-items: center;
   flex: none;
-  color: var(--ui-foreground-muted);
+  color: var(--ui-foreground-subtle);
 }
 
-.ui-org-tree__row:not(.ui-org-tree__row--enterprise) .ui-org-tree__icon {
-  display: none;
+.ui-org-tree__row--enterprise .ui-org-tree__icon {
+  color: var(--ui-primary);
 }
 
-.ui-org-tree__avatar {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  flex: none;
-  width: 20px;
-  height: 20px;
-  border-radius: 50%;
-  color: #fff;
-  font-size: 11px;
-  font-weight: 600;
-  line-height: 1;
-}
-
+/* 单行名称 + 内联 id（设计稿 .nm / .nm .id）：id 是 .nm 文本流内的内联
+   span，整串作为一个字符串省略号截断——不能做成 flex 兄弟节点，否则
+   flex:none 的 id 会把名字挤没。 */
 .ui-org-tree__label {
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
   flex: 1;
   min-width: 0;
-  font-size: var(--ui-text-sm, 13px);
+  overflow: hidden;
+  font-size: 12.5px;
   line-height: 1.25;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .ui-org-tree__name {
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-  font-weight: 600;
+  font-weight: 500;
 }
 
 .ui-org-tree__id {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: 11px;
-  color: var(--ui-foreground-muted);
+  margin-left: 6px;
+  font-family: var(--ui-font-mono, monospace);
+  font-size: 10.5px;
+  font-weight: 500;
+  color: var(--ui-foreground-subtle);
 }
 
+/* 微型预算条（设计稿 .tr-budget）：42×6px，三态取色。 */
 .ui-org-tree__budget {
   flex: none;
+  width: 42px;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--ui-surface-inset);
+  overflow: hidden;
+  opacity: 0.85;
 }
 
-/* #32 AC-004: hover "+" recruit-subordinate entry; revealed on row hover/focus. */
-.ui-org-tree__add {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
+.ui-org-tree__budget > i {
+  display: block;
+  height: 100%;
+  border-radius: 3px;
+  background: var(--ui-primary);
+}
+
+.ui-org-tree__budget.is-warning > i { background: var(--ui-warning); }
+.ui-org-tree__budget.is-over > i { background: var(--ui-danger); }
+
+/* hover 浮出动作组（设计稿 .row-actions） */
+.ui-org-tree__actions {
   flex: none;
-  width: 18px;
-  height: 18px;
-  border: none;
-  border-radius: var(--ui-radius-sm, 6px);
-  background: transparent;
-  color: var(--ui-foreground-muted);
-  cursor: pointer;
+  display: flex;
+  gap: 2px;
   opacity: 0;
-  transition: opacity var(--ui-duration-fast, 120ms) var(--ui-ease, ease);
+  transition: opacity var(--owb-duration-fast, 120ms) var(--owb-ease-out, ease);
 }
 
-.ui-org-tree__row:hover .ui-org-tree__add,
-.ui-org-tree__add:focus-visible {
+.ui-org-tree__row:hover .ui-org-tree__actions,
+.ui-org-tree__actions:focus-within {
   opacity: 1;
 }
 
-.ui-org-tree__add:hover {
-  background: var(--ui-surface-inset);
-  color: var(--ui-foreground);
+@media (prefers-reduced-motion: reduce) {
+  .ui-org-tree__actions {
+    transition: none;
+  }
 }
 
-/* #53 DS-34-001 §1.3/§7: hover group-chat entry; same reveal rhythm as the
-   hire entry, single token surface only. */
+/* #32 AC-004 招聘下属 / #53 发起群聊：两个入口共用 22px 方形按钮（设计稿
+   .row-actions button），显隐由父级 .ui-org-tree__actions 统一控制。 */
+.ui-org-tree__add,
 .ui-org-tree__group {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   flex: none;
-  width: 18px;
-  height: 18px;
+  width: 22px;
+  height: 22px;
   border: none;
-  border-radius: var(--ui-radius-sm, 6px);
+  border-radius: 6px;
   background: transparent;
-  color: var(--ui-foreground-muted);
+  color: var(--ui-foreground-subtle);
   cursor: pointer;
-  opacity: 0;
-  transition: opacity var(--ui-duration-fast, 120ms) var(--ui-ease, ease);
+  padding: 0;
 }
 
-.ui-org-tree__row:hover .ui-org-tree__group,
-.ui-org-tree__group:focus-visible {
-  opacity: 1;
-}
-
+.ui-org-tree__add:hover,
 .ui-org-tree__group:hover {
   background: var(--ui-surface-inset);
   color: var(--ui-foreground);
+}
+
+.ui-org-tree__add:focus-visible,
+.ui-org-tree__group:focus-visible {
+  outline: 2px solid var(--ui-focus, Highlight);
+  outline-offset: 1px;
 }
 
 .ui-org-tree--empty {
@@ -251,17 +299,63 @@
   font-weight: 600;
 }
 
-/* Reporting connection lines (qa-8, 胡总强调项): nested children containers
- * carry a vertical border aligned under the parent toggle center
- * (margin-left 18px = 8px base padding + half of the 20px toggle), so the
- * tree reads as an org chart, not a flat list. --ui-tree-line token decided at D2. */
-.ui-org-tree__children {
-  display: flex;
-  flex-direction: column;
-  gap: var(--ui-space-1, 4px);
-  margin-left: 18px;
-  padding-left: var(--ui-space-2, 8px);
-  border-left: 1px solid var(--ui-border-strong);
+/* Reporting connection lines = guide rails (#73 signature move ①，spec §2①
+ * 的 DOM 契约): each row carries an absolutely positioned .conn drawing a
+ * vertical trunk plus a horizontal branch stub at its own depth, so nesting
+ * never narrows the row (the previous nested-container approach compounded
+ * ~20px of lost width per level and starved the label).
+ * Selecting a position lights its whole ancestor chain lavender — `is-linked`
+ * is applied by OrgTree from the selected id's parent chain, never CSS-only.
+ * Last siblings stop the trunk at the branch midpoint (`is-last`). */
+.ui-org-tree__conn {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: calc(10px + (var(--d) - 1) * 20px + 4px);
+  width: 18px;
+  pointer-events: none;
+}
+
+.ui-org-tree__conn::before,
+.ui-org-tree__conn::after {
+  content: "";
+  position: absolute;
+  background: var(--ui-border-strong);
+  transition: background var(--owb-duration-mid, 160ms) var(--owb-ease-out, ease);
+}
+
+/* 纵向主干 */
+.ui-org-tree__conn::before {
+  left: 8px;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+}
+
+/* 横向支线 */
+.ui-org-tree__conn::after {
+  left: 8px;
+  top: 50%;
+  width: 9px;
+  height: 1px;
+}
+
+.ui-org-tree__row.is-last .ui-org-tree__conn::before {
+  bottom: 50%;
+}
+
+.ui-org-tree__row:hover .ui-org-tree__conn::before,
+.ui-org-tree__row:hover .ui-org-tree__conn::after,
+.ui-org-tree__row.is-linked .ui-org-tree__conn::before,
+.ui-org-tree__row.is-linked .ui-org-tree__conn::after {
+  background: var(--ui-primary);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ui-org-tree__conn::before,
+  .ui-org-tree__conn::after {
+    transition: none;
+  }
 }
 
 .ui-org-tree__hire-placeholder {
@@ -300,28 +394,30 @@
   white-space: nowrap;
 }
 
+/* 双轨仪表（设计稿 .budget-lanes/.budget-lane）：58px 标签 | 1fr 轨道 | 值 */
 .ui-org-budget__lanes {
-  display: flex;
-  flex-direction: column;
-  gap: var(--ui-space-2, 8px);
+  display: grid;
+  gap: 9px;
 }
 
 .ui-org-budget__lane {
-  display: flex;
+  display: grid;
+  grid-template-columns: 58px 1fr auto;
   align-items: center;
-  gap: var(--ui-space-2, 8px);
+  gap: 9px;
   min-width: 0;
 }
 
 .ui-org-budget.is-compact .ui-org-budget__lane {
+  display: flex;
   gap: 0;
 }
 
 .ui-org-budget__lane-label {
   flex: none;
-  width: 42px;
-  font-size: var(--ui-text-xs, 12px);
   color: var(--ui-foreground-muted);
+  font-size: 11px;
+  font-weight: 600;
 }
 
 .ui-org-budget.is-compact .ui-org-budget__lane-label {
@@ -329,29 +425,42 @@
 }
 
 .ui-org-budget__track {
-  flex: 1;
+  position: relative;
   min-width: 0;
-  height: 8px;
+  height: 9px;
   background: var(--ui-surface-inset);
-  border-radius: var(--ui-radius-full, 9999px);
+  border-radius: 5px;
   overflow: hidden;
+}
+
+.ui-org-budget.is-compact .ui-org-budget__track {
+  flex: 1;
+  height: 8px;
 }
 
 .ui-org-budget__fill {
   display: block;
   height: 100%;
-  border-radius: var(--ui-radius-full, 9999px);
-  transition: width var(--ui-duration-normal, 180ms) var(--ui-ease, ease);
+  border-radius: 5px;
+  background: var(--ui-primary);
+  transition: width var(--owb-duration-mid, 160ms) var(--owb-ease-out, ease);
 }
 
-/* declaration phase: success fill (state matrix §5 正常岗位) */
+@media (prefers-reduced-motion: reduce) {
+  .ui-org-budget__fill {
+    transition: none;
+  }
+}
+
+/* declaration phase：占位轨道，不谎报百分比（双阶段契约） */
 .ui-org-budget__track.is-declared .ui-org-budget__fill {
-  background: var(--ui-success);
+  background: var(--ui-primary);
+  opacity: 0.32;
 }
 
-/* consumption phase: three-tier scale */
+/* consumption phase：三档色阶 */
 .ui-org-budget__track.is-ok .ui-org-budget__fill {
-  background: var(--ui-success);
+  background: var(--ui-primary);
 }
 
 .ui-org-budget__track.is-warning .ui-org-budget__fill {
@@ -364,9 +473,16 @@
 
 .ui-org-budget__value {
   flex: none;
-  font-family: var(--ui-font-mono, monospace);
-  font-size: var(--ui-text-xs, 12px);
   color: var(--ui-foreground-muted);
+  font-family: var(--ui-font-mono, monospace);
+  font-size: 10.5px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.ui-org-budget__value b {
+  color: var(--ui-foreground);
+  font-weight: 600;
 }
 
 .ui-org-budget.is-compact .ui-org-budget__value {
@@ -375,8 +491,9 @@
 
 /* ---------- PositionCard ---------- */
 
+/* 设计稿 .panel 没有宽度上限：卡片填满左栏，否则宽窗下右侧留一条空白。 */
 .ui-org-position-card {
-  max-width: 480px;
+  width: 100%;
 }
 
 .ui-org-position-card__mode {

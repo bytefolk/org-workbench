@@ -1,8 +1,7 @@
 import { Building2, ChevronRight, Folder, FolderOpen, Plus, UsersRound } from "lucide-react";
-import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type DragEvent, type KeyboardEvent, type ReactNode } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type DragEvent, type KeyboardEvent, type ReactNode } from "react";
 import { cn } from "@fullstack-ai-infra/ui";
-import { BudgetBar } from "./budget-bar";
-import type { OrgTreeNodeV1, OrgTreeSnapshot } from "./types";
+import { capsText, primaryCap, type OrgTreeNodeV1, type OrgTreeSnapshot } from "./types";
 
 /** Same-level insertion produced by an edge drop or ⌘-arrow reorder
  * (#32 §1). `order` is the final ordered child-id list of `parentId` with
@@ -25,6 +24,12 @@ export interface OrgTreeProps {
   /** Avatar background colors keyed by position id (e.g. metadata.color);
    * positions without one get a deterministic hue from their id. */
   avatarColors?: Record<string, string>;
+  /** Position ids with a turn in flight (SSE run stream) — the row's status
+   * light breathes AI purple. Observed state only, never inferred. */
+  runningIds?: ReadonlySet<string>;
+  /** Per-task consumption ratios keyed by position id; absent = declaration
+   * phase, and the micro budget bar degrades to a placeholder track. */
+  budgetRatios?: Record<string, number | null>;
   selectedId?: string | null;
   onSelect?: (id: string) => void;
   onExpand?: (id: string, expanded: boolean) => void;
@@ -49,11 +54,22 @@ export interface OrgTreeNodeProps {
   node: OrgTreeNodeV1;
   depth: number;
   selected: boolean;
+  /** On the selected position's ancestor chain (#73 signature move ①): lights
+   * this row's guide rail segment, recursively up to the root. */
+  linked: boolean;
+  /** Last sibling at this depth: the vertical trunk stops at the branch
+   * midpoint instead of running through to the next row (设计稿 .is-last). */
+  isLast?: boolean;
   expanded: boolean;
   hasChildren: boolean;
   tabIndex: number;
   displayName?: string;
   avatarColor?: string;
+  /** Live turn in flight for this position (from the SSE run stream): the
+   * status light switches to the AI-purple breathing state. Never inferred. */
+  running?: boolean;
+  /** Per-task consumption ratio (0..1+); undefined/null = declaration phase. */
+  budgetRatio?: number | null;
   onSelect: () => void;
   onToggle: () => void;
   onFocus: () => void;
@@ -75,11 +91,15 @@ export function OrgTreeNode({
   node,
   depth,
   selected,
+  linked,
+  isLast = false,
   expanded,
   hasChildren,
   tabIndex,
   displayName,
   avatarColor,
+  running = false,
+  budgetRatio,
   onSelect,
   onToggle,
   onFocus,
@@ -105,11 +125,13 @@ export function OrgTreeNode({
       className={cn(
         "ui-org-tree__row",
         selected && "is-selected",
+        linked && "is-linked",
+        isLast && "is-last",
         draggable && "is-draggable",
         dropActive && "is-drop-target",
         dropDenied && "is-drop-denied",
       )}
-      style={{ paddingLeft: "var(--ui-space-2, 8px)" }}
+      style={{ "--d": depth } as CSSProperties}
       onClick={(event) => {
         if ((event.target as HTMLElement).closest("[data-ui-org-toggle]")) {
           onToggle();
@@ -124,6 +146,7 @@ export function OrgTreeNode({
       onDragOver={onDragOver}
       onDrop={onDrop}
     >
+      {depth > 0 ? <span className="ui-org-tree__conn" aria-hidden="true" /> : null}
       {hasChildren ? (
         <button
           type="button"
@@ -140,15 +163,18 @@ export function OrgTreeNode({
       ) : (
         <span className="ui-org-tree__spacer" aria-hidden="true" />
       )}
-      <span className="ui-org-tree__icon" aria-hidden="true">
-        {expanded ? <FolderOpen size={15} /> : <Folder size={15} />}
-      </span>
       <span
-        className="ui-org-tree__avatar"
+        className={cn("ui-org-tree__led", running && "is-running")}
+        role="img"
+        aria-label={running ? "回合运行中" : "岗位就绪"}
+        title={running ? "回合运行中" : "岗位就绪"}
+      />
+      <span
+        className="ui-org-tree__icon"
         aria-hidden="true"
-        style={{ background: avatarColor ?? `hsl(${hueForId(node.id)}, 65%, 42%)` }}
+        style={avatarColor ? { color: avatarColor } : undefined}
       >
-        {(displayName ?? node.id).trim().charAt(0).toUpperCase()}
+        {expanded ? <FolderOpen size={14} /> : <Folder size={14} />}
       </span>
       <span className="ui-org-tree__label" title={node.id}>
         {displayName && displayName !== node.id ? (
@@ -157,41 +183,71 @@ export function OrgTreeNode({
             <span className="ui-org-tree__id">{node.id}</span>
           </>
         ) : (
-          node.id
+          <span className="ui-org-tree__name">{node.id}</span>
         )}
       </span>
-      <BudgetBar
-        className="ui-org-tree__budget"
-        format="compact"
-        declared={{ taskLimit: node.budget.perTask, dailyLimit: node.budget.perDay }}
-      />
-      {onGroupEntry ? (
-        <button
-          type="button"
-          className="ui-org-tree__group"
-          aria-label={`与 ${displayName ?? node.id} 发起群聊`}
-          onClick={(event) => {
-            event.stopPropagation();
-            onGroupEntry();
-          }}
-        >
-          <UsersRound aria-hidden="true" size={12} />
-        </button>
-      ) : null}
-      {onHireEntry ? (
-        <button
-          type="button"
-          className="ui-org-tree__add"
-          aria-label={`在 ${displayName ?? node.id} 下招聘下属`}
-          onClick={(event) => {
-            event.stopPropagation();
-            onHireEntry();
-          }}
-        >
-          <Plus aria-hidden="true" size={12} />
-        </button>
+      <TreeBudgetSpark budget={node.budget} consumption={budgetRatio} />
+      {onGroupEntry || onHireEntry ? (
+        <span className="ui-org-tree__actions">
+          {onGroupEntry ? (
+            <button
+              type="button"
+              className="ui-org-tree__group"
+              aria-label={`与 ${displayName ?? node.id} 发起群聊`}
+              onClick={(event) => {
+                event.stopPropagation();
+                onGroupEntry();
+              }}
+            >
+              <UsersRound aria-hidden="true" size={13} />
+            </button>
+          ) : null}
+          {onHireEntry ? (
+            <button
+              type="button"
+              className="ui-org-tree__add"
+              aria-label={`在 ${displayName ?? node.id} 下招聘下属`}
+              onClick={(event) => {
+                event.stopPropagation();
+                onHireEntry();
+              }}
+            >
+              <Plus aria-hidden="true" size={13} />
+            </button>
+          ) : null}
+        </span>
       ) : null}
     </div>
+  );
+}
+
+/** 42×6px 微型预算条（设计稿 .tr-budget）。声明期（consumption 未知）显示
+ * 满轨占位，不谎报百分比；有真实用量时按 <80/80-100/>100 三态取色。 */
+function TreeBudgetSpark({
+  budget,
+  consumption,
+}: {
+  budget: OrgTreeNodeV1["budget"];
+  consumption?: number | null;
+}) {
+  const cap = primaryCap(budget.perTask);
+  const declaredOnly = consumption === null || consumption === undefined || cap === null;
+  const ratio = declaredOnly ? null : consumption;
+  const tier = ratio === null ? "" : ratio > 1 ? "is-over" : ratio >= 0.8 ? "is-warning" : "";
+  // 声明期（还没有真实用量事实）只画空轨道：画成满条会被读成「已用 100%」。
+  const width = ratio === null ? "0%" : `${Math.min(Math.max(Math.round(ratio * 100), 0), 100)}%`;
+  return (
+    <span
+      className={cn("ui-org-tree__budget", tier)}
+      role="meter"
+      aria-label={declaredOnly ? "预算声明" : "单任务预算消耗"}
+      aria-valuemin={0}
+      aria-valuemax={100}
+      aria-valuenow={ratio === null ? undefined : Math.round(ratio * 100)}
+      title={declaredOnly ? `单任务上限 ${capsText(budget.perTask)}` : `单任务已用 ${Math.round((ratio ?? 0) * 100)}%`}
+    >
+      <i style={{ width }} />
+    </span>
   );
 }
 
@@ -303,6 +359,8 @@ export function OrgTree({
   versionStamp,
   displayNames,
   avatarColors,
+  runningIds,
+  budgetRatios,
   selectedId,
   onSelect,
   onExpand,
@@ -329,6 +387,32 @@ export function OrgTree({
     for (const node of topLevel) visit(node);
     return ids;
   }, [topLevel, useEnterpriseRoot]);
+
+  /** id → parentId (null = top level), one pass over the whole tree. */
+  const parentOf = useMemo(() => {
+    const map = new Map<string, string | null>();
+    const visit = (node: OrgTreeNodeV1, parentId: string | null): void => {
+      map.set(node.id, parentId);
+      for (const child of node.children) visit(child, node.id);
+    };
+    for (const node of topLevel) visit(node, null);
+    return map;
+  }, [topLevel]);
+
+  /** Selected position's ancestor chain, inclusive (#73 signature move ①:
+   * 连接线=汇报线，选中即递推点亮祖先链路). Walks parentOf up to the root,
+   * then includes the enterprise pseudo-row so the top trunk lights too. */
+  const linkedIds = useMemo(() => {
+    const ids = new Set<string>();
+    if (!selectedId) return ids;
+    let current: string | null | undefined = selectedId;
+    while (current) {
+      ids.add(current);
+      current = parentOf.get(current) ?? null;
+    }
+    if (useEnterpriseRoot) ids.add(ENTERPRISE_ID);
+    return ids;
+  }, [selectedId, parentOf, useEnterpriseRoot]);
 
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set(allParentIds));
   const [focusedId, setFocusedId] = useState<string | null>(selectedId ?? null);
@@ -539,7 +623,7 @@ export function OrgTree({
     setDeniedId(null);
   };
 
-  const renderPosition = (node: OrgTreeNodeV1, depth: number): ReactNode => {
+  const renderPosition = (node: OrgTreeNodeV1, depth: number, isLast: boolean): ReactNode => {
     const hasChildren = node.children.length > 0;
     const isExpanded = hasChildren && expanded.has(node.id);
     const hint = dropHint?.anchorId === node.id ? dropHint : null;
@@ -550,11 +634,15 @@ export function OrgTree({
           node={node}
           depth={depth}
           selected={selectedId === node.id}
+          linked={linkedIds.has(node.id)}
+          isLast={isLast}
           expanded={isExpanded}
           hasChildren={hasChildren}
           tabIndex={focusedId === node.id ? 0 : -1}
           displayName={displayNames?.[node.id]}
           avatarColor={avatarColors?.[node.id]}
+          running={runningIds?.has(node.id) === true}
+          budgetRatio={budgetRatios?.[node.id] ?? null}
           onSelect={() => onSelect?.(node.id)}
           onToggle={() => toggleNode(node.id)}
           onFocus={() => setFocusedId(node.id)}
@@ -612,11 +700,11 @@ export function OrgTree({
           onGroupEntry={onGroupEntry ? () => onGroupEntry(node.id) : undefined}
         />
         {hint?.zone === "after" ? <div className="ui-org-tree__drop-line" aria-hidden="true" /> : null}
-        {isExpanded && hasChildren ? (
-          <div className="ui-org-tree__children" role="group">
-            {node.children.map((child) => renderPosition(child, depth + 1))}
-          </div>
-        ) : null}
+        {isExpanded && hasChildren
+          ? node.children.map((child, index) =>
+              renderPosition(child, depth + 1, index === node.children.length - 1),
+            )
+          : null}
       </Fragment>
     );
   };
@@ -645,7 +733,7 @@ export function OrgTree({
               "ui-org-tree__row--enterprise",
               dropHint?.anchorId === null && dropHint.zone === "body" && "is-drop-target",
             )}
-            style={{ paddingLeft: "var(--ui-space-2, 8px)" }}
+            style={{ "--d": 0 } as CSSProperties}
             onClick={() => {
               if (topLevel.length > 0) toggleNode(ENTERPRISE_ID);
             }}
@@ -677,21 +765,27 @@ export function OrgTree({
             >
               <ChevronRight aria-hidden="true" size={14} />
             </button>
+            <span
+              className={cn("ui-org-tree__led", runningIds && runningIds.size > 0 && "is-running")}
+              role="img"
+              aria-label={runningIds && runningIds.size > 0 ? "组织内有回合运行中" : "组织就绪"}
+              title={runningIds && runningIds.size > 0 ? "组织内有回合运行中" : "组织就绪"}
+            />
             <span className="ui-org-tree__icon" aria-hidden="true">
-              <Building2 size={15} />
+              <Building2 size={14} />
             </span>
             <span className="ui-org-tree__label" title={enterpriseName}>
-              {enterpriseName}
+              <span className="ui-org-tree__name">{enterpriseName}</span>
             </span>
           </div>
-          {enterpriseExpanded ? (
-            <div className="ui-org-tree__children" role="group">
-              {topLevel.map((node) => renderPosition(node, 1))}
-            </div>
-          ) : null}
+          {enterpriseExpanded
+            ? topLevel.map((node, index) =>
+                renderPosition(node, 1, index === topLevel.length - 1),
+              )
+            : null}
         </Fragment>
       ) : (
-        topLevel.map((node) => renderPosition(node, 0))
+        topLevel.map((node, index) => renderPosition(node, 0, index === topLevel.length - 1))
       )}
       {toast !== null ? (
         <div className="ui-org-tree__toast" role="status">

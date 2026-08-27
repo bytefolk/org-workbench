@@ -6,9 +6,15 @@ import type { OwbBridge } from "../src/owb";
 import type { GroupConversation, TurnRecord as ApiTurnRecord } from "@org-workbench/shared";
 import type { TurnEngineAvailability, TurnRecord } from "../src/turns/types";
 
-/** #61 bubble chat structure: operator right bubble / employee left bubble
- * (avatar + name + engine label) / typing / embedded approval / collapsible
- * evidence (audit red line) / group member identity. Contract layer untouched. */
+/** Turn rendering structure.
+ *
+ * #73 Control Plane v2 replaced the position panel's #61 bubble layout with
+ * the evidence timeline (state dot + `.owb-tc` console card): head carries
+ * position + engine + terminal state, the dispatched task and the engine
+ * output both stay visible, evidence chips keep the audit red line, and the
+ * approval card is embedded in the same card. The group-chat timeline still
+ * renders #61 bubbles, so those assertions are unchanged.
+ * Contract layer untouched in both cases. */
 
 function turn(overrides: Partial<TurnRecord>): TurnRecord {
   return {
@@ -24,22 +30,39 @@ function turn(overrides: Partial<TurnRecord>): TurnRecord {
   };
 }
 
-describe("TurnThread bubble structure (#61)", () => {
-  it("renders the operator message as a right bubble and the employee reply as a left bubble with avatar + name + engine label", () => {
+describe("TurnThread evidence timeline (#73)", () => {
+  it("renders one timeline card per turn carrying position, engine, the dispatched task and the output", () => {
     const { container } = render(<TurnThread turns={[turn({})]} />);
-    const operator = container.querySelector(".owb-bubble-row--operator .owb-bubble--operator");
-    const employeeRow = container.querySelector(".owb-bubble-row--employee");
-    const employee = employeeRow?.querySelector(".owb-bubble--employee");
-    expect(operator).not.toBeNull();
-    expect(employee).not.toBeNull();
-    expect(operator?.textContent).toContain("检查发布门禁");
-    // operator avatar sits beside the right bubble
-    expect(container.querySelector(".owb-bubble__avatar--operator")).not.toBeNull();
-    // employee avatar sits beside the employee bubble inside the row
-    expect(employeeRow?.querySelector(".owb-bubble__avatar")).not.toBeNull();
-    // 姓名/引擎标签在气泡上方的 meta 行（column 内）
-    expect(employeeRow?.querySelector(".owb-bubble__name")?.textContent).toBe("发布负责人");
-    expect(employeeRow?.textContent).toContain("Qoder");
+    const item = container.querySelector(".owb-turn");
+    const card = item?.querySelector(".owb-tc");
+    expect(item).not.toBeNull();
+    expect(card).not.toBeNull();
+    // 端点身份：岗位名 + 引擎标签在卡头
+    expect(card?.querySelector(".owb-tc-head__who")?.textContent).toBe("发布负责人");
+    expect(card?.querySelector(".owb-tc-head")?.textContent).toContain("Qoder");
+    // 下达任务与引擎输出都必须可见（不因换布局而丢掉任一侧）
+    expect(card?.querySelector(".owb-tc__task")?.textContent).toContain("检查发布门禁");
+    expect(card?.querySelector(".owb-tc__out")?.textContent).toContain("门禁已检查。");
+    // 状态行给出可信终态词，settled 回合不再显示 running
+    const statusline = card?.querySelector(".owb-turn__statusline");
+    expect(statusline?.textContent).toContain("可信终态");
+  });
+
+  it("marks running and indeterminate turns with distinct timeline states", () => {
+    const { container: running } = render(
+      <TurnThread turns={[turn({ id: "run-1", status: "running", output: undefined })]} />,
+    );
+    expect(running.querySelector(".owb-turn")?.className).toContain("is-running");
+    expect(running.querySelector(".owb-tc")?.className).toContain("is-running");
+
+    const { container: unsure } = render(
+      <TurnThread turns={[turn({ id: "ind-1", status: "indeterminate", output: undefined })]} />,
+    );
+    expect(unsure.querySelector(".owb-turn")?.className).toContain("is-indeterminate");
+    // 诚实性：不确定终态不得被升级成成功词
+    const statusline = unsure.querySelector(".owb-turn__statusline");
+    expect(statusline?.textContent).toContain("不确定");
+    expect(statusline?.textContent).not.toContain("可信终态");
   });
 
   it("shows the typing indicator while the employee turn is running", () => {
@@ -49,24 +72,25 @@ describe("TurnThread bubble structure (#61)", () => {
     expect(typing.textContent).toContain("正在等待岗位完成本回合");
   });
 
-  it("keeps evidence auditable: collapsed by default, expanding reveals full mono digests", () => {
+  it("keeps evidence auditable: digest chips shortened by default, expanding reveals full mono values", () => {
     const { container } = render(
-      <TurnThread turns={[turn({ id: "ev-1", envelopeDigest: "sha256:env", evidenceDigest: "sha256:evi" })]} />,
+      <TurnThread turns={[turn({ id: "ev-1", envelopeDigest: "sha256:envelope-full-value", evidenceDigest: "sha256:evidence-full-value" })]} />,
     );
-    const toggle = container.querySelector(".owb-bubble__evidence-toggle") as HTMLButtonElement | null;
+    const toggle = container.querySelector(".owb-ev--button") as HTMLButtonElement | null;
     expect(toggle).not.toBeNull();
     expect(toggle?.getAttribute("aria-expanded")).toBe("false");
-    // Collapsed: full digests not yet in the document, summary carries them.
-    expect(container.querySelector(".owb-turn__evidence")).toBeNull();
-    expect(toggle?.textContent).toContain("sha256:env");
+    // 折叠态：短摘要展示，全值仍可经 title 取到（证据不丢——审计红线）
+    expect(toggle?.getAttribute("title")).toBe("sha256:envelope-full-value");
     fireEvent.click(toggle as HTMLButtonElement);
     expect(toggle?.getAttribute("aria-expanded")).toBe("true");
-    const digests = Array.from(container.querySelectorAll(".owb-turn__evidence dd")).map((dd) => dd.textContent);
-    expect(digests).toContain("sha256:env");
-    expect(digests).toContain("sha256:evi");
+    const chips = Array.from(container.querySelectorAll(".owb-ev kbd")).map((kbd) => kbd.textContent);
+    expect(chips).toContain("sha256:envelope-full-value");
+    expect(chips).toContain("sha256:evidence-full-value");
+    // turn id 始终作为独立印章 chip 存在
+    expect(container.querySelector('.owb-ev[title="ev-1"]')).not.toBeNull();
   });
 
-  it("embeds the approval card inside the employee bubble", () => {
+  it("embeds the approval card inside the timeline console card", () => {
     render(
       <TurnThread
         turns={[
@@ -82,7 +106,7 @@ describe("TurnThread bubble structure (#61)", () => {
       />,
     );
     const card = screen.getByRole("group", { name: "审批请求" });
-    expect(card.closest(".owb-bubble--employee")).not.toBeNull();
+    expect(card.closest(".owb-tc")).not.toBeNull();
     expect(screen.getByRole("button", { name: "批准并继续" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "拒绝" })).toBeInTheDocument();
   });

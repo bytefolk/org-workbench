@@ -1,150 +1,163 @@
 /* antd-skin.css — org-workbench consumer skin over @fullstack-ai-infra/ui.
  *
- * ADR-0002: Ant Design is the shared design language. Semantic roles from the
- * design system (AI affordance, health states) survive as antd palette hues.
- * The layout/pattern layer stays custom (DL5: 布局不是 antd 的强项，不换);
- * theming happens here via --ui-* variables, never ad-hoc in components.
+ * ADR-0002: Ant Design is the shared design language (design-system 0.2.0).
+ * Semantic roles from the design system (AI affordance, health states)
+ * survive as antd palette hues. The layout/pattern layer stays custom
+ * (DL5: 布局不是 antd 的强项，不换); theming happens here via --ui-*
+ * variables, never ad-hoc in components.
  *
- * DS-31-001（#31 质感整改六处方）落点：
- *   处方1 画布两阶（暖白壳层 + 白卡面，sidebar/内容亮度差 ≥2%）；
- *   处方2 强调色一次定死（Linear lavender #5e6ad2；AI 紫保持专属）；
- *   处方3 warm hairline 分层 + 阴影额度收紧（md 仅拖拽预览/dropdown，lg 仅 modal/drawer）；
- *   处方4 动效三档 token（120/150/200ms，ease-out）。
+ * DS-73-001（#73 Control Plane v2，取代 #31 冻结值）落点：
+ *   画布/卡面/描边/文字改用 org-workbench-design-control-plane.html 的暖纸
+ *   色阶（--paper/--card/--ink/--line 系）；单一强调色 lavender #5e6ad2 与
+ *   AI 紫 #722ed1 两条纪律延续不变；圆角对齐 html 稿 6/10/14（+18 扩展档）；
+ *   动效统一为三档 120/160/240ms、ease-out，同时把 packages/ui 消费的
+ *   design-system 原生的 duration/ease 变量一并收敛到同一节奏，
+ *   不再有 --owb-* 和 --ui-* 两套并行动效体系（#73 AC-002 关联发现）。
  * antd cssinjs 侧的同值 token 在 App.tsx ConfigProvider 中同步（colorPrimary、
- * colorBorder、motion 三档、controlHeight）；design-system seed 同步由设计线跟进。
+ * colorBorder、motion 三档、controlHeight）。
  */
 
 :root,
 [data-theme="light"] {
   color-scheme: light;
 
-  /* 处方1 画布两阶：暖白壳层，sidebar 阶，内容卡面白面 */
-  --ui-canvas: #f8f7f5;
-  --ui-canvas-subtle: #f3f1ed;
-  --ui-navigation: #edeae5;
-  --ui-surface: #ffffff;
-  --ui-surface-raised: #ffffff;
-  --ui-surface-inset: #faf9f8;
-  --ui-foreground: rgba(0, 0, 0, 0.88);
-  --ui-foreground-muted: rgba(0, 0, 0, 0.65);
-  --ui-foreground-subtle: rgba(0, 0, 0, 0.45);
+  /* 暖纸画布两阶：canvas 壳层，subtle 用于导轨/侧栏，内容卡面两级亮度 */
+  --ui-canvas: #f4f1e8;
+  --ui-canvas-subtle: #ece8dc;
+  --ui-navigation: #ece8dc;
+  --ui-surface: #fdfbf5;
+  --ui-surface-raised: #fffdf8;
+  --ui-surface-inset: #f2eee3;
+  --ui-foreground: #262722;
+  --ui-foreground-muted: #5a5c52;
+  --ui-foreground-subtle: #85887c;
 
-  /* 处方3 warm hairline：分层靠 1px 描边 + 亮度阶 */
-  --ui-border: #e8e6e2;
-  --ui-border-strong: #bfbfbf;
+  /* warm hairline：分层靠 1px 描边 + 亮度阶 */
+  --ui-border: #dcd7ca;
+  --ui-border-strong: #cbc4b4;
 
-  /* 处方2 单一强调色：Linear lavender 纪律样本，全应用只此一处定值 */
+  /* 单一强调色：Linear lavender 纪律样本，全应用只此一处定值 */
   --ui-primary: #5e6ad2;
-  --ui-primary-hover: #6f7ad8;
+  --ui-primary-hover: #4d59c0;
   --ui-primary-foreground: #ffffff;
-  --ui-primary-soft: #edeffc;
+  --ui-primary-soft: #edeffb;
 
-  /* AI affordance (antd purple-6; semantic role preserved — 处方2 豁免项) */
+  /* AI affordance（保持专属，不参与状态色/强调色纪律） */
   --ui-ai: #722ed1;
   --ui-ai-strong: #531dab;
   --ui-ai-hover: #9254de;
   --ui-ai-foreground: #ffffff;
-  --ui-ai-soft: #f9f0ff;
+  --ui-ai-soft: #f4ecfc;
 
-  /* Health states (antd official semantic colors) */
+  /* Health states（哑光调，对齐 control-plane 设计稿，而非 antd 官方亮色） */
   --ui-info: #5e6ad2;
-  --ui-info-soft: #edeffc;
-  --ui-success: #52c41a;
-  --ui-success-strong: #389e0d;
-  --ui-success-soft: #f6ffed;
-  --ui-warning: #faad14;
-  --ui-warning-strong: #d48806;
-  --ui-warning-soft: #fffbe6;
-  --ui-danger: #ff4d4f;
-  --ui-danger-soft: #fff2f0;
+  --ui-info-soft: #edeffb;
+  --ui-success: #3f7d4e;
+  --ui-success-strong: #2f5f3b;
+  --ui-success-soft: #e8f0e4;
+  --ui-warning: #a86a0a;
+  --ui-warning-strong: #855408;
+  --ui-warning-soft: #faf0dc;
+  --ui-danger: #c04a3e;
+  --ui-danger-strong: #a23a30;
+  --ui-danger-soft: #f9e9e6;
 
   /* Interaction feedback（强调色纪律：焦点/选区随主色） */
-  --ui-overlay: rgba(0, 0, 0, 0.45);
+  --ui-overlay: rgba(38, 39, 34, 0.45);
   --ui-focus: #5e6ad2;
-  --ui-selection: #edeffc;
+  --ui-selection: #edeffb;
 
-  /* Radii aligned with antd borderRadius tokens (4 / 6 / 8 / 12) */
-  --ui-radius-sm: 4px;
-  --ui-radius-md: 6px;
-  --ui-radius-lg: 8px;
-  --ui-radius-xl: 12px;
+  /* Radii：对齐 control-plane 设计稿 6/10/14，扩展档 18 供 modal/drawer 用 */
+  --ui-radius-sm: 6px;
+  --ui-radius-md: 10px;
+  --ui-radius-lg: 14px;
+  --ui-radius-xl: 18px;
 
-  /* 处方3 阴影额度收紧（暖调）：内容卡一律 hairline，不消费 sm；
+  /* 阴影额度收紧（暖调）：内容卡一律 hairline，不消费 sm；
      sm 仅为 DS 组件（rail 活跃项）保留微阴影，md 仅拖拽预览/dropdown，
      lg 仅 modal/drawer。 */
-  --ui-shadow-sm: 0 1px 2px 0 rgba(31, 30, 27, 0.05);
+  --ui-shadow-sm: 0 1px 2px 0 rgba(38, 39, 34, 0.05);
   --ui-shadow-md:
-    0 6px 20px 0 rgba(31, 30, 27, 0.1),
-    0 2px 6px 0 rgba(31, 30, 27, 0.06);
-  --ui-shadow-lg: 0 24px 64px 0 rgba(31, 30, 27, 0.22);
+    0 6px 20px 0 rgba(38, 39, 34, 0.1),
+    0 2px 6px 0 rgba(38, 39, 34, 0.06);
+  --ui-shadow-lg: 0 24px 64px 0 rgba(38, 39, 34, 0.22);
 
-  /* 处方4 动效三档：120ms hover/焦点，150ms 状态切换，200ms 抽屉/面板；
-     全 ease-out，禁 >300ms。antd 侧经 ConfigProvider motion token 同值。 */
+  /* 展示/品牌标题字体（.owb-*__header 等，正文仍走 --ui-font-sans/Inter） */
+  --owb-font-display: "Space Grotesk", -apple-system, BlinkMacSystemFont, "Segoe UI",
+    "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+  --ui-font-mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+
+  /* 动效三档：120ms hover/焦点，160ms 状态切换，240ms 抽屉/面板；全 ease-out，
+     禁 >300ms。design-system 原生 --ui-duration-fast/normal 与 --ui-ease 一并
+     收敛到同一节奏，packages/ui（OrgTree/BudgetBar）不再走独立的两档体系。 */
   --owb-duration-fast: 120ms;
-  --owb-duration-mid: 150ms;
-  --owb-duration-slow: 200ms;
-  --owb-ease-out: cubic-bezier(0.215, 0.61, 0.355, 1);
+  --owb-duration-mid: 160ms;
+  --owb-duration-slow: 240ms;
+  --owb-ease-out: cubic-bezier(0.22, 0.61, 0.36, 1);
+  --ui-duration-fast: 120ms;
+  --ui-duration-normal: 160ms;
+  --ui-ease: cubic-bezier(0.22, 0.61, 0.36, 1);
 }
 
-/* 暗色主题（气泡规格 2026-08-26 §4 设计增量，客户端落 skin）：
- * 暖黑两阶画布；语义名与 light 一致，消费面零迁移。 */
+/* 暗色主题：暖黑两阶画布，对齐 control-plane 设计稿暗色 token；
+ * 语义名与 light 一致，消费面零迁移。 */
 [data-theme="dark"] {
   color-scheme: dark;
 
   /* 画布两阶：暖黑壳层 + 卡面 */
-  --ui-canvas: #171614;
-  --ui-canvas-subtle: #1c1b18;
-  --ui-navigation: #201f1b;
-  --ui-surface: #211f1b;
-  --ui-surface-raised: #262420;
-  --ui-surface-inset: #2a2823;
-  --ui-foreground: rgba(255, 255, 255, 0.85);
-  --ui-foreground-muted: rgba(255, 255, 255, 0.65);
-  --ui-foreground-subtle: rgba(255, 255, 255, 0.45);
+  --ui-canvas: #1b1d19;
+  --ui-canvas-subtle: #20231e;
+  --ui-navigation: #20231e;
+  --ui-surface: #242721;
+  --ui-surface-raised: #292c25;
+  --ui-surface-inset: #262a23;
+  --ui-foreground: #e8e5de;
+  --ui-foreground-muted: #a6a79c;
+  --ui-foreground-subtle: #7e8176;
 
   /* warm hairline 暗阶 */
-  --ui-border: #35322c;
-  --ui-border-strong: #59554d;
+  --ui-border: #33372f;
+  --ui-border-strong: #494d42;
 
   /* 单一强调色：lavender 暗阶提亮 */
-  --ui-primary: #7c86e8;
-  --ui-primary-hover: #8d96ec;
-  --ui-primary-foreground: #ffffff;
-  --ui-primary-soft: #232744;
+  --ui-primary: #8b93e0;
+  --ui-primary-hover: #a3a9ea;
+  --ui-primary-foreground: #14141f;
+  --ui-primary-soft: #2b2f4b;
 
   /* AI affordance 暗阶 */
-  --ui-ai: #9254de;
-  --ui-ai-strong: #b37feb;
-  --ui-ai-hover: #a66ae4;
-  --ui-ai-foreground: #ffffff;
-  --ui-ai-soft: #2a1f3d;
+  --ui-ai: #a588d8;
+  --ui-ai-strong: #b89fe3;
+  --ui-ai-hover: #b39ae0;
+  --ui-ai-foreground: #141018;
+  --ui-ai-soft: #33294a;
 
-  /* Health states（antd dark 官方 + soft 暗阶） */
-  --ui-info: #7c86e8;
-  --ui-info-soft: #232744;
-  --ui-success: #49aa19;
-  --ui-success-strong: #6abe39;
-  --ui-success-soft: #162312;
-  --ui-warning: #d89614;
-  --ui-warning-strong: #e8b339;
-  --ui-warning-soft: #2b2111;
-  --ui-danger: #dc4446;
-  --ui-danger-strong: #e86a6c;
-  --ui-danger-soft: #2c1618;
+  /* Health states（暗阶哑光调，与 light 同一色系） */
+  --ui-info: #8b93e0;
+  --ui-info-soft: #2b2f4b;
+  --ui-success: #84b77c;
+  --ui-success-strong: #a2ce9b;
+  --ui-success-soft: #253526;
+  --ui-warning: #d3a24f;
+  --ui-warning-strong: #e3ba76;
+  --ui-warning-soft: #3a311c;
+  --ui-danger: #d98276;
+  --ui-danger-strong: #e6a599;
+  --ui-danger-soft: #3b2623;
 
   /* Interaction feedback */
   --ui-overlay: rgba(0, 0, 0, 0.65);
-  --ui-focus: #7c86e8;
-  --ui-selection: #232744;
+  --ui-focus: #8b93e0;
+  --ui-selection: #2b2f4b;
 
-  /* Radii 同 light（4/6/8/12） */
-  --ui-radius-sm: 4px;
-  --ui-radius-md: 6px;
-  --ui-radius-lg: 8px;
-  --ui-radius-xl: 12px;
+  /* Radii 同 light（6/10/14/18） */
+  --ui-radius-sm: 6px;
+  --ui-radius-md: 10px;
+  --ui-radius-lg: 14px;
+  --ui-radius-xl: 18px;
 
   /* 阴影额度：暖黑三档同结构 */
-  --ui-shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.4);
+  --ui-shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.3);
   --ui-shadow-md:
     0 6px 20px 0 rgba(0, 0, 0, 0.5),
     0 2px 6px 0 rgba(0, 0, 0, 0.4);
@@ -152,7 +165,26 @@
 
   /* 动效三档同 light */
   --owb-duration-fast: 120ms;
-  --owb-duration-mid: 150ms;
-  --owb-duration-slow: 200ms;
-  --owb-ease-out: cubic-bezier(0.215, 0.61, 0.355, 1);
+  --owb-duration-mid: 160ms;
+  --owb-duration-slow: 240ms;
+  --owb-ease-out: cubic-bezier(0.22, 0.61, 0.36, 1);
+  --ui-duration-fast: 120ms;
+  --ui-duration-normal: 160ms;
+  --ui-ease: cubic-bezier(0.22, 0.61, 0.36, 1);
+}
+
+/* reduced-motion：--owb-* 自成一套归零，不再借上游 tokens.css 的通配兜底
+ * （此前 --owb-duration-* 未被上游归零逻辑覆盖，只是被通配 !important 压住，
+ * 换渲染路径就会失效——#73 AC-003 关联发现，顺手补上）。 */
+@media (prefers-reduced-motion: reduce) {
+  :root,
+  [data-theme] {
+    --owb-duration-fast: 0ms;
+    --owb-duration-mid: 0ms;
+    --owb-duration-slow: 0ms;
+    /* 本文件在上游 tokens.css 之后重定义了 --ui-duration-*，会盖掉上游的
+       归零；这里一并塌成 0，避免 token 值与实际动效表现不一致。 */
+    --ui-duration-fast: 0ms;
+    --ui-duration-normal: 0ms;
+  }
 }

@@ -166,8 +166,8 @@ function emptyReports(): ReportsResponse {
 
 async function selectRepoOwner(): Promise<void> {
   await screen.findByRole("treeitem", { name: /repo-owner/ });
-  fireEvent.click(screen.getByText("repo-owner", { selector: ".ui-org-tree__label, .ui-org-tree__id" }));
-  expect(await screen.findByRole("heading", { name: "@代码库负责人" })).toBeInTheDocument();
+  fireEvent.click(screen.getByText("repo-owner", { selector: ".ui-org-tree__name, .ui-org-tree__id" }));
+  expect(await screen.findByRole("heading", { name: /本地对话 · repo-owner/ })).toBeInTheDocument();
 }
 
 describe("App runtime bridge", () => {
@@ -204,7 +204,7 @@ describe("App runtime bridge", () => {
     expect(await screen.findByText("历史结果")).toBeInTheDocument();
 
     pickSelectOption("选择 Agent Host", "Qoder");
-    fireEvent.change(screen.getByLabelText("交办任务"), { target: { value: "检查下一版发布" } });
+    fireEvent.change(screen.getByLabelText("下达任务"), { target: { value: "检查下一版发布" } });
     fireEvent.click(screen.getByRole("button", { name: "发送任务" }));
 
     await waitFor(() => {
@@ -243,7 +243,7 @@ describe("App runtime bridge", () => {
     await selectRepoOwner();
     pickSelectOption("选择 Agent Host", "Qoder");
     expect(screen.getByText("Qoder 凭据未配置")).toBeInTheDocument();
-    expect(screen.getByLabelText("交办任务")).toBeDisabled();
+    expect(screen.getByLabelText("下达任务")).toBeDisabled();
   });
 
   it("surfaces create-turn API failure and preserves the unsent input", async () => {
@@ -259,7 +259,7 @@ describe("App runtime bridge", () => {
     render(<App />);
     await selectRepoOwner();
     pickSelectOption("选择 Agent Host", "Qoder");
-    const input = screen.getByLabelText("交办任务");
+    const input = screen.getByLabelText("下达任务");
     fireEvent.change(input, { target: { value: "不要丢失这条任务" } });
     fireEvent.click(screen.getByRole("button", { name: "发送任务" }));
 
@@ -311,7 +311,7 @@ describe("App runtime bridge", () => {
 
     pickSelectOption("选择本地会话", rotated.sessionId.slice(0, 8));
     expect(await screen.findByText("历史会话只读；请选择当前会话")).toBeInTheDocument();
-    expect(screen.getByLabelText("交办任务")).toBeDisabled();
+    expect(screen.getByLabelText("下达任务")).toBeDisabled();
   });
 
   it("submits a drag move proposal and rejects a self-drop before IPC", async () => {
@@ -332,8 +332,8 @@ describe("App runtime bridge", () => {
       turnHistory: vi.fn().mockResolvedValue({ status: 200, body: history([]) }),
     });
     render(<App />);
-    const source = await screen.findByText("docs-writer", { selector: ".ui-org-tree__label, .ui-org-tree__id" });
-    const target = screen.getByText("release-engineer", { selector: ".ui-org-tree__label, .ui-org-tree__id" });
+    const source = await screen.findByText("docs-writer", { selector: ".ui-org-tree__name, .ui-org-tree__id" });
+    const target = screen.getByText("release-engineer", { selector: ".ui-org-tree__name, .ui-org-tree__id" });
     const data = new Map<string, string>();
     const dataTransfer = { effectAllowed: "move", dropEffect: "move", setData: (type: string, value: string) => data.set(type, value), getData: (type: string) => data.get(type) ?? "" };
     fireEvent.dragStart(source.closest('[role="treeitem"]')!, { dataTransfer });
@@ -373,7 +373,7 @@ describe("App runtime bridge", () => {
       turnHistory: vi.fn().mockResolvedValue({ status: 200, body: history([]) }),
     });
     render(<App />);
-    fireEvent.click(await screen.findByText("release-engineer", { selector: ".ui-org-tree__label, .ui-org-tree__id" }));
+    fireEvent.click(await screen.findByText("release-engineer", { selector: ".ui-org-tree__name, .ui-org-tree__id" }));
     fireEvent.keyDown(screen.getByRole("tree"), { key: "ArrowUp", metaKey: true });
     await waitFor(() => expect(orgApply).toHaveBeenCalledWith({
       schemaVersion: "change-manifest.v1",
@@ -436,7 +436,7 @@ describe("App runtime bridge", () => {
       turnHistory: vi.fn().mockResolvedValue({ status: 200, body: history([]) }),
     });
     render(<App />);
-    fireEvent.click(await screen.findByText("docs-writer", { selector: ".ui-org-tree__label, .ui-org-tree__id" }));
+    fireEvent.click(await screen.findByText("docs-writer", { selector: ".ui-org-tree__name, .ui-org-tree__id" }));
     fireEvent.click(await screen.findByRole("button", { name: "裁撤" }));
     fireEvent.click(screen.getByRole("button", { name: /取\s*消/ }));
     expect(orgApply).not.toHaveBeenCalled();
@@ -475,7 +475,7 @@ describe("App runtime bridge", () => {
     render(<App />);
     await selectRepoOwner();
     pickSelectOption("选择 Agent Host", "Qoder");
-    fireEvent.change(screen.getByLabelText("交办任务"), { target: { value: "检查下一版发布" } });
+    fireEvent.change(screen.getByLabelText("下达任务"), { target: { value: "检查下一版发布" } });
     fireEvent.click(screen.getByRole("button", { name: "发送任务" }));
     await waitFor(() => expect(createSessionTurn).toHaveBeenCalled());
     expect(listener).not.toBeNull();

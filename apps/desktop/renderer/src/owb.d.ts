@@ -77,6 +77,10 @@ export interface OwbBridge {
   createGroupTurn(request: { conversationRef: string; input: string; engine: TurnEngine; mentions: string[] }): Promise<OwbApiResponse<{ conversationRef: string; messageId: string; spawns: Array<{ turnId: string; positionId: string }> }>>;
   groupTimeline(conversationRef: string): Promise<OwbApiResponse<GroupTimeline>>;
   sseStatus(): Promise<"connecting" | "connected">;
+  /** #73 custom title bar controls (frameless window). */
+  windowMinimize(): Promise<{ ok: boolean }>;
+  windowToggleMaximize(): Promise<{ ok: boolean }>;
+  windowClose(): Promise<{ ok: boolean }>;
   onEvent(callback: (event: unknown) => void): () => void;
   onSseStatus(callback: (state: "connecting" | "connected") => void): () => void;
 }

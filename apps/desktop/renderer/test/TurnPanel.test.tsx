@@ -54,13 +54,14 @@ describe("TurnPanel Issue #5 D3 behavior", () => {
     render(<ControlledPanel onCreateTurn={createTurn} />);
 
     pickSelectOption("选择对话岗位", "发布负责人");
-    expect(screen.getByRole("heading", { name: "@发布负责人" })).toBeInTheDocument();
+    // #73: 面板标题改为设计稿的「本地对话 · <岗位 id>」，仍然唯一标定收件岗位。
+    expect(screen.getByRole("heading", { name: /本地对话 · release-manager/ })).toBeInTheDocument();
 
     fireEvent.mouseDown(screen.getByRole("combobox", { name: "选择 Agent Host" }));
     expect(visibleSelectOptions()).toHaveLength(3);
     pickSelectOption("选择 Agent Host", "Claude Code · Configured");
 
-    fireEvent.change(screen.getByLabelText("交办任务"), { target: { value: "准备发布说明" } });
+    fireEvent.change(screen.getByLabelText("下达任务"), { target: { value: "准备发布说明" } });
     fireEvent.click(screen.getByRole("button", { name: "发送任务" }));
 
     await waitFor(() => {
@@ -70,6 +71,26 @@ describe("TurnPanel Issue #5 D3 behavior", () => {
         input: "准备发布说明",
       });
     });
+  });
+
+  // 提示条写着「⌘↵ 发送」，那它就必须真的能发——文案与行为不许脱节。
+  it("sends with ⌘↵ / Ctrl+↵ as the composer hint advertises", async () => {
+    const createTurn = vi.fn();
+    render(<ControlledPanel onCreateTurn={createTurn} />);
+
+    const input = screen.getByLabelText("下达任务");
+    fireEvent.change(input, { target: { value: "跑一次发布检查" } });
+    fireEvent.keyDown(input, { key: "Enter", metaKey: true });
+
+    await waitFor(() => {
+      expect(createTurn).toHaveBeenCalledWith({
+        positionId: "repo-owner",
+        engine: "qoder",
+        input: "跑一次发布检查",
+      });
+    });
+
+    expect(screen.getByRole("status").textContent).toContain("⌘↵ 发送");
   });
 
   it("honestly disables idle states when the workspace or selected Host is unavailable", () => {
@@ -88,7 +109,7 @@ describe("TurnPanel Issue #5 D3 behavior", () => {
     );
 
     expect(screen.getByText("打开工作区后才能开始对话")).toBeInTheDocument();
-    expect(screen.getByLabelText("交办任务")).toBeDisabled();
+    expect(screen.getByLabelText("下达任务")).toBeDisabled();
 
     rerender(
       <TurnPanel
@@ -105,7 +126,7 @@ describe("TurnPanel Issue #5 D3 behavior", () => {
     );
 
     expect(screen.getByText("先从组织树或 @ 选择器选择岗位")).toBeInTheDocument();
-    expect(screen.getByLabelText("交办任务")).toBeDisabled();
+    expect(screen.getByLabelText("下达任务")).toBeDisabled();
 
     rerender(
       <TurnPanel
@@ -125,7 +146,7 @@ describe("TurnPanel Issue #5 D3 behavior", () => {
     );
 
     expect(screen.getByText("Qoder 凭据未配置")).toBeInTheDocument();
-    expect(screen.getByLabelText("交办任务")).toBeDisabled();
+    expect(screen.getByLabelText("下达任务")).toBeDisabled();
   });
 
   it("renders local status and digest evidence without inventing delegation or recall", () => {
@@ -163,8 +184,15 @@ describe("TurnPanel Issue #5 D3 behavior", () => {
     fireEvent.click(screen.getByRole("button", { name: /证据/ }));
     expect(screen.getByTitle("sha256:1234567890abcdefghijklmnopqrstuv")).toBeInTheDocument();
     expect(screen.getByTitle("sha256:abcdefghijklmnopqrstuvwxyz123456")).toBeInTheDocument();
-    expect(screen.getByText("委派链", { exact: false })).toHaveTextContent("Planned");
-    expect(screen.getByText("长期 Context", { exact: false })).toHaveTextContent("Planned");
+    // #73: 边界 chip 改为设计稿的 host / mode / budget 实况三枚；委派链与长期
+    // Context 的「Planned」占位随之退场，但仍不得凭空宣称委派/召回能力。
+    const boundaries = Array.from(document.querySelectorAll(".owb-boundary")).map(
+      (node) => node.textContent?.replace(/\s+/g, " ").trim(),
+    );
+    expect(boundaries).toHaveLength(3);
+    expect(boundaries[0]).toMatch(/^host/);
+    expect(boundaries[1]).toMatch(/^mode/);
+    expect(boundaries[2]).toMatch(/^budget/);
     expect(screen.queryByText(/researcher|worker|已召回|已委派/i)).not.toBeInTheDocument();
   });
 
@@ -298,10 +326,13 @@ describe("TurnPanel Issue #25 Slice A — operator interrupt", () => {
 
     expect(screen.getByText("回合运行中：点击中断或按 ⌘. 终止该岗位的在途回合")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "发送任务" })).not.toBeInTheDocument();
-    const statusLine = screen.getByText("1280 tokens").closest("p");
+    // #73: 状态行统一承载 engine · 耗时 · tokens · 终态词（千分位，tabular-nums），
+    // 在途与已结算回合都走同一行，不再分裂到气泡下 meta。
+    const statusLine = screen.getByText("1,280 tokens").closest("p");
     expect(statusLine).toHaveClass("owb-turn__statusline");
-    // 已结算回合的 tokens 出现在气泡下 meta（气泡规格①）
-    const undermeta = screen.getByText("999 tokens").closest("p");
-    expect(undermeta).toHaveClass("owb-bubble__undermeta");
+    expect(statusLine?.textContent).toContain("running");
+    const settled = screen.getByText("999 tokens").closest("p");
+    expect(settled).toHaveClass("owb-turn__statusline");
+    expect(settled?.textContent).toContain("可信终态");
   });
 });

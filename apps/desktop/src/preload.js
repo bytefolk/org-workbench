@@ -36,6 +36,11 @@ contextBridge.exposeInMainWorld("owb", {
   createGroupTurn: (request) => ipcRenderer.invoke("owb:group:turn:create", request),
   groupTimeline: (conversationRef) => ipcRenderer.invoke("owb:group:timeline", conversationRef),
   sseStatus: () => ipcRenderer.invoke("owb:sse-status:get"),
+  // #73 custom title bar controls (设计稿 .wintitle): enumerated, no generic
+  // window channel — the renderer can only minimize / toggle-maximize / close.
+  windowMinimize: () => ipcRenderer.invoke("owb:window:minimize"),
+  windowToggleMaximize: () => ipcRenderer.invoke("owb:window:toggle-maximize"),
+  windowClose: () => ipcRenderer.invoke("owb:window:close"),
   onEvent: (callback) => {
     const listener = (_event, payload) => callback(payload);
     ipcRenderer.on("owb:event", listener);

@@ -76,6 +76,21 @@ export function BudgetBar({
   );
 }
 
+/** Declared caps with the primary number emphasised (设计稿 .val b):
+ * `<b>20,000 tokens</b> · 8 iterations`. Falls back to em dash when the
+ * declaration carries no cap at all — never invents a number. */
+function DeclaredCaps({ caps }: { caps: BudgetCaps | null | undefined }) {
+  const text = capsText(caps);
+  if (text === "—") return <>未声明</>;
+  const [head, ...rest] = text.split(" · ");
+  return (
+    <>
+      <b>{head}</b>
+      {rest.length > 0 ? ` · ${rest.join(" · ")}` : null}
+    </>
+  );
+}
+
 function BudgetLane({
   label,
   caps,
@@ -112,7 +127,13 @@ function BudgetLane({
         <span className="ui-org-budget__fill" style={meterProps ?? undefined} />
       </span>
       <span className="ui-org-budget__value">
-        {declarationMode ? capsText(caps) : unavailable ? `未记录 · 上限 ${capsText(caps)}` : `${Math.round((ratio ?? 0) * 100)}%`}
+        {declarationMode ? (
+          <DeclaredCaps caps={caps} />
+        ) : unavailable ? (
+          <>未记录 · 上限 <DeclaredCaps caps={caps} /></>
+        ) : (
+          `${Math.round((ratio ?? 0) * 100)}%`
+        )}
       </span>
     </div>
   );

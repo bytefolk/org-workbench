@@ -14,7 +14,12 @@ describe("BudgetBar (D1 spec §4 dual-phase contract)", () => {
     const daily = screen.getByRole("meter", { name: "单日声明" });
     expect(task).toHaveClass("is-declared");
     expect(daily).toHaveClass("is-declared");
-    expect(screen.getByText(/40,000 tokens · 12 iterations/)).toBeInTheDocument();
+    // #73: the primary cap is emphasised in its own <b> (设计稿 .val b), so the
+    // lane value reads as one string only after normalising across elements.
+    const values = Array.from(document.querySelectorAll(".ui-org-budget__value")).map(
+      (node) => node.textContent?.replace(/\s+/g, " ").trim(),
+    );
+    expect(values).toContain("40,000 tokens · 12 iterations");
     expect(screen.queryByText(/%$/)).not.toBeInTheDocument();
   });
 

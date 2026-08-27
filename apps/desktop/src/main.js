@@ -448,6 +448,10 @@ ipcMain.handle("owb:group:timeline", async (_event, conversationRef) => {
 
 ipcMain.handle("owb:sse-status:get", async () => currentSseStatus);
 
+// #73: the renderer draws its own 40px title bar (设计稿 .wintitle), so the
+// native frame is dropped — otherwise the shell stacks two title bars and the
+// OS decoration looks crude next to the app chrome. The window stays resizable
+// (WM edge drag) and the bar carries -webkit-app-region: drag for moving.
 function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1240,
@@ -455,6 +459,9 @@ function createWindow() {
     minWidth: 980,
     minHeight: 680,
     title: "org-workbench",
+    frame: false,
+    resizable: true,
+    backgroundColor: "#f4f1e8",
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),
       contextIsolation: true,
@@ -468,6 +475,28 @@ function createWindow() {
     mainWindow = null;
   });
 }
+
+// Window chrome controls for the custom title bar. Enumerated handlers only —
+// no generic "call any BrowserWindow method" channel.
+ipcMain.handle("owb:window:minimize", () => {
+  mainWindow?.minimize();
+  return { ok: true };
+});
+
+// 注意：WSLg/Weston 下 isMaximized() 会恒返回 true（窗口实际未最大化），
+// 所以不向渲染层暴露"当前是否最大化"，按钮文案保持静态、不谎报状态。
+ipcMain.handle("owb:window:toggle-maximize", () => {
+  if (!mainWindow) return { ok: false };
+  if (mainWindow.isMaximized()) mainWindow.unmaximize();
+  else mainWindow.maximize();
+  return { ok: true };
+});
+
+ipcMain.handle("owb:window:close", () => {
+  mainWindow?.close();
+  return { ok: true };
+});
+
 
 app.whenReady().then(async () => {
   try {
