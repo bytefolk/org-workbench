@@ -1,0 +1,11 @@
+cdp connected: file:///Users/huyz/Documents/data/fullstack-ai-infra/org-workbench/.worktrees/issue-35-modulerail-docs/apps/desktop/dist/renderer/index.html
+rail docs entry before click: aria-current=null
+screenshot: 01-rail-before.png
+org tree repo-owner selected (aria-selected=true)
+docs module active: aria-current=page + region[aria-label=文档模块] present
+docs list rendered via /docs/list: 29 files incl handbook.md
+screenshot: 02-docs-module-list.png
+DocViewer facts: {"hasFrontmatterName":false,"hasFrontmatterDescription":true,"hasVersion":true,"hasBody":true}
+screenshot: 03-doc-viewer.png
+rail regression: ["组织","群聊","上报","记忆","文档(active)"]
+S4 surface absent (no 新建文档 entry): true

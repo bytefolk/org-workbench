@@ -50,6 +50,7 @@ import type {
 import { BackupTray, DismissPositionDialog } from "./org/OrgControls";
 import { HireDrawer } from "./org/HireDrawer";
 import { GroupsPanel } from "./groups/GroupsPanel";
+import { DocsModule } from "./docs/DocsModule";
 import { ReportsCenter } from "./reports/ReportsCenter";
 
 interface PositionCardState {
@@ -66,7 +67,7 @@ interface PositionCardState {
  * (org.updated drives refresh; the UI never polls).
  */
 export function App() {
-  const [activeModule, setActiveModule] = useState<"org" | "groups" | "reports">("org");
+  const [activeModule, setActiveModule] = useState<"org" | "groups" | "reports" | "docs">("org");
   const [health, setHealth] = useState<HealthResponse | null>(null);
   const [workspaceInfo, setWorkspaceInfo] = useState<WorkspaceInfoResponse | null>(null);
   const [snapshot, setSnapshot] = useState<OrgTreeSnapshot | null>(null);
@@ -743,7 +744,7 @@ export function App() {
             { id: "groups", label: "群聊", icon: <UsersRound aria-hidden="true" size={16} />, active: activeModule === "groups", onSelect: () => setActiveModule("groups") },
             { id: "reports", label: "上报", icon: <FileChartColumn aria-hidden="true" size={16} />, active: activeModule === "reports", onSelect: () => { setActiveModule("reports"); void loadReports(); } },
             { id: "memory", label: "记忆", icon: <History aria-hidden="true" size={16} /> },
-            { id: "docs", label: "文档", icon: <FolderTree aria-hidden="true" size={16} /> },
+            { id: "docs", label: "文档", icon: <FolderTree aria-hidden="true" size={16} />, active: activeModule === "docs", onSelect: () => setActiveModule("docs") },
           ]}
         />
       }
@@ -856,6 +857,12 @@ export function App() {
             liveRuns={turnStream.runs}
             onSelectEngine={setTurnEngine}
             onSpawnRuns={spawnGroupRuns}
+          />
+        ) : activeModule === "docs" ? (
+          <DocsModule
+            workspaceOpen={workspaceInfo?.open === true}
+            positions={positions}
+            selectedPositionId={selectedId}
           />
         ) : <div className="owb-workspace-grid">
           <div className="owb-position-column">

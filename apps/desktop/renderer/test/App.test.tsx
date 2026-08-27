@@ -535,3 +535,45 @@ describe("App runtime bridge", () => {
     expect(screen.queryByText("sensitive raw output")).not.toBeInTheDocument();
   });
 });
+
+describe("App docs module wiring (#35 S3)", () => {
+  it("activates the docs rail entry and browses a position's documents end-to-end", async () => {
+    const positionDocs = vi.fn().mockResolvedValue({
+      status: 200,
+      body: {
+        schemaVersion: "docs-file-list.v1",
+        positionId: "repo-owner",
+        files: [{ path: "handbook.md", kind: "file", size: 32, modifiedAt: "2026-08-27T00:00:00.000Z" }],
+      },
+    });
+    const positionDocFile = vi.fn().mockResolvedValue({
+      status: 200,
+      body: {
+        schemaVersion: "docs-file.v1",
+        positionId: "repo-owner",
+        path: "handbook.md",
+        content: "# Handbook\n\n正文内容",
+        version: "2026-08-27T00:00:00.000Z",
+        size: 32,
+        modifiedAt: "2026-08-27T00:00:00.000Z",
+      },
+    });
+    openedBridge({ positionDocs, positionDocFile } as Partial<OwbBridge>);
+
+    render(<App />);
+    await selectRepoOwner();
+
+    const docsEntry = screen.getByRole("button", { name: "文档" });
+    expect(docsEntry).not.toHaveAttribute("aria-current");
+    fireEvent.click(docsEntry);
+    expect(docsEntry).toHaveAttribute("aria-current", "page");
+    expect(screen.getByRole("region", { name: "文档模块" })).toBeInTheDocument();
+    await waitFor(() => expect(positionDocs).toHaveBeenCalledWith("repo-owner"));
+
+    fireEvent.click(await screen.findByRole("button", { name: "handbook.md" }));
+    expect(await screen.findByRole("heading", { name: "Handbook" })).toBeInTheDocument();
+    expect(screen.getByText("正文内容")).toBeInTheDocument();
+    expect(screen.getByText("版本 2026-08-27T00:00:00.000Z")).toBeInTheDocument();
+    expect(positionDocFile).toHaveBeenCalledWith("repo-owner", "handbook.md");
+  });
+});
