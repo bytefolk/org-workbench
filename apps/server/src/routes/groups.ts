@@ -222,6 +222,7 @@ export async function handleGroupTurnPost(
           code: "group_spawn_failed",
           envelopeDigest: "",
           groupRef: ref,
+          conversationRef: ref,
         });
       }
     }
@@ -241,7 +242,9 @@ export async function handleGroupTimeline(
   for (const member of group.members) {
     const history = await ctx.turnStore.history(workspace.dir, member, now);
     for (const turn of history.turns) {
-      if (turn.groupRef === ref) memberTurns.push(turn);
+      // #63: contract-level back-link first; legacy groupRef covers
+      // pre-clearing records so the timeline never regresses.
+      if (turn.conversationRef === ref || turn.groupRef === ref) memberTurns.push(turn);
     }
   }
   const messages = await ctx.groupStore.readMessages(workspace.dir, ref);

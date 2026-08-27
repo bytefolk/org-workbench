@@ -153,6 +153,11 @@ export async function executeTurn(
   // executed envelope share one identity; personal turns keep server-random.
   const turnId = group !== undefined ? group.turnId : crypto.randomUUID();
   const createdAt = new Date().toISOString();
+  // owb#63 clearing (de#205): the contract-level back-link rides the v1alpha2
+  // envelope — group spawns echo the group conversationRef, session turns echo
+  // the sessionId, bare personal turns stay v1 byte-exact.
+  const conversationRef =
+    group !== undefined ? group.groupRef : session !== undefined ? session.sessionId : undefined;
   const envelope = createTurnEnvelope({
     workspaceRef: workspace.dir,
     positionId: body.positionId,
@@ -161,6 +166,7 @@ export async function executeTurn(
     ...(body.pendingApproval !== undefined
       ? { pendingApproval: body.pendingApproval }
       : {}),
+    ...(conversationRef !== undefined ? { conversationRef } : {}),
   });
   const beginInput = {
     workspace: workspace.dir,
@@ -171,8 +177,10 @@ export async function executeTurn(
     envelopeDigest: envelope.envelopeDigest,
     now: createdAt,
     // Additive #52: group spawns persist through the position store tagged
-    // with the local conversationRef (session arg stays undefined).
+    // with the local conversationRef (session arg stays undefined). Kept as a
+    // dual-write during the #63 clearing window so rollback never loses links.
     ...(group !== undefined ? { groupRef: group.groupRef } : {}),
+    ...(conversationRef !== undefined ? { conversationRef } : {}),
   };
   const running = session === undefined
     ? await ctx.turnStore.begin(beginInput)
@@ -276,6 +284,7 @@ export async function executeTurn(
       code: record.error?.code ?? "turn_protocol_invalid",
       envelopeDigest: envelope.envelopeDigest,
       ...(group !== undefined ? { groupRef: group.groupRef } : {}),
+      ...(conversationRef !== undefined ? { conversationRef } : {}),
     });
   } else {
     const terminal = result.events[result.events.length - 1];

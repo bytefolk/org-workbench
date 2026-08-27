@@ -313,7 +313,7 @@ export function isTurnRecord(value: unknown): value is TurnRecord {
       "schemaVersion", "conversationId", "turnId", "positionId", "engine", "status",
       "input", "envelopeDigest", "createdAt", "updatedAt", "events",
     ],
-    ["runId", "output", "error", "groupRef"],
+    ["runId", "output", "error", "groupRef", "conversationRef"],
   )) return false;
   const createdInstant = parseRfc3339Instant(value.createdAt);
   const updatedInstant = parseRfc3339Instant(value.updatedAt);
@@ -344,6 +344,13 @@ export function isTurnRecord(value: unknown): value is TurnRecord {
   if (hasRunId && !isBoundedIdentifier(value.runId)) return false;
   // Additive #52: local group conversationRef link (transition debt, 缺口①).
   if (Object.hasOwn(value, "groupRef") && !isBoundedIdentifier(value.groupRef)) return false;
+  // owb#63: contract-level back-link bounds mirror upstream de#205 (1..256).
+  if (
+    Object.hasOwn(value, "conversationRef") &&
+    (typeof value.conversationRef !== "string" ||
+      value.conversationRef.length === 0 ||
+      value.conversationRef.length > 256)
+  ) return false;
   if (events.length > 0 && value.runId !== events[0]!.runId) return false;
   if (events.length === 0 && hasRunId) return false;
   const recordError = hasError ? validateRecordError(value.error) : null;
@@ -490,14 +497,33 @@ function validateRecordError(
   return { code: value.code, message: value.message, retryable: value.retryable };
 }
 
-function validateEngineEvent(value: unknown): EngineEvent | null {
+function validateEngineEvent(raw: unknown): EngineEvent | null {
   if (
-    !isObjectRecord(value) || !isBoundedIdentifier(value.runId) ||
-    parseRfc3339Instant(value.timestamp) === null
+    !isObjectRecord(raw) || !isBoundedIdentifier(raw.runId) ||
+    parseRfc3339Instant(raw.timestamp) === null
   ) {
     return null;
   }
-  const base = { runId: value.runId, timestamp: value.timestamp as string };
+  // owb#63 (de#205): engine.v1 events echo the envelope conversationRef
+  // verbatim. Validate it once at the gate and strip it, so the frozen
+  // exactKeys branches below stay untouched; it re-attaches via base.
+  let value: Record<string, unknown> = raw;
+  let conversationRef: string | undefined;
+  if (Object.hasOwn(raw, "conversationRef")) {
+    if (
+      typeof raw.conversationRef !== "string" ||
+      raw.conversationRef.length === 0 ||
+      raw.conversationRef.length > 256
+    ) return null;
+    conversationRef = raw.conversationRef;
+    value = { ...raw };
+    delete value.conversationRef;
+  }
+  const base = {
+    runId: value.runId as string,
+    timestamp: value.timestamp as string,
+    ...(conversationRef !== undefined ? { conversationRef } : {}),
+  };
   switch (value.type) {
     case "run.started":
       return hasExactKeys(value, ["type", "runId", "timestamp"])
@@ -665,6 +691,8 @@ export class TurnStore {
     now: string;
     /** Additive #52: local group conversationRef for group-spawned turns. */
     groupRef?: string;
+    /** owb#63: contract-level back-link carried by the v1alpha2 envelope. */
+    conversationRef?: string;
   }): Promise<TurnRecord> {
     assertPositionId(input.positionId);
     turnRecordFile(input.workspace, input.positionId, input.turnId);
@@ -684,6 +712,7 @@ export class TurnStore {
       updatedAt: input.now,
       events: [],
       ...(input.groupRef !== undefined ? { groupRef: input.groupRef } : {}),
+      ...(input.conversationRef !== undefined ? { conversationRef: input.conversationRef } : {}),
     };
     const activeKey = this.activeTurnKey(input.workspace, input.positionId, input.turnId);
     this.activeTurns.add(activeKey);
@@ -713,6 +742,8 @@ export class TurnStore {
     message: string;
     envelopeDigest: string;
     now: string;
+    /** owb#63: contract-level back-link (= sessionId for session turns). */
+    conversationRef?: string;
   }): Promise<TurnRecord> {
     const sessionId = assertSessionId(input.sessionId);
     assertPositionId(input.positionId);
@@ -737,6 +768,7 @@ export class TurnStore {
       createdAt: input.now,
       updatedAt: input.now,
       events: [],
+      ...(input.conversationRef !== undefined ? { conversationRef: input.conversationRef } : {}),
     };
     const activeKey = this.sessionActiveTurnKey(input.workspace, sessionId, input.turnId);
     this.activeTurns.add(activeKey);
