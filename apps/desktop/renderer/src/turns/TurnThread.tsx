@@ -89,7 +89,7 @@ function StatusLine({ turn }: { turn: TurnRecord }) {
 }
 
 /** Running bubble typing indicator (#61, spec ②): three 6px dots, 150ms
- * stagger, 1.05s ease-out loop — 处方4 聊天例外（见 ADR-0005）。Screen-reader
+ * stagger, 1.05s ease-out loop — 处方4 聊天例外（见 ADR-0007）。Screen-reader
  * copy stays intact. */
 export function TypingIndicator() {
   return (
