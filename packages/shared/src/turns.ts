@@ -5,6 +5,11 @@
  */
 
 export const TURN_ENVELOPE_SCHEMA_VERSION = "turn-envelope.v1" as const;
+/** Upstream de#205 (DE-CONVREF-001): v1alpha2 = v1 + optional conversationRef. */
+export const TURN_ENVELOPE_SCHEMA_VERSION_V1ALPHA2 = "turn-envelope.v1alpha2" as const;
+export type TurnEnvelopeSchemaVersion =
+  | typeof TURN_ENVELOPE_SCHEMA_VERSION
+  | typeof TURN_ENVELOPE_SCHEMA_VERSION_V1ALPHA2;
 export const TURN_RECORD_SCHEMA_VERSION = "turn-record.v1" as const;
 export const TURN_HISTORY_SCHEMA_VERSION = "turn-history.v1" as const;
 
@@ -25,6 +30,9 @@ export type TurnTerminalReason =
 interface EngineEventBase {
   runId: string;
   timestamp: string;
+  /** Upstream de#205: envelope conversationRef echoed verbatim on every
+   * engine.v1 event; absent when the envelope was legacy v1 without it. */
+  conversationRef?: string;
 }
 
 /** Capability-gate action kinds; verbatim mirror of the engine #187 vocabulary. */
@@ -103,12 +111,17 @@ export interface TurnPendingApproval {
 }
 
 export interface TurnEnvelope {
-  schemaVersion: typeof TURN_ENVELOPE_SCHEMA_VERSION;
+  schemaVersion: TurnEnvelopeSchemaVersion;
   workspaceRef: string;
   positionId: string;
   turnId: string;
   input: string;
   pendingApproval?: TurnPendingApproval;
+  /** Upstream de#205 (DE-CONVREF-001): only present under v1alpha2; the
+   * builder pairs field⇔schemaVersion strictly (v1 + field is fail-closed
+   * upstream, so that combination is never produced locally). Non-empty,
+   * ≤256 UTF-16 code units per the upstream schema string bounds. */
+  conversationRef?: string;
   envelopeDigest: string;
 }
 
@@ -153,10 +166,14 @@ export interface TurnRecord {
   runId?: string;
   output?: unknown;
   error?: { code: string; message: string; retryable: boolean };
-  /** Additive #52 (DS-34-001 rev-1 缺口①过渡): local conversationRef of the
-   * spawning group; absent for personal turns. Contract-level conversationRef
-   * lands with the upstream v1alpha2 de issue; until then this local link is
-   * the registered transition debt. */
+  /** owb#63 (clearing of DS-34-001 rev-1 缺口①): contract-level back-link
+   * carried by the v1alpha2 envelope; equals the group conversationRef for
+   * group spawns and the sessionId for personal session turns. Absent for
+   * personal no-session turns and all pre-clearing (v1) records. */
+  conversationRef?: string;
+  /** Legacy #52 local link, read-only from the clearing onward: kept so
+   * pre-clearing group records stay readable on the timeline; new records
+   * are written with conversationRef instead. */
   groupRef?: string;
 }
 
