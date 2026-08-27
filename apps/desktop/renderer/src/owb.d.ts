@@ -1,6 +1,8 @@
 /** Typed shape of the whitelisted preload bridge (window.owb). */
 
 import type {
+  DocsFileListResponse,
+  DocsFileResponse,
   GroupConversation,
   GroupConversationList,
   GroupTimeline,
@@ -45,6 +47,8 @@ export interface OwbBridge {
   hire(request: HirePositionRequest): Promise<OwbApiResponse<HireResult>>;
   reports(): Promise<OwbApiResponse<ReportsResponse>>;
   position(positionId: string): Promise<OwbApiResponse>;
+  positionDocs(positionId: string): Promise<OwbApiResponse<DocsFileListResponse>>;
+  positionDocFile(positionId: string, filePath: string): Promise<OwbApiResponse<DocsFileResponse>>;
   createTurn(request: { positionId: string; input: string; engine: TurnEngine; pendingApproval?: TurnPendingApproval }): Promise<OwbApiResponse<TurnRecord>>;
   cancelTurn(positionId: string): Promise<OwbApiResponse<{ cancelled: boolean; positionId: string }>>;
   turnHistory(positionId: string): Promise<OwbApiResponse<TurnHistory>>;

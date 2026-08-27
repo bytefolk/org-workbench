@@ -17,6 +17,7 @@ const os = require("node:os");
 const path = require("node:path");
 const { rendererEntryPath } = require("./runtime-paths.cjs");
 const { validateRestoreRequest } = require("./org-ipc.cjs");
+const { validateDocsListRequest, validateDocsReadRequest } = require("./docs-ipc.cjs");
 const { validateHireRequest } = require("./hire-ipc.cjs");
 const { turnHistoryPath, validateCancelRequest, validateCreateTurnRequest } = require("./turn-ipc.cjs");
 const {
@@ -289,6 +290,19 @@ ipcMain.handle("owb:position:get", async (_event, positionId) => {
     return { status: 400, body: { code: "manifest_invalid", message: "positionId required" } };
   }
   return apiRequest(`/positions/${encodeURIComponent(positionId)}`);
+});
+
+// Read-only document file routing (#35 S2): whitelisted, enumerated, no generic channel.
+ipcMain.handle("owb:position:docs:list", async (_event, positionId) => {
+  const validated = validateDocsListRequest(positionId);
+  if (!validated.ok) return validated.response;
+  return apiRequest(validated.pathname);
+});
+
+ipcMain.handle("owb:position:docs:read", async (_event, positionId, filePath) => {
+  const validated = validateDocsReadRequest(positionId, filePath);
+  if (!validated.ok) return validated.response;
+  return apiRequest(validated.pathname);
 });
 
 ipcMain.handle("owb:turn:create", async (_event, request) => {

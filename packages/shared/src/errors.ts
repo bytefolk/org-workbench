@@ -61,6 +61,12 @@ export const errorCodes = {
   group_conflict: "group_conflict",
   /** Workspace-local group state failed validation or atomic persistence (#52). */
   group_storage_failed: "group_storage_failed",
+  /** Doc routing request shape is invalid: missing/bad position or path params (#35 S2). */
+  docs_request_invalid: "docs_request_invalid",
+  /** Doc routing refused: path escapes the position dir, symlink, or non-allowlisted file (#35 S2). */
+  docs_forbidden: "docs_forbidden",
+  /** A requested document file does not exist under the position (#35 S2). */
+  docs_missing: "docs_missing",
   /** Route not found. */
   not_found: "not_found",
   /** Method not allowed on a known route. */

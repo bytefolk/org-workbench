@@ -10,3 +10,4 @@ export * from "./health.js";
 export * from "./turns.js";
 export * from "./sessions.js";
 export * from "./groups.js";
+export * from "./docs.js";
