@@ -1472,3 +1472,14 @@
   vertical-align: -2px;
   flex: none;
 }
+
+/* #35 S3 文档模块面：岗位选择器与 DocsPanel 纵向排布，间距走档位变量。 */
+.owb-docs-module {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ui-space-3, 12px);
+}
+
+.owb-docs-module__picker {
+  display: flex;
+}
