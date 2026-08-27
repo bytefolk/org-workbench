@@ -18,7 +18,7 @@ const path = require("node:path");
 const { pathToFileURL } = require("node:url");
 const { rendererEntryPath } = require("./runtime-paths.cjs");
 const { isAllowedNavigationTarget, isTrustedWindowSender } = require("./window-ipc.cjs");
-const { validateRestoreRequest } = require("./org-ipc.cjs");
+const { validateRestoreRequest, validateOrgApply } = require("./org-ipc.cjs");
 const {
   validateAssetsCreateRequest,
   validateAssetsListRequest,
@@ -279,8 +279,11 @@ ipcMain.handle("owb:workspace:get", async () => apiRequest("/workspace"));
 
 ipcMain.handle("owb:org:tree", async () => apiRequest("/org/tree"));
 
-ipcMain.handle("owb:org:apply", async (_event, manifest) =>
-  apiRequest("/org/apply", { method: "POST", body: manifest }));
+ipcMain.handle("owb:org:apply", async (_event, manifest) => {
+  const validated = validateOrgApply(manifest);
+  if (!validated.ok) return validated.response;
+  return apiRequest("/org/apply", { method: "POST", body: validated.request });
+});
 
 ipcMain.handle("owb:org:backups", async () => apiRequest("/org/backups"));
 
