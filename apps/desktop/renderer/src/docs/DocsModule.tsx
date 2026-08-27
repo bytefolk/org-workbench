@@ -1,15 +1,15 @@
 import { useCallback, useEffect, useState } from "react";
-import { Empty, Select } from "antd";
-import type { DocsFileListResponse, DocsFileResponse } from "@org-workbench/shared";
+import { Alert, Button, Collapse, Empty, Input, Modal, Select, message } from "antd";
+import type { DocRef, DocsCreateResponse, DocsFileListResponse, DocsFileResponse, DocsResolveResponse } from "@org-workbench/shared";
 import type { PositionMentionOption } from "../turns/types";
 import { DocsPanel } from "./DocsPanel";
 
 /**
- * Document module surface (#35 S3, DS-35-001 rev-1 §5): connects the
- * ModuleRail "文档" entry to the S2 DocsPanel through the whitelisted preload
- * bridge. The picker reuses the org-tree position options so documents are
- * browsable without returning to the tree. Document creation and references
- * belong to S4 and stay out of scope here.
+ * Document module surface (#35 S3/S4, DS-35-001 rev-1 §3/§5/§6): connects
+ * the ModuleRail "文档" entry to the S2 DocsPanel through the whitelisted
+ * preload bridge. S4 adds the minimal creation entry (naming + landing, no
+ * editor per the frozen baseline) and the doc-ref.v1alpha1 reference face:
+ * resolve pasted refs into positioned paths with deterministic states.
  */
 export interface DocsModuleProps {
   workspaceOpen: boolean;
@@ -29,8 +29,22 @@ function apiErrorMessage(body: unknown, fallback: string): string {
   return fallback;
 }
 
+interface ResolveOutcome {
+  status: "ok" | "error";
+  message?: string;
+  resolved?: DocsResolveResponse["resolved"];
+}
+
 export function DocsModule({ workspaceOpen, positions, selectedPositionId }: DocsModuleProps) {
   const [positionId, setPositionId] = useState<string | null>(selectedPositionId);
+  const [createOpen, setCreateOpen] = useState(false);
+  const [createName, setCreateName] = useState("");
+  const [creating, setCreating] = useState(false);
+  const [createError, setCreateError] = useState<string | null>(null);
+  const [reloadToken, setReloadToken] = useState(0);
+  const [resolveText, setResolveText] = useState("");
+  const [resolving, setResolving] = useState(false);
+  const [resolveOutcome, setResolveOutcome] = useState<ResolveOutcome | null>(null);
 
   useEffect(() => {
     if (selectedPositionId !== null) setPositionId(selectedPositionId);
@@ -51,6 +65,63 @@ export function DocsModule({ workspaceOpen, positions, selectedPositionId }: Doc
     }
     return res.body;
   }, []);
+
+  const submitCreate = async () => {
+    if (positionId === null) return;
+    const name = createName.trim();
+    if (name === "") {
+      setCreateError("请填写文档文件名");
+      return;
+    }
+    setCreating(true);
+    setCreateError(null);
+    try {
+      const res = await window.owb.createPositionDoc({ positionId, path: name, content: "" });
+      if (res.status >= 400 || !res.body) {
+        throw new Error(apiErrorMessage(res.body, "文档创建失败"));
+      }
+      const created: DocsCreateResponse = res.body;
+      message.success(`已创建 ${created.path}`);
+      setCreateOpen(false);
+      setCreateName("");
+      setReloadToken((token) => token + 1);
+    } catch (error) {
+      setCreateError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setCreating(false);
+    }
+  };
+
+  const submitResolve = async () => {
+    const text = resolveText.trim();
+    if (text === "") {
+      setResolveOutcome({ status: "error", message: "请粘贴 doc-ref" });
+      return;
+    }
+    let ref: DocRef;
+    try {
+      const parsed = JSON.parse(text) as unknown;
+      ref = typeof parsed === "string" ? { uri: parsed } : (parsed as DocRef);
+    } catch {
+      ref = { uri: text };
+    }
+    setResolving(true);
+    setResolveOutcome(null);
+    try {
+      const res = await window.owb.resolveDocRef(ref);
+      if (res.status >= 400 || !res.body) {
+        throw new Error(apiErrorMessage(res.body, "引用解析失败"));
+      }
+      setResolveOutcome({ status: "ok", resolved: res.body.resolved });
+    } catch (error) {
+      setResolveOutcome({
+        status: "error",
+        message: error instanceof Error ? error.message : String(error),
+      });
+    } finally {
+      setResolving(false);
+    }
+  };
 
   if (!workspaceOpen) {
     return (
@@ -75,8 +146,68 @@ export function DocsModule({ workspaceOpen, positions, selectedPositionId }: Doc
           popupMatchSelectWidth={false}
           style={{ minWidth: 240 }}
         />
+        <Button
+          disabled={positionId === null}
+          onClick={() => {
+            setCreateError(null);
+            setCreateOpen(true);
+          }}
+        >
+          新建文档
+        </Button>
       </div>
-      <DocsPanel positionId={positionId} listDocs={listDocs} readDoc={readDoc} />
+      <DocsPanel positionId={positionId} listDocs={listDocs} readDoc={readDoc} reloadToken={reloadToken} />
+      <Collapse
+        items={[
+          {
+            key: "resolve-doc-ref",
+            label: "解析引用",
+            children: (
+              <div className="owb-docs-module__resolve">
+                <Input.TextArea
+                  aria-label="粘贴 doc-ref"
+                  placeholder='粘贴 doc-ref（JSON 或 owb-doc://… URI）'
+                  autoSize={{ minRows: 2, maxRows: 4 }}
+                  value={resolveText}
+                  onChange={(event) => setResolveText(event.target.value)}
+                />
+                <Button loading={resolving} onClick={submitResolve}>
+                  解析
+                </Button>
+                {resolveOutcome?.status === "error" ? (
+                  <Alert type="error" message={resolveOutcome.message ?? "引用解析失败"} />
+                ) : null}
+                {resolveOutcome?.status === "ok" && resolveOutcome.resolved ? (
+                  <Alert
+                    type="success"
+                    message={`解析成功：${resolveOutcome.resolved.positionId}/${resolveOutcome.resolved.path}`}
+                    description={`大小 ${resolveOutcome.resolved.size} 字节 · 更新于 ${resolveOutcome.resolved.modifiedAt}`}
+                  />
+                ) : null}
+              </div>
+            ),
+          },
+        ]}
+      />
+      <Modal
+        title="新建文档"
+        open={createOpen}
+        okText="创建"
+        cancelText="取消"
+        confirmLoading={creating}
+        onOk={submitCreate}
+        onCancel={() => setCreateOpen(false)}
+      >
+        <p className="owb-docs-module__create-hint">首版无编辑器：仅命名并落盘为空文档。</p>
+        <Input
+          aria-label="新文档文件名"
+          placeholder="handbook.md"
+          value={createName}
+          onChange={(event) => setCreateName(event.target.value)}
+          onPressEnter={submitCreate}
+        />
+        {createError !== null ? <Alert type="error" message={createError} /> : null}
+      </Modal>
     </section>
   );
 }

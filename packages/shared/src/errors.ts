@@ -67,6 +67,12 @@ export const errorCodes = {
   docs_forbidden: "docs_forbidden",
   /** A requested document file does not exist under the position (#35 S2). */
   docs_missing: "docs_missing",
+  /** Workspace-local doc/asset persistence failed validation or atomic write (#35 S4). */
+  docs_storage_failed: "docs_storage_failed",
+  /** A document creation target already exists; creation never overwrites (#35 S4). */
+  docs_exists: "docs_exists",
+  /** A doc-ref.v1alpha1 value violates the frozen reference shape (#35 S4). */
+  doc_ref_invalid: "doc_ref_invalid",
   /** Route not found. */
   not_found: "not_found",
   /** Method not allowed on a known route. */

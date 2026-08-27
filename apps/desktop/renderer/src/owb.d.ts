@@ -1,8 +1,12 @@
 /** Typed shape of the whitelisted preload bridge (window.owb). */
 
 import type {
+  DocRef,
+  DocsCreateRequest,
+  DocsCreateResponse,
   DocsFileListResponse,
   DocsFileResponse,
+  DocsResolveResponse,
   GroupConversation,
   GroupConversationList,
   GroupTimeline,
@@ -49,6 +53,8 @@ export interface OwbBridge {
   position(positionId: string): Promise<OwbApiResponse>;
   positionDocs(positionId: string): Promise<OwbApiResponse<DocsFileListResponse>>;
   positionDocFile(positionId: string, filePath: string): Promise<OwbApiResponse<DocsFileResponse>>;
+  createPositionDoc(request: DocsCreateRequest): Promise<OwbApiResponse<DocsCreateResponse>>;
+  resolveDocRef(ref: DocRef): Promise<OwbApiResponse<DocsResolveResponse>>;
   createTurn(request: { positionId: string; input: string; engine: TurnEngine; pendingApproval?: TurnPendingApproval }): Promise<OwbApiResponse<TurnRecord>>;
   cancelTurn(positionId: string): Promise<OwbApiResponse<{ cancelled: boolean; positionId: string }>>;
   turnHistory(positionId: string): Promise<OwbApiResponse<TurnHistory>>;

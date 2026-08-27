@@ -1482,4 +1482,29 @@
 
 .owb-docs-module__picker {
   display: flex;
+  gap: var(--ui-space-2, 8px);
+}
+
+/* #35 S4 解析引用面：输入、按钮与结果纵向排布。 */
+.owb-docs-module__resolve {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ui-space-2, 8px);
+}
+
+.owb-docs-module__resolve > button {
+  align-self: flex-start;
+}
+
+.owb-docs-module__create-hint {
+  margin: 0 0 var(--ui-space-2, 8px);
+  color: var(--ui-text-secondary, #666);
+}
+
+.owb-docs-panel__copy-ref {
+  border: none;
+  background: none;
+  padding: 0;
+  color: var(--ui-accent, #1677ff);
+  cursor: pointer;
 }

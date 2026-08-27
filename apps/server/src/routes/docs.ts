@@ -1,16 +1,31 @@
+import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
 import {
+  ASSET_RECORD_SCHEMA_VERSION,
+  DOCS_CREATE_SCHEMA_VERSION,
   DOCS_FILE_LIST_SCHEMA_VERSION,
   DOCS_FILE_SCHEMA_VERSION,
+  DOCS_RESOLVE_SCHEMA_VERSION,
+  MAX_DOC_CREATE_BYTES,
+  formatDocRefUri,
+  parseDocRef,
   OrgApiError,
   errorCodes,
   isPositionId,
 } from "@org-workbench/shared";
-import type { DocsFileEntry, DocsFileListResponse, DocsFileResponse } from "@org-workbench/shared";
-import type { ServerResponse } from "node:http";
+import type {
+  AssetRecord,
+  DocsCreateResponse,
+  DocsFileEntry,
+  DocsFileListResponse,
+  DocsFileResponse,
+  DocsResolveResponse,
+} from "@org-workbench/shared";
+import type { IncomingMessage, ServerResponse } from "node:http";
+import { appendAssetIndex, writeAssetRecord } from "../assets/store.js";
 import type { ControlPlaneContext } from "../context.js";
-import { sendJson } from "../http.js";
+import { readJsonBody, sendJson } from "../http.js";
 import { POSITIONS_DIR } from "../workspace-state.js";
 
 /**
@@ -139,6 +154,238 @@ export async function handleDocsRead(ctx: ControlPlaneContext, res: ServerRespon
     version: modifiedAt,
     size: stat.size,
     modifiedAt,
+  };
+  sendJson(res, 200, body);
+}
+
+/**
+ * S4 creation/reference surface (#35 S4, DS-35-001 rev-1 §3/§5/§6).
+ *
+ * Creation is naming-plus-landing only: no editor, no overwrite. The file
+ * write reuses the S2 path guards, opens with `wx` at 0600, and registers
+ * an additive `asset-record.v1` (kind `doc`) plus index entry so #36 can
+ * consume the frozen contract unchanged. Resolution turns a
+ * `doc-ref.v1alpha1` back into a positioned path with deterministic states:
+ * 400 doc_ref_invalid / 404 docs_missing / 200 docs-resolve.v1.
+ */
+
+/** Segment guard mirroring the shared doc-ref URI segment pattern. */
+const CREATE_SEGMENT_PATTERN = /^(?!\.)[A-Za-z0-9._-]+$/;
+const DOC_REF_URI_EXTRACT = /^owb-doc:\/\/([^/]+)\/(.+)$/;
+
+function invalidRequest(message: string): OrgApiError {
+  return new OrgApiError(errorCodes.docs_request_invalid, 400, message);
+}
+
+function assertCreatePath(rawPath: string): string {
+  if (rawPath === "" || rawPath.length > 512) {
+    throw invalidRequest("path must be a non-empty relative doc path of at most 512 characters");
+  }
+  if (rawPath.startsWith("/") || rawPath.includes("\\")) {
+    throw invalidRequest("path must be relative and POSIX-style");
+  }
+  const segments = rawPath.split("/");
+  for (const segment of segments) {
+    if (!CREATE_SEGMENT_PATTERN.test(segment)) {
+      throw invalidRequest(`path segment is not a routable doc name: ${segment}`);
+    }
+  }
+  const extension = path.posix.extname(rawPath).toLowerCase();
+  if (!READABLE_EXTENSIONS.has(extension)) {
+    throw invalidRequest(`extension not creatable: ${extension}`);
+  }
+  return rawPath;
+}
+
+/** Walk from the position dir to the parent, creating missing dirs at 0700. */
+async function ensureDocParentDirs(positionDir: string, target: string): Promise<void> {
+  const parent = path.dirname(target);
+  const relative = path.relative(positionDir, parent);
+  if (relative.startsWith("..") || path.isAbsolute(relative)) {
+    throw new OrgApiError(errorCodes.docs_forbidden, 403, "creation target escapes the position directory");
+  }
+  let current = positionDir;
+  const segments = relative === "" ? [] : relative.split(path.sep);
+  for (const segment of segments) {
+    current = path.join(current, segment);
+    try {
+      const stat = await fs.lstat(current);
+      if (!stat.isDirectory() || stat.isSymbolicLink()) {
+        throw new OrgApiError(errorCodes.docs_forbidden, 403, "creation path must not contain symbolic links");
+      }
+    } catch (error) {
+      if (error instanceof OrgApiError) throw error;
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+      try {
+        await fs.mkdir(current, { mode: 0o700 });
+      } catch (mkdirError) {
+        if ((mkdirError as NodeJS.ErrnoException).code !== "EEXIST") throw mkdirError;
+      }
+      const created = await fs.lstat(current);
+      if (!created.isDirectory() || created.isSymbolicLink()) {
+        throw new OrgApiError(errorCodes.docs_forbidden, 403, "creation directory raced with an unsafe path");
+      }
+    }
+  }
+}
+
+function parseCreateRequest(raw: unknown): { positionId: string; path: string; content: string } {
+  if (raw === null || typeof raw !== "object" || Array.isArray(raw)) {
+    throw invalidRequest("body must be an object");
+  }
+  const record = raw as Record<string, unknown>;
+  const keys = Object.keys(record).sort().join(",");
+  if (keys !== "content,path,positionId") {
+    throw invalidRequest("body must carry exactly {positionId, path, content}");
+  }
+  if (typeof record.positionId !== "string" || typeof record.path !== "string" || typeof record.content !== "string") {
+    throw invalidRequest("positionId, path and content must be strings");
+  }
+  return { positionId: record.positionId, path: record.path, content: record.content };
+}
+
+export async function handleDocsCreate(
+  ctx: ControlPlaneContext,
+  req: IncomingMessage,
+  res: ServerResponse,
+): Promise<void> {
+  const { positionId, path: rawPath, content } = parseCreateRequest(await readJsonBody<unknown>(req));
+  const posixPath = assertCreatePath(rawPath);
+  if (Buffer.byteLength(content, "utf8") > MAX_DOC_CREATE_BYTES) {
+    throw invalidRequest(`content exceeds ${MAX_DOC_CREATE_BYTES} bytes`);
+  }
+  const positionDir = requirePositionDir(ctx, positionId);
+  const target = resolveDocPath(positionDir, posixPath);
+  await ensureDocParentDirs(positionDir, target);
+
+  let preExisting: boolean;
+  try {
+    await fs.lstat(target);
+    preExisting = true;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") preExisting = false;
+    else throw error;
+  }
+  if (preExisting) {
+    throw new OrgApiError(errorCodes.docs_exists, 409, `document already exists: ${posixPath}`);
+  }
+
+  let handle;
+  try {
+    handle = await fs.open(target, "wx", 0o600);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "EEXIST") {
+      throw new OrgApiError(errorCodes.docs_exists, 409, `document already exists: ${posixPath}`);
+    }
+    throw error;
+  }
+  try {
+    await handle.writeFile(content, "utf8");
+  } finally {
+    await handle.close();
+  }
+  await fs.chmod(target, 0o600);
+  const stat = await fs.lstat(target);
+  const modifiedAt = new Date(stat.mtimeMs).toISOString();
+
+  const assetId = crypto.randomUUID();
+  const createdAt = new Date().toISOString();
+  const docRef = { uri: formatDocRefUri(positionId, posixPath), version: modifiedAt };
+  const record: AssetRecord = {
+    schemaVersion: ASSET_RECORD_SCHEMA_VERSION,
+    assetId,
+    kind: "doc",
+    title: path.posix.basename(posixPath),
+    createdAt,
+    sourceRef: { positionId },
+    docRef,
+  };
+  await writeAssetRecord(ctx.workspace.requireOpen().dir, record);
+  await appendAssetIndex(ctx.workspace.requireOpen().dir, {
+    assetId,
+    kind: record.kind,
+    title: record.title,
+    createdAt,
+    docRef,
+  });
+
+  const body: DocsCreateResponse = {
+    schemaVersion: DOCS_CREATE_SCHEMA_VERSION,
+    positionId,
+    path: posixPath,
+    version: modifiedAt,
+    size: stat.size,
+    assetId,
+  };
+  sendJson(res, 201, body);
+}
+
+export async function handleDocsResolve(
+  ctx: ControlPlaneContext,
+  req: IncomingMessage,
+  res: ServerResponse,
+): Promise<void> {
+  const raw = await readJsonBody<unknown>(req);
+  if (raw === null || typeof raw !== "object" || Array.isArray(raw)) {
+    throw invalidRequest("body must be an object");
+  }
+  const record = raw as Record<string, unknown>;
+  if (Object.keys(record).sort().join(",") !== "ref") {
+    throw invalidRequest("body must carry exactly {ref}");
+  }
+  const parsed = parseDocRef(record.ref);
+  if (!parsed.ok) {
+    throw new OrgApiError(errorCodes.doc_ref_invalid, 400, parsed.message);
+  }
+  const match = DOC_REF_URI_EXTRACT.exec(parsed.ref.uri);
+  if (!match) {
+    throw new OrgApiError(errorCodes.doc_ref_invalid, 400, "doc-ref uri is not an owb-doc uri");
+  }
+  const positionId = match[1]!;
+  const rawPath = match[2]!;
+
+  let positionDir: string;
+  try {
+    positionDir = requirePositionDir(ctx, positionId);
+  } catch (error) {
+    if (error instanceof OrgApiError && error.code === errorCodes.position_missing) {
+      throw new OrgApiError(errorCodes.docs_missing, 404, `position not found: ${positionId}`);
+    }
+    throw error;
+  }
+  const resolved = resolveDocPath(positionDir, rawPath);
+
+  let stat;
+  try {
+    const lstat = await fs.lstat(resolved);
+    if (lstat.isSymbolicLink()) {
+      throw new OrgApiError(errorCodes.docs_forbidden, 403, `symlinks are not resolvable: ${rawPath}`);
+    }
+    stat = lstat;
+  } catch (error) {
+    if (error instanceof OrgApiError) throw error;
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+      throw new OrgApiError(errorCodes.docs_missing, 404, `document not found: ${rawPath}`);
+    }
+    throw error;
+  }
+  if (!stat.isFile()) {
+    throw new OrgApiError(errorCodes.docs_missing, 404, `not a document file: ${rawPath}`);
+  }
+  const extension = path.extname(resolved).toLowerCase();
+  if (!READABLE_EXTENSIONS.has(extension)) {
+    throw new OrgApiError(errorCodes.docs_forbidden, 403, `extension not resolvable: ${extension}`);
+  }
+
+  const body: DocsResolveResponse = {
+    schemaVersion: DOCS_RESOLVE_SCHEMA_VERSION,
+    ref: parsed.ref,
+    resolved: {
+      positionId,
+      path: rawPath,
+      size: stat.size,
+      modifiedAt: new Date(stat.mtimeMs).toISOString(),
+    },
   };
   sendJson(res, 200, body);
 }
