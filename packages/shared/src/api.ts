@@ -34,6 +34,10 @@ export const routes = {
   /** Additive create/resolve surface (#35 S4, DS-35-001 rev-1 §3/§5). */
   docsCreate: "/docs/create",
   docsResolve: "/docs/resolve",
+  /** Additive asset-layer foundation (#36 S1, DS-36-001 rev-1 §5). */
+  assetsList: "/assets/list",
+  assetsRead: "/assets/read",
+  assetsCreate: "/assets/create",
   events: "/events",
 } as const;
 

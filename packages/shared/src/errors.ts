@@ -73,6 +73,10 @@ export const errorCodes = {
   docs_exists: "docs_exists",
   /** A doc-ref.v1alpha1 value violates the frozen reference shape (#35 S4). */
   doc_ref_invalid: "doc_ref_invalid",
+  /** Asset-layer request shape or asset id is invalid (#36 S1). */
+  asset_request_invalid: "asset_request_invalid",
+  /** A requested asset record does not exist in the drive (#36 S1). */
+  asset_not_found: "asset_not_found",
   /** Route not found. */
   not_found: "not_found",
   /** Method not allowed on a known route. */
