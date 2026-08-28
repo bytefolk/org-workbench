@@ -235,16 +235,21 @@ function TreeBudgetSpark({
   const ratio = declaredOnly ? null : consumption;
   const tier = ratio === null ? "" : ratio > 1 ? "is-over" : ratio >= 0.8 ? "is-warning" : "";
   // 声明期（还没有真实用量事实）只画空轨道：画成满条会被读成「已用 100%」。
-  const width = ratio === null ? "0%" : `${Math.min(Math.max(Math.round(ratio * 100), 0), 100)}%`;
+  // #77 review item 4：>100% 不夹到 100——spec 要求超限超长出界呈现
+  // （116% 出界不截断圆角），夹到 100 会让超限和刚好用满看起来一样。
+  const percent = ratio === null ? null : Math.max(Math.round(ratio * 100), 0);
+  const width = percent === null ? "0%" : `${percent}%`;
   return (
     <span
       className={cn("ui-org-tree__budget", tier)}
       role="meter"
       aria-label={declaredOnly ? "预算声明" : "单任务预算消耗"}
       aria-valuemin={0}
-      aria-valuemax={100}
-      aria-valuenow={ratio === null ? undefined : Math.round(ratio * 100)}
-      title={declaredOnly ? `单任务上限 ${capsText(budget.perTask)}` : `单任务已用 ${Math.round((ratio ?? 0) * 100)}%`}
+      // valuemax 必须 >= valuenow（ARIA 合法性）：正常态定死 100，超限时跟
+      // 实际读数一起涨，不能一边报 120 一边把上限钉在 100。
+      aria-valuemax={percent === null ? 100 : Math.max(100, percent)}
+      aria-valuenow={percent ?? undefined}
+      title={declaredOnly ? `单任务上限 ${capsText(budget.perTask)}` : `单任务已用 ${percent}%`}
     >
       <i style={{ width }} />
     </span>

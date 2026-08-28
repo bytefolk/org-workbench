@@ -34,6 +34,9 @@
 - #32 排序持久化：`org-layout.v1` 覆盖层（`.digital-employee/org-layout.v1.json`，0600 原子写，零迁移、引擎不触），reorder-only 清单不调引擎；快照同级顺序覆盖层优先、字母序兜底，open/reload 时自动修剪与补齐。
 - #32 单步撤销：`POST /org/undo` 回放 inverseMoves 并还原覆盖层（404 `not_found` 表示无可撤销）；renderer「撤销」按钮与树聚焦时 ⌘/Ctrl+Z。
 - #32 创建入口：组织树行 hover「+」与空态按钮打开招聘弹窗并预置汇报对象。
+- #73 Control Plane v2：组织树连接线（guide-rail，选中即递推点亮祖先链路）、岗位状态灯（仅映射真实在途回合）、42×6px 微型预算条；对话面板改证据时间线（`.owb-tc` 控制台卡：状态圆点/状态行/证据印章 chip/内嵌审批卡），群聊仍保留气泡布局。
+- #73 无边框窗口自定义标题栏：`owb:window:minimize` / `owb:window:toggle-maximize` / `owb:window:close` 三个枚举式 IPC；每个 handler 均校验 `event.senderFrame` 是 mainWindow 自身主 frame 且仍在展示打包渲染层（`window-ipc.cjs` 纯函数 + 6 条负向单测），并对 mainWindow 加 `will-navigate`/`setWindowOpenHandler` 拦截，拒绝导航到打包文件之外的任何地址与新窗口。
+- `apps/desktop/test/contrast.test.cjs`：对 `--ui-foreground-subtle` 在亮/暗两套主题的全部 5 个背景阶做真实 WCAG 对比度计算断言（≥4.5:1），而非仅检查 token 字符串存在。
 
 ### Changed
 
@@ -42,6 +45,8 @@
 - 桌面壳 IPC 白名单新增渲染层所需通道（preload）。
 - 桌面壳新增枚举式 `createTurn` / `turnHistory` IPC；没有通用 HTTP/IPC 请求入口，boot token 继续只留在 main process。
 - README：状态更新为 "D0 骨架 + D1 组织树只读"，补充 design-system 开发期 `file:` 链接说明（同级克隆 + `npm run build:package`）。
+- #73 token 层：暖纸画布/圆角 6·10·14·18/动效三档 120·160·240ms 统一（含 design-system 原生 duration/ease 一并收敛）；新增 Space Grotesk 展示字体 + JetBrains Mono；PositionCard 从 antd Card 改造为自定义 `owb-panel`。
+- BrowserWindow `minWidth` 980→640：原值使 `@media (max-width:680px)` 断点（侧栏隐藏、单栏堆叠）在真实窗口不可达，只能靠 DevTools 视口模拟验证，现在拖窗边缘就能触发。
 
 ### Removed
 
@@ -59,6 +64,8 @@
 - renderer 可读取当前 SSE 连接状态，避免窗口加载晚于连接事件时一直显示“事件流重连中”。
 - Electron 从 33 升级到 43.4.1，清除当前依赖审计中的高危漏洞；新增 Linux/macOS 双平台源码门禁。
 - oss-maintainer 示例工作区：去除机器专属的 `localReference`，改用可移植占位路径；真实绝对绑定由引擎 apply 时重算。
+- PR #77 review：`antd-skin.css` 头注释里 `--ui-duration-*/--ui-ease` 中的 `*/` 提前闭合整块 light token（CSSOM 解析丢弃，仅 CDP 计算值能看出，静态检查看不出），改写措辞避开 `*/` 组合；`--ui-foreground-subtle` 对卡面对比度只有 3.49:1/3.81:1（9-11px 文本不适用 large-text 的 3:1 门槛），调整为 `#66685f`/`#92958b`，全部背景阶 ≥4.62:1。
+- PR #77 review：预算仪表 `>100%` 时宽度被夹到 100%、且 `aria-valuenow` 可超出固定的 `aria-valuemax=100`（非法 meter）——改为不夹宽度（轨道 `overflow:hidden` 移除，允许圆角端帽出界）、`aria-valuemax` 随读数动态取 `max(100, 当前值)`，保证 `valuenow <= valuemax` 恒成立。
 
 ### Verification
 
@@ -67,6 +74,7 @@
 - macOS 桌面壳实测：组织树渲染、岗位卡片、SSE 刷新、关窗进程退出全部通过（issue #4 验收，证据见 issue #1/#2 评论）。
 - D3 后端以 fixture CLI 和 HTTP 集成测试验证；renderer 以 IPC fixture 验证“打开工作区 → 选岗位 → 加载本地历史 → 发送 → readback”、idle 禁用和 API failure。Qoder/Claude Code live Host 未在本机执行；委派与 mem recall 不在本切片范围。
 - Session E3 以真实临时 workspace 覆盖 create → turn → rotate → restart → old/read-only + successor/zero-turn，另覆盖双 rotate、running conflict、错误请求不触发 Host 和持久化攻击面。Memory recall/write 与 live Host E4 明确未实现/未验证。
+- PR #77：`tsc -b`、`typecheck:ui`、`typecheck:renderer` 全绿；`test:ui` 31/31、`test:renderer` 97/97、`test:desktop-main` 27/27（含新增 `window-ipc.test.cjs` 6 例负向安全测试、`contrast.test.cjs` 1 例真实 WCAG 计算）；`npm audit --audit-level=high` 0 漏洞。`apps/server/*` 未改动，其测试套件本地重跑两次分别为 17 / 20 个失败（非确定性、失败数不稳定，`git diff apps/server/` 为空），系既有 test 隔离问题，非本 PR 引入，CI（干净环境）按 reviewer 记录为全绿；未在本 PR 内处理（越出 AC-005 边界）。窗口边缘拖拽缩放：CDP 视口模拟 940/680/1680 三档均验证通过，真实 WM 交互（WSLg）未验证，已在 macOS 实机验证通过（见 PR review）。
 
 ## [D0] — 骨架
 

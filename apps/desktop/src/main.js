@@ -15,7 +15,9 @@ const fs = require("node:fs");
 const http = require("node:http");
 const os = require("node:os");
 const path = require("node:path");
+const { pathToFileURL } = require("node:url");
 const { rendererEntryPath } = require("./runtime-paths.cjs");
+const { isAllowedNavigationTarget, isTrustedWindowSender } = require("./window-ipc.cjs");
 const { validateRestoreRequest } = require("./org-ipc.cjs");
 const {
   validateAssetsCreateRequest,
@@ -52,6 +54,9 @@ const READY_PREFIX = "org-workbench-server ready ";
 let controlPlane = null; // { child, port, token }
 let controlPlaneError = null;
 let mainWindow = null;
+/** file:// URL of the packaged renderer entry loaded into mainWindow — the
+ * one and only URL a trusted window IPC call may be sent from (#77 review). */
+let trustedRendererUrl = null;
 let eventStreamRequest = null;
 let currentSseStatus = "connecting";
 
@@ -453,14 +458,26 @@ ipcMain.handle("owb:sse-status:get", async () => currentSseStatus);
 // OS decoration looks crude next to the app chrome. The window stays resizable
 // (WM edge drag) and the bar carries -webkit-app-region: drag for moving.
 function createWindow() {
+  const entryPath = rendererEntryPath(__dirname);
+  trustedRendererUrl = pathToFileURL(entryPath).toString();
   mainWindow = new BrowserWindow({
     width: 1240,
     height: 800,
-    minWidth: 980,
+    // #77 review item 5: was 980 — the 680px CSS breakpoint (sidebar hidden,
+    // single-column stack) could never actually be reached by dragging the
+    // real window; only DevTools viewport emulation could prove it. Lowered
+    // so the narrow layout it drives is reachable in production, not just
+    // in a simulated viewport.
+    minWidth: 640,
     minHeight: 680,
     title: "org-workbench",
     frame: false,
     resizable: true,
+    // Native window paint color before any CSS loads (avoids a white flash);
+    // main process has no access to CSS custom properties, so this literal
+    // must be kept in sync with --ui-canvas in antd-skin.css by hand — not
+    // an AC-002 "no raw hex in components" violation (there is no component
+    // here, just Electron's own pre-paint).
     backgroundColor: "#f4f1e8",
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),
@@ -470,29 +487,43 @@ function createWindow() {
     },
   });
   mainWindow.setMenuBarVisibility(false);
-  void mainWindow.loadFile(rendererEntryPath(__dirname));
+  void mainWindow.loadFile(entryPath);
+  // #77 review item 2: this shell never legitimately navigates away from the
+  // packaged renderer or opens child windows; deny both explicitly rather
+  // than relying on Electron's defaults.
+  mainWindow.webContents.on("will-navigate", (event, targetUrl) => {
+    if (!isAllowedNavigationTarget(targetUrl, trustedRendererUrl)) event.preventDefault();
+  });
+  mainWindow.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
   mainWindow.on("closed", () => {
     mainWindow = null;
+    trustedRendererUrl = null;
   });
 }
 
 // Window chrome controls for the custom title bar. Enumerated handlers only —
-// no generic "call any BrowserWindow method" channel.
-ipcMain.handle("owb:window:minimize", () => {
+// no generic "call any BrowserWindow method" channel — each additionally
+// gated on isTrustedWindowSender (#77 review item 2: ipcMain.handle() is not
+// scoped to a window on its own). Rejection returns { ok: false } rather than
+// throwing, matching this bridge's existing response shape.
+ipcMain.handle("owb:window:minimize", (event) => {
+  if (!isTrustedWindowSender(event, mainWindow, trustedRendererUrl)) return { ok: false };
   mainWindow?.minimize();
   return { ok: true };
 });
 
 // 注意：WSLg/Weston 下 isMaximized() 会恒返回 true（窗口实际未最大化），
 // 所以不向渲染层暴露"当前是否最大化"，按钮文案保持静态、不谎报状态。
-ipcMain.handle("owb:window:toggle-maximize", () => {
+ipcMain.handle("owb:window:toggle-maximize", (event) => {
+  if (!isTrustedWindowSender(event, mainWindow, trustedRendererUrl)) return { ok: false };
   if (!mainWindow) return { ok: false };
   if (mainWindow.isMaximized()) mainWindow.unmaximize();
   else mainWindow.maximize();
   return { ok: true };
 });
 
-ipcMain.handle("owb:window:close", () => {
+ipcMain.handle("owb:window:close", (event) => {
+  if (!isTrustedWindowSender(event, mainWindow, trustedRendererUrl)) return { ok: false };
   mainWindow?.close();
   return { ok: true };
 });

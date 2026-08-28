@@ -30,7 +30,11 @@
   --ui-surface-inset: #f2eee3;
   --ui-foreground: #262722;
   --ui-foreground-muted: #5a5c52;
-  --ui-foreground-subtle: #85887c;
+  /* #77 review item 3: 原 #85887c 对 --ui-surface 只有 3.49:1，用在 9-11px
+     文本（非 large text，WCAG 门槛是 4.5:1 不是 3:1）不达标。压暗到 #66685f
+     后对全部 5 个背景阶（surface/-raised/-inset/canvas/-subtle）最差
+     4.62:1，见 apps/desktop/test/contrast.test.cjs 的回归断言。 */
+  --ui-foreground-subtle: #66685f;
 
   /* warm hairline：分层靠 1px 描边 + 亮度阶 */
   --ui-border: #dcd7ca;
@@ -113,7 +117,9 @@
   --ui-surface-inset: #262a23;
   --ui-foreground: #e8e5de;
   --ui-foreground-muted: #a6a79c;
-  --ui-foreground-subtle: #7e8176;
+  /* #77 review item 3: 原 #7e8176 对 --ui-surface 只有 3.81:1；提亮到
+     #92958b 后最差 4.65:1（surface-raised）。 */
+  --ui-foreground-subtle: #92958b;
 
   /* warm hairline 暗阶 */
   --ui-border: #33372f;

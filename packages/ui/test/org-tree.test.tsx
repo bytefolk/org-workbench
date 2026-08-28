@@ -118,6 +118,24 @@ describe("OrgTree (D1 spec §2, frozen org-tree.v1)", () => {
     expect(idle.querySelector(".ui-org-tree__led")!.className).not.toContain("is-running");
   });
 
+  // #77 review item 4: spec requires >100% to overflow the 42px micro track
+  // rather than clamp flush to it, and ARIA valuenow must never exceed
+  // valuemax (issue-researcher's perTask cap is 20,000 tokens; a 23,200-token
+  // fact is 116%).
+  it("does not clamp the micro budget track or its ARIA range when over budget (#77)", () => {
+    render(<OrgTree snapshot={SNAPSHOT} budgetRatios={{ "issue-researcher": 1.16 }} />);
+    const row = screen.getByText("issue-researcher").closest('[role="treeitem"]')!;
+    const meter = row.querySelector('[role="meter"]') as HTMLElement;
+    expect(meter.className).toContain("is-over");
+    expect(meter).toHaveAttribute("aria-valuenow", "116");
+    expect(meter).toHaveAttribute("aria-valuemax", "116");
+    expect(Number(meter.getAttribute("aria-valuenow"))).toBeLessThanOrEqual(
+      Number(meter.getAttribute("aria-valuemax")),
+    );
+    const fill = meter.querySelector("i") as HTMLElement;
+    expect(fill.style.width).toBe("116%");
+  });
+
   it("renders the empty state when the tree has no positions", () => {
     render(<OrgTree snapshot={{ ...SNAPSHOT, tree: [], positionCount: 0, depth: 0 }} />);
     expect(screen.getByText("尚无岗位，点击招聘")).toBeInTheDocument();

@@ -2,7 +2,12 @@
 
 > 交接文档：面向后续接手修改样式的 AI 或前端工程师。
 > 配套预览：本目录 `org-workbench-design-control-plane.html`（交互稿，可对照看效果）。
-> 本文是**唯一权威**：改代码以本规格为准，预览稿仅为视觉示意，二者冲突时以规格为准。
+> **权威关系（#77 review 修正——原表述与下方 #73 更新说明自相矛盾）**：
+> §2 signature moves 的结构定义与 §4 落地文件清单，以本文为准；
+> §1 铁律与 §3 的数值层（配色/字体/圆角/动效），在 #73 修订中已改为以
+> `org-workbench-design-control-plane.html` 预览稿为权威源（productOwner
+> 裁决，见下方 #73 更新说明）——不是"预览稿仅为视觉示意"。两者不是同一份
+> 权威，改代码前先看清改的是哪一层。
 
 ---
 
@@ -138,9 +143,11 @@ antd cssinjs 侧（`App.tsx` `ConfigProvider`）与此处同值同步维护。
 
 沿用现有 scale（`--ui-space` 4/8/12/16/…）与 `--ui-radius-sm/md/lg/xl`，圆角改为 **6/10/14/18**（对齐 html 设计稿 `--r-sm/md/lg` 6/10/14，并延伸一档 18 供 modal/drawer 用，antd cssinjs `borderRadius` 同步为 10）。行高、卡 padding 一律从 token 取，禁止魔法数。
 
-### 3.4 动效
+### 3.4 动效（#77 review 修正：与 §1 铁律表数值不一致）
 
-- 三档 120/150/200ms，ease-out（沿用现有 token）
+- 三档 **120/160/240ms**，ease-out `cubic-bezier(0.22,0.61,0.36,1)`（对齐 §1
+  铁律表与 html 设计稿 `--t-fast/mid/slow`；此前本节残留 #31 冻结值
+  120/150/200，与 §1 已更新的数值互相矛盾，以 §1 为准）
 - 新增且必须：`prefers-reduced-motion: reduce` 时关闭全部动画与过渡（statusline 呼吸点停止、树连线点亮变瞬时）
 
 ---
