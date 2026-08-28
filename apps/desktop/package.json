@@ -11,6 +11,8 @@
   },
   "devDependencies": {
     "@fontsource/inter": "^5.3.0",
+    "@fontsource/jetbrains-mono": "^5.3.0",
+    "@fontsource/space-grotesk": "^5.3.0",
     "@fullstack-ai-infra/ui": "file:../../../design-system",
     "@testing-library/jest-dom": "^6.6.0",
     "@testing-library/react": "^16.2.0",

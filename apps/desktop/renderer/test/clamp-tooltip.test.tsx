@@ -30,10 +30,12 @@ const shortTurn: TurnRecord = {
 };
 
 describe("issue #20 two-line clamp + tooltip", () => {
+  // #73: 下达任务与输出改为时间线卡内的 .owb-tc__task / .owb-tc__out，
+  // 两行截断 + title 全文的契约不变。
   it("clamps long turn input and output and keeps the full text in title", () => {
     const { container } = render(<TurnThread turns={[longTurn]} />);
-    const input = container.querySelector(".owb-bubble--operator .owb-bubble__text");
-    const output = container.querySelector(".owb-turn__output");
+    const input = container.querySelector(".owb-tc__task .owb-clamp-2");
+    const output = container.querySelector(".owb-tc__out");
     expect(input).not.toBeNull();
     expect(input?.className).toContain("owb-clamp-2");
     expect(input?.getAttribute("title")).toBe(LONG);
@@ -44,7 +46,7 @@ describe("issue #20 two-line clamp + tooltip", () => {
 
   it("keeps the clamp class on short text without altering it", () => {
     const { container } = render(<TurnThread turns={[shortTurn]} />);
-    const input = container.querySelector(".owb-bubble--operator .owb-bubble__text");
+    const input = container.querySelector(".owb-tc__task .owb-clamp-2");
     expect(input?.getAttribute("title")).toBe("检查发布");
     expect(input?.textContent).toBe("检查发布");
   });

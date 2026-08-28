@@ -19,9 +19,18 @@ export function DismissPositionDialog({
   const [open, setOpen] = useState(false);
   return (
     <>
-      <Button variant="danger" size="sm" onClick={() => setOpen(true)} disabled={busy}>
-        <Trash2 aria-hidden="true" size={14} /> 裁撤
-      </Button>
+      {/* 触发键克制：平时是 hairline 幽灵按钮，hover/focus 才转 danger。
+          裁撤是低频且不可逆的操作，不该用实心红长期占据视觉重心；真正的
+          警示留给二次确认弹窗。 */}
+      <button
+        type="button"
+        className="owb-dismiss"
+        onClick={() => setOpen(true)}
+        disabled={busy}
+      >
+        <Trash2 aria-hidden="true" size={13} />
+        裁撤
+      </button>
       <Modal
         open={open}
         title={`确认裁撤 ${positionName}`}

@@ -62,6 +62,19 @@ function apiErrorMessage(body: unknown, fallback: string): string {
   return fallback;
 }
 
+/** Design-spec §3.2: timestamps read as HH:MM in the mono lane; the full
+ * datetime stays reachable through the element's title. */
+function timeShort(iso: string): string {
+  const at = new Date(iso);
+  if (Number.isNaN(at.getTime())) return "--:--";
+  return at.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: false });
+}
+
+/** conversationRef head, mono-stamped in the panel header (设计稿 .g-t span). */
+function shortRef(conversationRef: string): string {
+  return `${conversationRef.slice(0, 4)}…${conversationRef.slice(-3)}`;
+}
+
 
 /**
  * S2 group chat surface (#52, DS-34-001 rev-1 §1.2): explicit @mention
@@ -286,6 +299,16 @@ export function GroupsPanel({
     return { persisted, live };
   }, [liveRuns, positionNames, selectedRef, timeline]);
 
+  /** Members with an in-flight run in this group — drives the roster LED and
+   * the header 状态灯 (设计稿 .roster .rdot / .src)。 */
+  const runningMembers = useMemo(() => {
+    const ids = new Set<string>();
+    for (const run of Object.values(liveRuns)) {
+      if (run.groupRef === selectedRef) ids.add(run.positionId);
+    }
+    return ids;
+  }, [liveRuns, selectedRef]);
+
   const nonMembers = positions.filter(
     (position) => selectedGroup !== null && !selectedGroup.members.includes(position.id),
   );
@@ -298,7 +321,7 @@ export function GroupsPanel({
     <section className="owb-groups" aria-label="群聊">
       <div className="owb-groups__list">
         <header className="owb-groups__list-header">
-          <h2><UsersRound aria-hidden="true" size={16} />群聊</h2>
+          <h2><UsersRound aria-hidden="true" size={12} />群聊</h2>
         </header>
         {groupsError ? <p className="owb-groups__error" role="alert">{groupsError}</p> : null}
         <ul className="owb-groups__items">
@@ -309,8 +332,23 @@ export function GroupsPanel({
                 className={group.conversationRef === selectedRef ? "is-active" : undefined}
                 onClick={() => setSelectedRef(group.conversationRef)}
               >
-                {groupLabel(group, positionNames)}
-                <span className="owb-groups__item-meta">{group.members.length} 名成员</span>
+                <span className="owb-groups__item-name">
+                  <span className="owb-groups__avatar-stack" aria-hidden="true">
+                    {group.members.slice(0, 3).map((memberId) => (
+                      <PositionAvatar
+                        key={memberId}
+                        colors={positionColors ?? {}}
+                        id={memberId}
+                        name={positionNames[memberId] ?? memberId}
+                        className="owb-groups__avatar owb-groups__avatar--xs"
+                      />
+                    ))}
+                  </span>
+                  {groupLabel(group, positionNames)}
+                </span>
+                <span className="owb-groups__item-meta">
+                  {group.members.length} 人 · {timeShort(group.updatedAt)}
+                </span>
               </button>
             </li>
           ))}
@@ -354,11 +392,10 @@ export function GroupsPanel({
 
       <div className="owb-groups__panel">
         {selectedGroup === null ? (
-          <p className="owb-muted">选择或新建一个群聊；@提及决定谁被显式路由。</p>
+          <p className="owb-panel__notice">选择或新建一个群聊；@提及决定谁被显式路由。</p>
         ) : (
           <>
             <header className="owb-groups__panel-header">
-              <h3>{groupLabel(selectedGroup, positionNames)}</h3>
               <div className="owb-groups__avatar-stack" aria-label={`群成员 ${selectedGroup.members.length} 人`}>
                 {selectedGroup.members.slice(0, 6).map((memberId) => (
                   <PositionAvatar
@@ -375,27 +412,64 @@ export function GroupsPanel({
                   </span>
                 ) : null}
               </div>
+              <div className="owb-groups__panel-title">
+                <h3>{groupLabel(selectedGroup, positionNames)}</h3>
+                <span className="owb-groups__panel-ref">
+                  conversation {shortRef(selectedGroup.conversationRef)} · {selectedGroup.members.length} 成员
+                </span>
+              </div>
+              <span className="owb-src">
+                <span
+                  className={runningMembers.size > 0 ? "owb-led owb-led--running" : "owb-led"}
+                  aria-hidden="true"
+                />
+                <span className="owb-src__text">
+                  {runningMembers.size > 0
+                    ? `${runningMembers.size} 运行中`
+                    : `${selectedGroup.members.length} 在线`}
+                </span>
+              </span>
             </header>
+
+            <div className="owb-groups__panel-sub">
+              <div className="owb-session-chip">
+                <span className="owb-session-chip__kind">engine</span>
+                <span className="owb-session-chip__id">
+                  {engineLabel(engine)} · 群组回合按成员分账
+                </span>
+              </div>
+              <label className="owb-turn-engine">
+                <span className="owb-turn-control__label">Agent Host</span>
+                <AntSelect
+                  aria-label="选择 Agent Host"
+                  value={engine}
+                  onChange={(next) => onSelectEngine(next as TurnEngine)}
+                  options={engineSelectOptions(GROUP_ENGINES, engineAvailability)}
+                />
+              </label>
+            </div>
+
+            {panelError ? <p className="owb-groups__error" role="alert">{panelError}</p> : null}
 
             <div className="owb-groups__panel-body">
               <aside className="owb-groups__roster" aria-label="群成员">
+                <h4>成员</h4>
                 <ul className="owb-groups__roster-items">
                   {selectedGroup.members.map((memberId) => {
-                    const running = Object.values(liveRuns).some(
-                      (run) => run.groupRef === selectedRef && run.positionId === memberId,
-                    );
+                    const running = runningMembers.has(memberId);
                     return (
                       <li key={memberId} className="owb-groups__roster-item">
+                        <span
+                          className={running ? "owb-led owb-led--running" : "owb-led"}
+                          {...(running ? { "aria-label": "回合进行中" } : { "aria-hidden": true })}
+                        />
                         <PositionAvatar
                           colors={positionColors ?? {}}
                           id={memberId}
                           name={positionNames[memberId] ?? memberId}
-                          className="owb-groups__avatar"
+                          className="owb-groups__avatar owb-groups__avatar--sm"
                         />
                         <span className="owb-groups__roster-name">{positionNames[memberId] ?? memberId}</span>
-                        {running ? (
-                          <span className="owb-groups__roster-running" aria-label="回合进行中" />
-                        ) : null}
                       </li>
                     );
                   })}
@@ -419,10 +493,7 @@ export function GroupsPanel({
                 ) : null}
               </aside>
 
-              <div className="owb-groups__panel-main">
-            {panelError ? <p className="owb-groups__error" role="alert">{panelError}</p> : null}
-
-            <div className="owb-groups__timeline" aria-label="群时间线" aria-busy={timelineLoading}>
+              <div className="owb-groups__timeline" aria-label="群时间线" aria-busy={timelineLoading}>
               {displayItems.persisted.map((item) =>
                 item.kind === "user" ? (
                   <div className="owb-bubble-turn" key={item.messageId}>
@@ -434,14 +505,18 @@ export function GroupsPanel({
                     ) : null}
                     <div className="owb-bubble-row owb-bubble-row--operator">
                       <article className="owb-bubble owb-bubble--operator">
+                        <header className="owb-bubble__header">
+                          <span className="owb-bubble__avatar owb-bubble__avatar--operator" title="操作员" aria-hidden="true">
+                            <UserRound size={11} />
+                          </span>
+                          <b className="owb-bubble__name">你</b>
+                          <span className="owb-bubble__role">操作员</span>
+                          <time className="owb-bubble__time" dateTime={item.createdAt} title={new Date(item.createdAt).toLocaleString()}>
+                            {timeShort(item.createdAt)}
+                          </time>
+                        </header>
                         <p className="owb-bubble__text">{renderMentionText(item.input)}</p>
-                        <footer className="owb-bubble__meta">
-                          <time dateTime={item.createdAt}>{new Date(item.createdAt).toLocaleString()}</time>
-                        </footer>
                       </article>
-                      <span className="owb-bubble__avatar owb-bubble__avatar--operator" title="操作员" aria-hidden="true">
-                        <UserRound size={14} />
-                      </span>
                     </div>
                   </div>
                 ) : (
@@ -452,20 +527,22 @@ export function GroupsPanel({
                     );
                     return (
                       <div className="owb-bubble-row owb-bubble-row--employee" key={turn.id}>
-                        <PositionAvatar
-                          colors={positionColors}
-                          id={turn.positionId}
-                          name={turn.positionName}
-                          className="owb-bubble__avatar"
-                        />
                         <article className={`owb-bubble owb-bubble--employee is-${turn.status}`}>
                           <header className="owb-bubble__header">
-                            <span className="owb-bubble__name">@{turn.positionName}</span>
-                            <span className="owb-turn__engine">
+                            <PositionAvatar
+                              colors={positionColors}
+                              id={turn.positionId}
+                              name={turn.positionName}
+                              className="owb-bubble__avatar"
+                            />
+                            <b className="owb-bubble__name">@{turn.positionName}</b>
+                            <span className="owb-bubble__eng">
                               <EngineIcon engine={turn.engine} />
                               {engineLabel(turn.engine)}
                             </span>
-                            <time dateTime={turn.createdAt}>{new Date(turn.createdAt).toLocaleString()}</time>
+                            <time className="owb-bubble__time" dateTime={turn.createdAt} title={new Date(turn.createdAt).toLocaleString()}>
+                              {timeShort(turn.createdAt)}
+                            </time>
                           </header>
                           {turn.output ? (
                             <p className="owb-turn__output owb-clamp-2" title={turn.output}>{turn.output}</p>
@@ -484,19 +561,20 @@ export function GroupsPanel({
               )}
               {displayItems.live.map(({ key, turn }) => (
                 <div className="owb-bubble-row owb-bubble-row--employee" key={key} aria-live="polite">
-                  <PositionAvatar
-                    colors={positionColors}
-                    id={turn.positionId}
-                    name={turn.positionName}
-                    className="owb-bubble__avatar"
-                  />
                   <article className="owb-bubble owb-bubble--employee is-running">
                     <header className="owb-bubble__header">
-                      <span className="owb-bubble__name">@{turn.positionName}</span>
-                      <span className="owb-turn__engine">
+                      <PositionAvatar
+                        colors={positionColors}
+                        id={turn.positionId}
+                        name={turn.positionName}
+                        className="owb-bubble__avatar"
+                      />
+                      <b className="owb-bubble__name">@{turn.positionName}</b>
+                      <span className="owb-bubble__eng">
                         <EngineIcon engine={turn.engine} />
                         {engineLabel(turn.engine)}
                       </span>
+                      <span className="owb-led owb-led--running" aria-label="回合进行中" />
                     </header>
                     {turn.output ? (
                       <p className="owb-turn__output owb-clamp-2" title={turn.output}>{turn.output}</p>
@@ -509,11 +587,11 @@ export function GroupsPanel({
               {!timelineLoading && displayItems.persisted.length === 0 && displayItems.live.length === 0 ? (
                 <p className="owb-muted">还没有消息；@提及成员并发送，即为显式路由。</p>
               ) : null}
+              </div>
             </div>
 
             <form className="owb-turn-composer owb-groups__composer" onSubmit={(event) => void send(event)}>
               <div className="owb-groups__mention-picker" aria-label="选择要 @ 的成员">
-                <span className="owb-turn-control__label">@ 提及（显式路由）</span>
                 {selectedGroup.members.map((memberId) => {
                   const active = mentions.has(memberId);
                   return (
@@ -536,15 +614,6 @@ export function GroupsPanel({
                   );
                 })}
               </div>
-              <label className="owb-turn-engine">
-                <span className="owb-turn-control__label">Agent Host</span>
-                <AntSelect
-                  aria-label="选择 Agent Host"
-                  value={engine}
-                  onChange={(next) => onSelectEngine(next as TurnEngine)}
-                  options={engineSelectOptions(GROUP_ENGINES, engineAvailability)}
-                />
-              </label>
               <div className="owb-turn-composer__surface">
                 <Input.TextArea
                   value={input}
@@ -552,7 +621,7 @@ export function GroupsPanel({
                   aria-label="群聊消息"
                   placeholder={mentions.size > 0
                     ? `发送给 ${[...mentions].map((id) => `@${positionNames[id] ?? id}`).join("、")}…`
-                    : "先选择要 @ 的成员…"}
+                    : "按 @ 路由，仅通知被 @ 的成员…"}
                   disabled={sending || !engineAvailability[engine].ready}
                   onChange={(event) => setInput(event.target.value)}
                 />
@@ -567,13 +636,11 @@ export function GroupsPanel({
               <p className="owb-turn-composer__hint" role="status">
                 {engineAvailability[engine].ready
                   ? mentions.size === 0
-                    ? "选择至少一名成员：群回合只按 @mention 显式路由，不广播"
+                    ? "显式 @ 路由 —— 只向被提及的成员发起回合，绝不广播"
                     : `将按 @mention 为 ${mentions.size} 名成员各创建一个回合`
                   : engineAvailability[engine].reason ?? `${engineLabel(engine)} 尚未就绪`}
               </p>
             </form>
-              </div>
-            </div>
           </>
         )}
       </div>

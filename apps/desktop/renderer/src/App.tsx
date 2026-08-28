@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Alert, Button as AntButton, ConfigProvider, theme } from "antd";
 import zhCN from "antd/locale/zh_CN";
 import {
@@ -6,10 +6,9 @@ import {
   ModuleRail,
   Sidebar,
   Skeleton,
-  SourceStatus,
   Topbar,
 } from "@fullstack-ai-infra/ui";
-import { BudgetBar, OrgTree, PositionCard } from "@org-workbench/ui";
+import { OrgTree, PositionCard } from "@org-workbench/ui";
 import type { OrgDropPosition, PositionCardData } from "@org-workbench/ui";
 import type {
   ChangeManifest,
@@ -24,8 +23,7 @@ import type {
   WorkbenchSessionList,
   WorkspaceInfoResponse,
 } from "@org-workbench/shared";
-import { FileChartColumn, FolderTree, History, Network, UsersRound } from "lucide-react";
-import type { CSSProperties } from "react";
+import { FileChartColumn, FolderTree, History, Network, Plus, UsersRound } from "lucide-react";
 import {
   EMPTY_TURN_STREAM,
   TurnPanel,
@@ -108,6 +106,8 @@ export function App() {
   /** Org-tree group entry (#53): prefilled draft members handed to the
    * GroupsPanel create panel; nonce re-fires repeated entries. */
   const [groupDraftSeed, setGroupDraftSeed] = useState<{ members: string[]; nonce: number } | null>(null);
+  /** 亮/暗跟随 <html data-theme>，antd cssinjs 与 --ui-* skin 同步切换。 */
+  const themeMode = useThemeMode();
 
   useEffect(() => {
     selectedIdRef.current = selectedId;
@@ -656,6 +656,31 @@ export function App() {
   const selectedBudgetRatio = selectedBudgetReport?.latestTurn && selectedBudgetReport.declared.perTask.tokens
     ? selectedBudgetReport.latestTurn.totalTokens / selectedBudgetReport.declared.perTask.tokens
     : null;
+
+  /** Position ids with a turn in flight — drives the tree/card status lights
+   * (#73 signature move ②). Observed from the SSE run stream only; a position
+   * with no live run is never shown as running. */
+  const runningPositionIds = useMemo(() => {
+    const ids = new Set<string>();
+    for (const run of Object.values(turnStream.runs)) {
+      if (run.positionId) ids.add(run.positionId);
+    }
+    return ids;
+  }, [turnStream.runs]);
+
+  /** Per-position per-task consumption ratios for the tree's micro budget
+   * bars. Only positions with a real latest-turn fact get a ratio; the rest
+   * stay in declaration phase rather than rendering a fabricated 0%. */
+  const budgetRatios = useMemo(() => {
+    const ratios: Record<string, number | null> = {};
+    for (const budget of reports?.budgets ?? []) {
+      const cap = budget.declared.perTask.tokens;
+      ratios[budget.positionId] = budget.latestTurn && cap
+        ? budget.latestTurn.totalTokens / cap
+        : null;
+    }
+    return ratios;
+  }, [reports]);
   const engineAvailability = useMemo(() => ({
     qoder: {
       configured: health?.hosts?.qoder.configured === true,
@@ -704,41 +729,64 @@ export function App() {
       locale={zhCN}
       button={{ autoInsertSpace: false }}
       theme={{
-        algorithm: theme.defaultAlgorithm,
+        algorithm: themeMode === "dark" ? theme.darkAlgorithm : theme.defaultAlgorithm,
         token: {
-          // DS-31-001 处方2：全应用单一强调色，一次定死（Linear lavender 纪律样本）；
-          // AI 紫 #722ed1 仍仅限 AI affordance，不在此列。design-system seed 同步由设计线跟进。
-          colorPrimary: "#5E6AD2",
-          colorSuccess: "#52C41A",
-          colorWarning: "#FAAD14",
-          colorError: "#FF4D4F",
-          colorInfo: "#5E6AD2",
-          colorLink: "#5E6AD2",
-          // DS-31-001 处方3：warm hairline 取代 antd 默认灰边。
-          colorBorder: "#E8E6E2",
-          colorBorderSecondary: "#EEECE9",
-          borderRadius: 6,
-          // DS-31-001 处方4：动效三档 120/150/200ms，全 ease-out，禁 >300ms。
+          // #73 Control Plane v2（取代 #31 冻结值）：全应用单一强调色，一次定死
+          // （Linear lavender 纪律样本）；AI 紫 #722ed1 仍仅限 AI affordance，
+          // 不在此列。状态色/描边改用 control-plane 设计稿的哑光调，与
+          // antd-skin.css 的 --ui-* 同步（含暗色阶，见 ANTD_SEED）。
+          ...ANTD_SEED[themeMode],
+          // 控件尺寸对齐设计稿：.sel 高 32 / 字号 12 / 圆角 8，.btn-sm 高 26。
+          // antd 默认 14px + 36px 在这套密度里明显偏大（岗位下拉尤其突兀）。
+          fontSize: 12,
+          borderRadius: 8,
+          // 动效三档 120/160/240ms，全 ease-out，禁 >300ms。
           motionDurationFast: "0.12s",
-          motionDurationMid: "0.15s",
-          motionDurationSlow: "0.2s",
-          motionEaseInOut: "cubic-bezier(0.215, 0.61, 0.355, 1)",
-          motionEaseOut: "cubic-bezier(0.215, 0.61, 0.355, 1)",
-          // DS-31-001 处方6：控件统一 36px，紧凑行内 28px（Raycast 口径）。
-          controlHeight: 36,
-          controlHeightSM: 28,
-          controlHeightLG: 40,
+          motionDurationMid: "0.16s",
+          motionDurationSlow: "0.24s",
+          motionEaseInOut: "cubic-bezier(0.22, 0.61, 0.36, 1)",
+          motionEaseOut: "cubic-bezier(0.22, 0.61, 0.36, 1)",
+          controlHeight: 32,
+          controlHeightSM: 26,
+          controlHeightLG: 36,
           fontFamily:
             "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif",
         },
       }}
     >
+    <div className="owb-app">
+      {/* 自定义 40px 标题栏（设计稿 .wintitle）：品牌标 + 窗口点 + 引擎/工作区
+          状态 chip。状态灯诚实映射 /health，不假装在线。 */}
+      <header
+        className="owb-wintitle"
+        onDoubleClick={() => void window.owb.windowToggleMaximize?.()}
+      >
+        <span className="owb-wintitle__mark" aria-hidden="true" />
+        <WindowControls />
+        <span className="owb-wintitle__name">org-workbench</span>
+        <span className="owb-wintitle__spacer" />
+        <span className="owb-wintitle__chip">
+          <span
+            className={engineOk ? "owb-led" : "owb-led owb-led--off"}
+            role="img"
+            aria-label={engineOk ? "引擎可用" : "引擎离线"}
+          />
+          engine <b>{engineOk ? "available" : "offline"}</b>
+          {workspaceInfo?.open === true && workspaceInfo.business
+            ? <> · <span>{workspaceInfo.business}</span></>
+            : null}
+        </span>
+      </header>
+
+    {/* 壳层尺寸（导轨 54 / 侧栏 300 / topbar 48）定在 app.css 的
+        `.owb-app .ui-app-shell` 里，不走内联 style——内联优先级最高，会把
+        窗口缩放的 @media 断点全部盖掉。 */}
     <AppShell
-      style={{ "--ui-sidebar-width": "18rem" } as CSSProperties}
       moduleRail={
         <ModuleRail
           label="模块"
           brand={<span className="owb-rail-brand">owb</span>}
+          footer={<span className="owb-rail-tip" aria-hidden="true">LOCAL CONTROL PLANE</span>}
           items={[
             { id: "org", label: "组织", icon: <Network aria-hidden="true" size={16} />, active: activeModule === "org", onSelect: () => setActiveModule("org") },
             { id: "groups", label: "群聊", icon: <UsersRound aria-hidden="true" size={16} />, active: activeModule === "groups", onSelect: () => setActiveModule("groups") },
@@ -751,7 +799,31 @@ export function App() {
       sidebar={
         <Sidebar
           label="组织目录树"
-          header={<div className="owb-sidebar-title"><span className="owb-sidebar-header">组织</span>{workspaceInfo?.open === true ? <><AntButton size="small" disabled={orgBusy} onClick={() => void undoLastAdjustment()} title="撤销最近一次拖拽调整（⌘Z）">撤销</AntButton><AntButton size="small" type="primary" disabled={orgBusy} onClick={() => setTreeHireParent(selectedId ?? snapshot?.owner ?? null)}>创建员工</AntButton></> : null}</div>}
+          header={
+            <>
+              <div className="owb-side-head">
+                <span className="owb-side-head__label">组织目录树</span>
+                {workspaceInfo?.open === true ? (
+                  <>
+                    <AntButton size="small" disabled={orgBusy} onClick={() => void undoLastAdjustment()} title="撤销最近一次拖拽调整（⌘Z）">撤销</AntButton>
+                    {/* ＋ 走装饰性图标而不是文案前缀，可及名保持「创建员工」。 */}
+                    <AntButton size="small" type="primary" disabled={orgBusy} icon={<Plus aria-hidden="true" size={12} />} onClick={() => setTreeHireParent(selectedId ?? snapshot?.owner ?? null)}>创建员工</AntButton>
+                  </>
+                ) : null}
+              </div>
+              {/* 工作区条（设计稿 .workspace-strip）：名称 + open 状态 + 岗位数 */}
+              {workspaceInfo?.open === true ? (
+                <div className="owb-workspace-strip">
+                  <span className="owb-workspace-strip__name">{workspaceInfo.business ?? "工作区"}</span>
+                  <span className="owb-workspace-strip__meta">
+                    <span className="owb-workspace-strip__open">●</span>
+                    open
+                    {snapshot ? ` · ${snapshot.positionCount} 岗位` : null}
+                  </span>
+                </div>
+              ) : null}
+            </>
+          }
           footer={
             workspaceInfo?.open === true ? <BackupTray backups={backups} busy={orgBusy} onRestore={restorePosition} /> : (
               <AntButton type="primary" block onClick={() => void openWorkspace()}>
@@ -777,6 +849,8 @@ export function App() {
                   versionStamp={snapshot.updatedAt}
                   displayNames={positionNames}
                   avatarColors={positionColors}
+                  runningIds={runningPositionIds}
+                  budgetRatios={budgetRatios}
                   selectedId={selectedId}
                   onSelect={selectPosition}
                   onMove={(id, reportTo) => void movePosition(id, reportTo)}
@@ -808,24 +882,23 @@ export function App() {
       }
       topbar={
         <Topbar
-          breadcrumbs={<Breadcrumbs workspace={workspaceInfo} selected={selectedPosition} snapshot={snapshot} />}
+          breadcrumbs={<Breadcrumbs workspace={workspaceInfo} selected={selectedPosition} />}
           actions={
             <div className="owb-topbar-actions">
-              {selectedPosition?.budget ? (
-                <BudgetBar
-                  format="compact"
-                  declared={{
-                    taskLimit: selectedPosition.budget.perTask,
-                    dailyLimit: selectedPosition.budget.perDay,
-                  }}
-                  label={selectedPosition.name}
-                  consumption={selectedBudgetRatio}
-                />
+              {/* 设计稿 .mini-budget：岗位 id · 110px 轨道 · 百分比。声明期
+                  （无真实用量事实）显示「声明期」而不是伪造的 0%。 */}
+              {selectedPosition?.budget && selectedId ? (
+                <MiniBudget positionId={selectedId} ratio={selectedBudgetRatio} />
               ) : null}
-              <SourceStatus
-                state={engineOk ? "available" : "offline"}
-                label={engineOk ? "引擎可用" : "引擎离线"}
-              />
+              {/* 设计稿 .src 药丸：状态灯 + 文案，取代 DS 的 SourceStatus 外观，
+                  诚实映射 /health.engine.available。 */}
+              <span className="owb-src" role="status">
+                <span
+                  className={engineOk ? "owb-led" : "owb-led owb-led--off"}
+                  aria-hidden="true"
+                />
+                <span className="owb-src__text">{engineOk ? "引擎可用" : "引擎离线"}</span>
+              </span>
             </div>
           }
         />
@@ -870,6 +943,8 @@ export function App() {
               position={card.data}
               loading={card.loading}
               notFound={card.notFound}
+              consumption={selectedBudgetRatio}
+              running={selectedId !== null && runningPositionIds.has(selectedId)}
               onRefresh={() => void refresh()}
             />
             {selectedPosition && selectedId && selectedId !== snapshot?.owner ? <div className="owb-position-actions"><DismissPositionDialog positionName={selectedPosition.name} positionId={selectedId} descendantCount={selectedNode ? countDescendants(selectedNode) : 0} busy={orgBusy} onDismiss={() => dismissPosition(selectedId)} /></div> : null}
@@ -891,7 +966,9 @@ export function App() {
             onCancelTurn={cancelTurn}
             onVerdictTurn={verdictTurn}
             decidedApprovalIds={decidedApprovals}
-            positionColors={positionColors}
+            sseConnected={sseState === "connected"}
+            selectedMode={card.data?.mode ?? null}
+            selectedBudgetLabel={perTaskBudgetLabel(card.data)}
             cancelling={turnCancelling}
             onSelectSession={selectSession}
             onCreateSession={createSession}
@@ -900,6 +977,7 @@ export function App() {
         </div>}
       </div>
     </AppShell>
+    </div>
     </ConfigProvider>
   );
 }
@@ -958,38 +1036,170 @@ function findNodeById(nodes: OrgTreeNodeV1[], id: string): OrgTreeNodeV1 | null 
   return null;
 }
 
+/** Per-task budget label for the boundary chip (设计稿 `40k/task`). Tokens
+ * win over iterations because the engine bills tokens; a declaration with
+ * neither cap renders — rather than a fabricated number. */
+function perTaskBudgetLabel(position: PositionCardData | null): string | null {
+  const perTask = position?.budget?.perTask;
+  if (!perTask) return null;
+  if (typeof perTask.tokens === "number") {
+    const k = perTask.tokens / 1000;
+    const compact = k >= 1 ? `${Number.isInteger(k) ? k : k.toFixed(1)}k` : String(perTask.tokens);
+    return `${compact}/task`;
+  }
+  if (typeof perTask.iterations === "number") return `${perTask.iterations} iters/task`;
+  return null;
+}
+
+/** Real window chrome for the frameless shell (设计稿 .wintitle 左上三点).
+ * macOS-style traffic lights: close / minimize / maximize, each an actual
+ * button with an accessible name — the previous decorative dots sat under the
+ * native frame and did nothing. Guarded with `?.` so the renderer still boots
+ * against an older preload bridge (tests stub a partial bridge). */
+function WindowControls() {
+  return (
+    <span className="owb-wintitle__controls">
+      <button
+        type="button"
+        className="owb-wctl owb-wctl--close"
+        aria-label="关闭窗口"
+        title="关闭"
+        onClick={() => void window.owb.windowClose?.()}
+      >
+        <svg viewBox="0 0 10 10" aria-hidden="true">
+          <path d="M2.5 2.5l5 5M7.5 2.5l-5 5" />
+        </svg>
+      </button>
+      <button
+        type="button"
+        className="owb-wctl owb-wctl--min"
+        aria-label="最小化窗口"
+        title="最小化"
+        onClick={() => void window.owb.windowMinimize?.()}
+      >
+        <svg viewBox="0 0 10 10" aria-hidden="true">
+          <path d="M2.2 5h5.6" />
+        </svg>
+      </button>
+      {/* 文案保持静态：WSLg 下 isMaximized() 不可信，不向用户谎报当前状态。 */}
+      <button
+        type="button"
+        className="owb-wctl owb-wctl--max"
+        aria-label="最大化或还原窗口"
+        title="最大化 / 还原"
+        onClick={() => void window.owb.windowToggleMaximize?.()}
+      >
+        <svg viewBox="0 0 10 10" aria-hidden="true">
+          <rect x="2.6" y="2.6" width="4.8" height="4.8" rx="1" />
+        </svg>
+      </button>
+    </span>
+  );
+}
+
+/** Live `data-theme` on <html> (index.html seeds "light"). antd's cssinjs
+ * algorithm has to follow the same switch as the --ui-* skin, otherwise the
+ * shell goes dark while every antd control stays light (spec §5 双主题验收). */
+function useThemeMode(): "light" | "dark" {
+  const [mode, setMode] = useState<"light" | "dark">(() =>
+    document.documentElement.getAttribute("data-theme") === "dark" ? "dark" : "light",
+  );
+  useEffect(() => {
+    const target = document.documentElement;
+    const sync = (): void =>
+      setMode(target.getAttribute("data-theme") === "dark" ? "dark" : "light");
+    const observer = new MutationObserver(sync);
+    observer.observe(target, { attributes: true, attributeFilter: ["data-theme"] });
+    sync();
+    return () => observer.disconnect();
+  }, []);
+  return mode;
+}
+
+/** antd seed tokens per theme — values mirror antd-skin.css exactly so the
+ * cssinjs layer and the CSS custom properties never disagree. */
+const ANTD_SEED = {
+  light: {
+    colorPrimary: "#5E6AD2",
+    colorSuccess: "#3F7D4E",
+    colorWarning: "#A86A0A",
+    colorError: "#C04A3E",
+    colorInfo: "#5E6AD2",
+    colorLink: "#5E6AD2",
+    colorBorder: "#DCD7CA",
+    colorBorderSecondary: "#E5E1D6",
+  },
+  dark: {
+    colorPrimary: "#8B93E0",
+    colorSuccess: "#84B77C",
+    colorWarning: "#D3A24F",
+    colorError: "#D98276",
+    colorInfo: "#8B93E0",
+    colorLink: "#8B93E0",
+    colorBorder: "#33372F",
+    colorBorderSecondary: "#2C302A",
+  },
+} as const;
+
+/** Topbar mini budget gauge (设计稿 .mini-budget). Declaration phase keeps
+ * the track dim and labels it 声明期 — a position with no turn facts never
+ * renders a fabricated percentage. */
+function MiniBudget({ positionId, ratio }: { positionId: string; ratio: number | null }) {
+  const declared = ratio === null;
+  const pct = declared ? 100 : Math.min(Math.max(Math.round(ratio * 100), 0), 100);
+  const over = !declared && ratio > 1;
+  return (
+    <span className="owb-mini-budget">
+      <span className="owb-mini-budget__label">{positionId}</span>
+      <span
+        className="owb-mini-budget__track"
+        role="meter"
+        aria-label={declared ? `${positionId} 预算声明` : `${positionId} 单任务预算消耗`}
+        aria-valuemin={0}
+        aria-valuemax={100}
+        aria-valuenow={declared ? undefined : Math.round(ratio * 100)}
+      >
+        <i
+          style={{
+            width: `${pct}%`,
+            opacity: declared ? 0.32 : 1,
+            ...(over ? { background: "var(--ui-danger)" } : {}),
+          }}
+        />
+      </span>
+      <span className="owb-mini-budget__label">
+        {declared ? "声明期" : `${Math.round(ratio * 100)}%`}
+      </span>
+    </span>
+  );
+}
+
 function Breadcrumbs({
   workspace,
   selected,
-  snapshot,
 }: {
   workspace: WorkspaceInfoResponse | null;
-  selected: { name: string; reportTo: string | null } | null;
-  snapshot: OrgTreeSnapshot | null;
+  selected: { id: string } | null;
 }) {
   if (workspace?.open !== true) {
     return <span className="owb-breadcrumb owb-muted">未打开工作区</span>;
   }
+  // 设计稿：business / positions / <id>，末段是 primary 药丸。岗位 id（而不是
+  // 展示名）与树标签、证据里的标识保持一致。
   const parts: string[] = [workspace.business ?? "工作区"];
-  if (selected) {
-    const chain: string[] = [selected.name];
-    const guard = new Set<string>();
-    let cursor: string | null = selected.reportTo;
-    while (cursor && !guard.has(cursor)) {
-      guard.add(cursor);
-      const parent = snapshot ? findNodeById(snapshot.tree, cursor) : null;
-      if (!parent) break;
-      chain.unshift(parent.id);
-      cursor = parent.reportTo;
-    }
-    parts.push(...chain);
-  }
+  if (selected) parts.push("positions", selected.id);
+  // 设计稿的面包屑用独立的 "/" 分隔元素（首段展示字体、末段 primary 药丸）。
   return (
     <span className="owb-breadcrumbs">
       {parts.map((part, index) => (
-        <span key={`${part}-${index}`} className="owb-breadcrumb">
-          {part}
-        </span>
+        <Fragment key={`${part}-${index}`}>
+          {index > 0 ? (
+            <span className="owb-breadcrumb-sep" aria-hidden="true">
+              /
+            </span>
+          ) : null}
+          <span className="owb-breadcrumb">{part}</span>
+        </Fragment>
       ))}
     </span>
   );

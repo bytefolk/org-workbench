@@ -1,13 +1,15 @@
 /* org-workbench D1 renderer layout helpers (semantic tokens only).
  *
- * DS-31-001 六处方的 token 取值统一定在 antd-skin.css（ADR-0002 唯一 skin 面）；
- * 本文件只保留处方的应用面规则（处方5 负字距、处方4 自定义元素动效）。 */
+ * token 取值统一定在 antd-skin.css（ADR-0002 唯一 skin 面）；本文件只保留
+ * 应用面规则（标题负字距、展示字体、自定义元素动效）。 */
 
-/* 处方5 标题负字距：≥16px 标题收紧字距；12-13px 辅助文字保持原值。 */
+/* 标题负字距 + 展示字体：≥16px 标题收紧字距、换 Space Grotesk（control-plane
+ * 设计稿 §3.2）；12-13px 辅助文字保持 Inter/系统字体不变。 */
 .owb-reports__hero h1,
 .owb-modal__header h2,
 .owb-turn-panel__header h2 {
   letter-spacing: -0.01em;
+  font-family: var(--owb-font-display);
 }
 
 /* 处方4 动效应用面：自定义交互元素 hover/焦点 120ms ease-out；
@@ -877,13 +879,6 @@
   color: var(--ui-primary-foreground);
 }
 
-/* 群聊逐成员路由注记（规格⑥） */
-.owb-groups__route-note {
-  margin: 0;
-  color: var(--ui-foreground-subtle);
-  font-size: 11px;
-}
-
 .owb-turn__engine {
   flex: 0 0 auto;
   border-radius: 999px;
@@ -1183,39 +1178,49 @@
   }
 }
 
-/* #52 S2 group chat surface (semantic tokens only). */
+/* #52/#53 群聊面（#73 Control Plane 对齐）：设计稿「群聊视图」的
+ * .groups / .g-list / .g-panel / .g-body / .g-msg 全套，语义 token only。
+ * 左 260px 会话列（头像栈 + mono 元信息 + 虚线创建位），右侧面板走
+ * 头部（头像栈 · 会话 ref · 在线状态灯）/ engine chip / 花名册+消息流 /
+ * @路由 composer 四段式。 */
 
 .owb-groups {
   display: grid;
-  grid-template-columns: minmax(220px, 280px) 1fr;
-  gap: var(--ui-space-3, 12px);
+  grid-template-columns: 260px minmax(0, 1fr);
+  gap: 14px;
   flex: 1;
   min-height: 0;
 }
 
+/* ---------- 左列：会话列表（设计稿 .g-list） ---------- */
+
 .owb-groups__list {
   display: flex;
   flex-direction: column;
-  gap: var(--ui-space-2, 8px);
-  padding: var(--ui-space-3, 12px);
+  gap: 8px;
+  padding: 12px;
   border: 1px solid var(--ui-border);
-  border-radius: var(--ui-radius-lg);
+  border-radius: var(--ui-radius-md);
   background: var(--ui-surface);
-  overflow: auto;
+  overflow-y: auto;
 }
 
 .owb-groups__list-header h2 {
   display: flex;
   align-items: center;
-  gap: var(--ui-space-2, 8px);
-  margin: 0;
-  font-size: var(--ui-text-sm, 13px);
+  gap: 6px;
+  margin: 0 0 2px;
+  color: var(--ui-foreground-subtle);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
 }
 
 .owb-groups__items {
   display: flex;
   flex-direction: column;
-  gap: var(--ui-space-2, 8px);
+  gap: 8px;
   margin: 0;
   padding: 0;
   list-style: none;
@@ -1225,16 +1230,23 @@
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  gap: 2px;
+  gap: 3px;
   width: 100%;
-  padding: 8px 10px;
+  padding: 9px 10px;
   border: 1px solid var(--ui-border);
-  border-radius: var(--ui-radius-md, 10px);
+  border-radius: 9px;
   background: var(--ui-surface-inset);
   color: var(--ui-foreground);
-  font-size: var(--ui-text-sm, 13px);
+  font-size: 12px;
   text-align: left;
   cursor: pointer;
+  transition:
+    background var(--owb-duration-fast, 120ms) var(--owb-ease-out, ease),
+    border-color var(--owb-duration-fast, 120ms) var(--owb-ease-out, ease);
+}
+
+.owb-groups__items button:hover {
+  background: color-mix(in srgb, var(--ui-foreground) 5%, var(--ui-surface-inset));
 }
 
 .owb-groups__items button.is-active {
@@ -1242,131 +1254,190 @@
   background: var(--ui-primary-soft);
 }
 
-.owb-groups__item-meta {
-  font-size: var(--ui-text-xs, 12px);
-  color: var(--ui-foreground-muted);
+.owb-groups__items button:focus-visible {
+  outline: 2px solid var(--ui-focus);
+  outline-offset: 1px;
 }
 
+/* 会话名：头像栈内联在名字前（设计稿 .g-item .g-name）。 */
+.owb-groups__item-name {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  min-width: 0;
+  font-weight: 700;
+}
+
+.owb-groups__item-name > :last-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.owb-groups__item-meta {
+  color: var(--ui-foreground-subtle);
+  font-family: var(--ui-font-mono);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+.owb-groups__items button.is-active .owb-groups__item-meta {
+  color: var(--ui-primary-hover);
+}
+
+/* 创建位：虚线占位按钮（设计稿 .g-create），details/summary 承载。 */
 .owb-groups__create summary {
   display: flex;
   align-items: center;
-  gap: var(--ui-space-2, 8px);
-  font-size: var(--ui-text-sm, 13px);
+  gap: 7px;
+  margin-top: 4px;
+  padding: 9px 10px;
+  border: 1px dashed var(--ui-border-strong);
+  border-radius: 9px;
+  color: var(--ui-foreground-muted);
+  font-size: 12px;
+  list-style: none;
   cursor: pointer;
+  transition:
+    color var(--owb-duration-fast, 120ms) var(--owb-ease-out, ease),
+    border-color var(--owb-duration-fast, 120ms) var(--owb-ease-out, ease);
+}
+
+.owb-groups__create summary::-webkit-details-marker {
+  display: none;
+}
+
+.owb-groups__create summary:hover,
+.owb-groups__create[open] summary {
+  border-color: var(--ui-primary);
+  color: var(--ui-primary-hover);
+}
+
+.owb-groups__create summary:focus-visible {
+  outline: 2px solid var(--ui-focus);
+  outline-offset: 1px;
 }
 
 .owb-groups__create-body {
   display: flex;
   flex-direction: column;
-  gap: var(--ui-space-2, 8px);
-  margin-top: var(--ui-space-2, 8px);
-  padding: var(--ui-space-2, 8px);
+  gap: 8px;
+  margin-top: 8px;
+  padding: 10px;
   border: 1px solid var(--ui-border);
-  border-radius: var(--ui-radius-md, 10px);
+  border-radius: 9px;
   background: var(--ui-surface-inset);
 }
 
 .owb-groups__draft-member {
   display: flex;
   align-items: center;
-  gap: var(--ui-space-2, 8px);
-  font-size: var(--ui-text-sm, 13px);
+  gap: 8px;
+  font-size: 12px;
 }
+
+/* ---------- 右侧：群面板（设计稿 .g-panel 四段式） ---------- */
 
 .owb-groups__panel {
   display: flex;
   flex-direction: column;
-  gap: var(--ui-space-3, 12px);
   min-height: 0;
-  padding: var(--ui-space-3, 12px);
+  overflow: hidden;
   border: 1px solid var(--ui-border);
-  border-radius: var(--ui-radius-lg);
+  border-radius: var(--ui-radius-md);
   background: var(--ui-surface);
 }
 
-.owb-groups__panel-header h3 {
-  margin: 0 0 var(--ui-space-2, 8px);
-  font-size: var(--ui-text-sm, 13px);
+.owb-groups__panel > .owb-panel__notice {
+  flex: 1;
+  align-content: center;
 }
 
-.owb-groups__members {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--ui-space-2, 8px);
-}
-
-.owb-groups__add-member {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  font-size: var(--ui-text-xs, 12px);
-  color: var(--ui-foreground-muted);
-}
-
-/* #53 DS-34-001 §1.3/§7: group-header avatar stack + member roster sidebar.
-   Avatar hues come from metadata.color or the org tree's deterministic hue;
-   layout uses tokens only. */
 .owb-groups__panel-header {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: var(--ui-space-2, 8px);
+  gap: 10px;
+  padding: 14px 16px;
 }
 
-.owb-groups__avatar-stack {
-  display: flex;
-  align-items: center;
+.owb-groups__panel-title {
+  flex: 1;
+  min-width: 0;
 }
 
-.owb-groups__avatar-stack .owb-groups__avatar + .owb-groups__avatar {
-  margin-left: -6px;
+.owb-groups__panel-title h3 {
+  margin: 0;
+  overflow: hidden;
+  color: var(--ui-foreground);
+  font-family: var(--owb-font-display);
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.owb-groups__avatar {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  flex: none;
-  width: 22px;
-  height: 22px;
-  border: 1px solid var(--ui-surface);
-  border-radius: 50%;
-  color: #fff;
-  font-size: var(--ui-text-xs, 12px);
-  font-weight: 600;
-  line-height: 1;
+.owb-groups__panel-ref {
+  display: block;
+  color: var(--ui-foreground-subtle);
+  font-family: var(--ui-font-mono);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
 }
 
-.owb-groups__avatar--more {
-  background: var(--ui-surface-inset);
-  color: var(--ui-foreground-muted);
+/* engine chip 行（设计稿 .g-panel-sub）：chip 1fr + 引擎选择 150px。 */
+.owb-groups__panel-sub {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 150px;
+  align-items: end;
+  gap: 8px;
+  padding: 0 16px 10px;
+}
+
+.owb-groups__panel-sub .owb-session-chip__id {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .owb-groups__panel-body {
   display: grid;
-  grid-template-columns: 168px minmax(0, 1fr);
-  gap: var(--ui-space-3, 12px);
+  grid-template-columns: 180px minmax(0, 1fr);
+  gap: 12px;
   flex: 1;
   min-height: 0;
+  padding: 0 16px 12px;
 }
+
+/* ---------- 花名册（设计稿 .roster） ---------- */
 
 .owb-groups__roster {
   display: flex;
   flex-direction: column;
-  gap: var(--ui-space-2, 8px);
+  gap: 4px;
   min-height: 0;
-  padding: var(--ui-space-2, 8px);
+  padding: 8px;
   border: 1px solid var(--ui-border);
-  border-radius: var(--ui-radius-md, 10px);
+  border-radius: 9px;
   background: var(--ui-surface-inset);
-  overflow: auto;
+  overflow-y: auto;
+}
+
+.owb-groups__roster h4 {
+  margin: 2px 0 6px;
+  color: var(--ui-foreground-subtle);
+  font-family: var(--ui-font-mono);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
 }
 
 .owb-groups__roster-items {
   display: flex;
   flex-direction: column;
-  gap: var(--ui-space-2, 8px);
+  gap: 2px;
   margin: 0;
   padding: 0;
   list-style: none;
@@ -1375,8 +1446,14 @@
 .owb-groups__roster-item {
   display: flex;
   align-items: center;
-  gap: var(--ui-space-2, 8px);
-  font-size: var(--ui-text-sm, 13px);
+  gap: 8px;
+  padding: 5px 6px;
+  border-radius: 7px;
+  font-size: 12px;
+}
+
+.owb-groups__roster-item:hover {
+  background: color-mix(in srgb, var(--ui-foreground) 5%, var(--ui-surface-inset));
 }
 
 .owb-groups__roster-name {
@@ -1387,80 +1464,265 @@
   white-space: nowrap;
 }
 
-.owb-groups__roster-running {
-  flex: none;
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: var(--ui-primary);
-  animation: owb-groups-roster-pulse 1.2s ease-in-out infinite;
-}
-
-@keyframes owb-groups-roster-pulse {
-  0%,
-  100% {
-    opacity: 1;
-  }
-  50% {
-    opacity: 0.35;
-  }
-}
-
-.owb-groups__panel-main {
+.owb-groups__add-member {
   display: flex;
-  flex-direction: column;
-  gap: var(--ui-space-3, 12px);
-  min-width: 0;
-  min-height: 0;
+  align-items: center;
+  gap: 6px;
+  margin-top: 6px;
+  color: var(--ui-foreground-subtle);
+  font-size: 11px;
 }
 
-.owb-groups__error {
-  margin: 0;
-  font-size: var(--ui-text-xs, 12px);
-  color: var(--ui-danger);
+/* ---------- 头像（设计稿 .av / .avatar-stack） ---------- */
+
+.owb-groups__avatar-stack {
+  display: flex;
+  align-items: center;
+  flex: none;
 }
+
+.owb-groups__avatar-stack .owb-groups__avatar + .owb-groups__avatar {
+  margin-left: -7px;
+}
+
+.owb-groups__avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 26px;
+  height: 26px;
+  border: 2px solid var(--ui-surface);
+  border-radius: 50%;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.owb-groups__avatar--sm {
+  width: 20px;
+  height: 20px;
+  border-width: 1px;
+  font-size: 9px;
+}
+
+.owb-groups__avatar--xs {
+  width: 18px;
+  height: 18px;
+  border-width: 2px;
+  border-color: var(--ui-surface-inset);
+  font-size: 9px;
+}
+
+.owb-groups__items button.is-active .owb-groups__avatar--xs {
+  border-color: var(--ui-primary-soft);
+}
+
+.owb-groups__avatar--more {
+  background: var(--ui-surface-inset);
+  border-color: var(--ui-border-strong);
+  color: var(--ui-foreground-subtle);
+}
+
+/* ---------- 消息流（设计稿 .g-mlog / .g-msg） ---------- */
 
 .owb-groups__timeline {
   display: flex;
   flex-direction: column;
-  gap: var(--ui-space-2, 8px);
+  gap: 10px;
   flex: 1;
   min-height: 120px;
-  overflow: auto;
-  padding: var(--ui-space-2, 8px);
-  border: 1px solid var(--ui-border);
-  border-radius: var(--ui-radius-md, 10px);
-  background: var(--ui-surface-inset);
+  padding: 8px 2px 8px 4px;
+  overflow-y: auto;
 }
 
-/* Group timeline messages share the #61 bubble classes (.owb-bubble*). */
+.owb-groups__error {
+  margin: 0 16px 8px;
+  color: var(--ui-danger);
+  font-size: 11px;
+}
+
+.owb-groups__route-note {
+  margin: 0;
+  color: var(--ui-foreground-subtle);
+  font-family: var(--ui-font-mono);
+  font-size: 10.5px;
+}
+
+.owb-groups__timeline .owb-bubble {
+  max-width: 82%;
+  padding: 9px 11px;
+  border: 1px solid var(--ui-border);
+  border-radius: var(--ui-radius-md);
+  background: var(--ui-surface-raised);
+  font-size: 12.5px;
+}
+
+.owb-groups__timeline .owb-bubble--operator {
+  background: var(--ui-primary-soft);
+  border-color: color-mix(in srgb, var(--ui-primary) 30%, transparent);
+  color: var(--ui-foreground);
+}
+
+.owb-groups__timeline .owb-bubble--employee {
+  border-top-left-radius: var(--ui-radius-md);
+}
+
+/* 运行中：AI 紫描边（规格 §2·③），呼吸点在 .mh 里。 */
+.owb-groups__timeline .owb-bubble--employee.is-running {
+  border-color: color-mix(in srgb, var(--ui-ai) 42%, transparent);
+}
+
+.owb-groups__timeline .owb-bubble--employee.is-failed {
+  border-color: color-mix(in srgb, var(--ui-danger) 38%, transparent);
+}
+
+/* 消息头（设计稿 .g-msg .mh）：头像 · 名字 · engine 徽标 · 时间 */
+.owb-bubble__header {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-bottom: 4px;
+  min-width: 0;
+  color: var(--ui-foreground-muted);
+  font-size: 11px;
+}
+
+.owb-groups__timeline .owb-bubble__avatar {
+  width: 18px;
+  height: 18px;
+  font-size: 9px;
+}
+
+.owb-groups__timeline .owb-bubble__avatar--operator {
+  background: var(--ui-primary);
+  color: var(--ui-primary-foreground);
+}
+
+.owb-groups__timeline .owb-bubble__name {
+  overflow: hidden;
+  color: var(--ui-foreground);
+  font-size: 11px;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.owb-bubble__role {
+  flex: none;
+  color: var(--ui-foreground-muted);
+}
+
+.owb-bubble__eng {
+  display: inline-flex;
+  align-items: center;
+  flex: none;
+  padding: 1px 5px;
+  border-radius: 999px;
+  background: var(--ui-ai-soft);
+  color: var(--ui-ai);
+  font-family: var(--ui-font-mono);
+  font-size: 9px;
+  font-weight: 700;
+}
+
+.owb-groups__timeline .owb-bubble__time {
+  margin-left: auto;
+  flex: none;
+  color: var(--ui-foreground-subtle);
+  font-family: var(--ui-font-mono);
+  font-size: 9.5px;
+  font-variant-numeric: tabular-nums;
+}
+
+.owb-groups__timeline .owb-bubble__text,
+.owb-groups__timeline .owb-turn__output {
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+}
+
+.owb-groups__timeline .owb-turn__warning,
+.owb-groups__timeline .owb-turn__error {
+  display: block;
+  margin-top: 4px;
+  font-size: 11.5px;
+  line-height: 1.5;
+}
+
+.owb-groups__timeline .owb-turn__warning {
+  color: var(--ui-warning);
+}
+
+.owb-groups__timeline .owb-turn__error {
+  color: var(--ui-danger);
+}
+
+/* 操作员气泡改为 primary-soft 底后，@mention 高亮回到强调色本身。 */
+.owb-groups__timeline .owb-bubble--operator .owb-mention {
+  background: color-mix(in srgb, var(--ui-primary) 16%, transparent);
+  color: var(--ui-primary-hover);
+}
+
+/* ---------- @ 路由 composer（设计稿 .mention-bar / .composer） ---------- */
+
+.owb-groups__composer {
+  gap: 6px;
+}
 
 .owb-groups__mention-picker {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: var(--ui-space-2, 8px);
+  gap: 6px;
 }
 
 .owb-groups__mention {
-  padding: 2px 8px;
+  padding: 3px 9px;
   border: 1px solid var(--ui-border);
   border-radius: 999px;
   background: var(--ui-surface-inset);
-  color: var(--ui-foreground);
-  font-size: var(--ui-text-xs, 12px);
+  color: var(--ui-foreground-muted);
+  font-family: var(--ui-font-mono);
+  font-size: 10.5px;
+  font-weight: 600;
   cursor: pointer;
+  transition:
+    background var(--owb-duration-fast, 120ms) var(--owb-ease-out, ease),
+    border-color var(--owb-duration-fast, 120ms) var(--owb-ease-out, ease),
+    color var(--owb-duration-fast, 120ms) var(--owb-ease-out, ease);
+}
+
+.owb-groups__mention:hover {
+  border-color: var(--ui-border-strong);
+  color: var(--ui-foreground);
 }
 
 .owb-groups__mention.is-active {
   border-color: var(--ui-primary);
   background: var(--ui-primary-soft);
-  color: var(--ui-primary);
+  color: var(--ui-primary-hover);
 }
 
-.owb-groups__composer {
-  gap: var(--ui-space-2, 8px);
+.owb-groups__mention:focus-visible {
+  outline: 2px solid var(--ui-focus);
+  outline-offset: 1px;
 }
+
+.owb-groups__composer textarea {
+  min-height: 58px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .owb-groups__items button,
+  .owb-groups__create summary,
+  .owb-groups__mention {
+    transition: none;
+  }
+}
+
 
 /* #57 agent 引擎品牌 icon（Qoder 应用标 / Claude starburst）：14px 档、圆角 3px，
    与引擎文字标签内联对齐。 */
@@ -1498,13 +1760,1232 @@
 
 .owb-docs-module__create-hint {
   margin: 0 0 var(--ui-space-2, 8px);
-  color: var(--ui-text-secondary, #666);
+  color: var(--ui-foreground-muted);
 }
 
 .owb-docs-panel__copy-ref {
   border: none;
   background: none;
   padding: 0;
-  color: var(--ui-accent, #1677ff);
+  color: var(--ui-primary);
   cursor: pointer;
+}
+
+/* ============================================================================
+ * #73 Control Plane v2 结构层 —— 完全对齐 docs/design/control-plane-v2-preview.html
+ * 的骨架：40px 自定义标题栏 + 54px 模块导轨 + 300px 侧栏 + 48px topbar，
+ * 主区为自定义 .owb-panel（不再是 antd Card），回合流为时间线（不是气泡）。
+ * DL5 延续：布局/模式层全自定义，antd 只出控件。
+ * ==========================================================================*/
+
+/* ---------- 外壳：标题栏 + AppShell ---------- */
+
+.owb-app {
+  display: grid;
+  grid-template-rows: 40px minmax(0, 1fr);
+  height: 100vh;
+  overflow: hidden;
+  background: var(--ui-canvas-subtle);
+  /* 设计稿 body 基准字号 13px；各处显式字号仍以自身规则为准。 */
+  font-size: 13px;
+}
+
+/* design-system 的 .ui-app-shell/.ui-module-rail/.ui-sidebar 默认吃满 100vh；
+   这里降级为吃满父格，给标题栏让出 40px。 */
+.owb-app .ui-app-shell {
+  /* 设计稿 .a-body: 54px 导轨 / 300px 侧栏 / 48px topbar。定在这里而不是
+     内联 style，@media 断点才能覆盖（内联优先级最高）。 */
+  --ui-rail-width: 54px;
+  --ui-sidebar-width: 300px;
+  --ui-topbar-height: 48px;
+  min-height: 0;
+  height: 100%;
+}
+
+.owb-app .ui-module-rail,
+.owb-app .ui-sidebar {
+  height: 100%;
+}
+
+.owb-wintitle {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 0 14px;
+  border-bottom: 1px solid var(--ui-border);
+  background: var(--ui-surface-raised);
+  color: var(--ui-foreground-muted);
+  font-size: 12px;
+  -webkit-app-region: drag;
+}
+
+.owb-wintitle__mark {
+  flex: none;
+  width: 13px;
+  height: 13px;
+  border-radius: 3.5px;
+  background: linear-gradient(135deg, var(--ui-primary), var(--ui-ai));
+}
+
+/* 真实窗口控制（无边框窗口）：默认中性圆点，hover 才亮出语义色，
+   与设计稿 .wintitle 的三点视觉一致但可点。 */
+.owb-wintitle__controls {
+  display: flex;
+  gap: 6px;
+  margin-left: 2px;
+  -webkit-app-region: no-drag;
+}
+
+.owb-wctl {
+  display: grid;
+  place-items: center;
+  width: 13px;
+  height: 13px;
+  padding: 0;
+  border: 1px solid var(--ui-border-strong);
+  border-radius: 50%;
+  background: var(--ui-surface-inset);
+  cursor: pointer;
+  transition:
+    background var(--owb-duration-fast, 120ms) var(--owb-ease-out, ease),
+    border-color var(--owb-duration-fast, 120ms) var(--owb-ease-out, ease);
+}
+
+/* 图标默认隐形、hover 标题栏时显形（macOS 口径）：平时是干净的三点，
+   需要操作时立刻能分辨哪个是关闭/最小化/最大化。 */
+.owb-wctl > svg {
+  width: 9px;
+  height: 9px;
+  fill: none;
+  stroke: rgba(0, 0, 0, 0.62);
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  opacity: 0;
+  transition: opacity var(--owb-duration-fast, 120ms) var(--owb-ease-out, ease);
+}
+
+.owb-wctl > svg rect {
+  fill: none;
+  stroke: rgba(0, 0, 0, 0.62);
+  stroke-width: 1.4;
+}
+
+.owb-wintitle:hover .owb-wctl > svg,
+.owb-wctl:focus-visible > svg {
+  opacity: 1;
+}
+
+.owb-wintitle:hover .owb-wctl--close,
+.owb-wctl--close:focus-visible {
+  background: var(--ui-danger);
+  border-color: var(--ui-danger);
+}
+
+.owb-wintitle:hover .owb-wctl--min,
+.owb-wctl--min:focus-visible {
+  background: var(--ui-warning);
+  border-color: var(--ui-warning);
+}
+
+.owb-wintitle:hover .owb-wctl--max,
+.owb-wctl--max:focus-visible {
+  background: var(--ui-success);
+  border-color: var(--ui-success);
+}
+
+.owb-wctl:focus-visible {
+  outline: 2px solid var(--ui-focus);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .owb-wctl,
+  .owb-wctl > svg {
+    transition: none;
+  }
+}
+
+.owb-wintitle__name {
+  color: var(--ui-foreground);
+  font-weight: 600;
+  font-family: var(--owb-font-display);
+}
+
+.owb-wintitle__spacer {
+  flex: 1;
+}
+
+.owb-wintitle__chip {
+  -webkit-app-region: no-drag;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--ui-foreground-muted);
+  font-family: var(--ui-font-mono);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.owb-wintitle__chip b {
+  color: var(--ui-foreground);
+  font-weight: 700;
+}
+
+/* ---------- 状态灯（设计稿 .led，三态共用一套） ---------- */
+
+.owb-led {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--ui-success);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--ui-success) 18%, transparent);
+}
+
+.owb-led--running {
+  background: var(--ui-ai);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--ui-ai) 20%, transparent);
+  animation: owb-led-pulse 1.6s var(--owb-ease-out, ease) infinite;
+}
+
+.owb-led--off {
+  background: var(--ui-foreground-subtle);
+  box-shadow: none;
+}
+
+@keyframes owb-led-pulse {
+  50% { opacity: 0.45; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .owb-led--running { animation: none; }
+}
+
+/* ---------- 模块导轨：54px，图标 only，活跃项左侧竖条 ---------- */
+
+.owb-app .ui-module-rail {
+  padding: 10px 0;
+  background: var(--ui-canvas-subtle);
+}
+
+.owb-app .ui-module-rail__brand {
+  min-height: 0;
+  margin-bottom: 10px;
+}
+
+.owb-app .ui-module-rail__items {
+  flex: 0 0 auto;
+  gap: 4px;
+}
+
+.owb-app .ui-module-rail__item {
+  position: relative;
+  min-height: 44px;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  gap: 0;
+}
+
+/* 设计稿的导轨只出图标，文字走 aria-label / title。 */
+.owb-app .ui-module-rail__label {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.owb-app .ui-module-rail__item:hover {
+  color: var(--ui-foreground);
+  background: transparent;
+}
+
+.owb-app .ui-module-rail__item.is-active {
+  color: var(--ui-primary);
+  background: var(--ui-primary-soft);
+  border-color: transparent;
+  box-shadow: none;
+}
+
+.owb-app .ui-module-rail__item.is-active::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 8px;
+  bottom: 8px;
+  width: 2.5px;
+  border-radius: 0 3px 3px 0;
+  background: var(--ui-primary);
+}
+
+.owb-app .ui-module-rail__item.is-active .ui-module-rail__icon {
+  transform: translateY(-1px) scale(1.04);
+}
+
+.owb-app .ui-module-rail__icon {
+  transition: transform var(--owb-duration-mid, 160ms) var(--owb-ease-out, ease);
+}
+
+.owb-app .ui-module-rail__footer {
+  padding: 6px 0 4px;
+}
+
+.owb-rail-tip {
+  color: var(--ui-foreground-subtle);
+  font-family: var(--ui-font-mono);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  writing-mode: vertical-rl;
+  opacity: 0.7;
+}
+
+/* ---------- 侧栏：head + workspace strip + tree + backups ---------- */
+
+.owb-app .ui-sidebar {
+  background: var(--ui-canvas-subtle);
+}
+
+.owb-app .ui-sidebar__header {
+  display: block;
+  min-height: 0;
+  padding: 0;
+  border-bottom: none;
+}
+
+.owb-side-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 12px 8px;
+  border-bottom: 1px solid var(--ui-border);
+}
+
+.owb-side-head__label {
+  flex: 1;
+  color: var(--ui-foreground-subtle);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.owb-workspace-strip {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 10px 12px;
+  padding: 9px 10px;
+  border: 1px solid var(--ui-border);
+  border-radius: var(--ui-radius-md);
+  background: var(--ui-surface);
+}
+
+.owb-workspace-strip__name {
+  font-family: var(--owb-font-display);
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--ui-foreground);
+}
+
+.owb-workspace-strip__meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--ui-foreground-subtle);
+  font-family: var(--ui-font-mono);
+  font-size: 10px;
+}
+
+.owb-workspace-strip__open {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--ui-success);
+  font-weight: 700;
+}
+
+/* ---------- Topbar：48px，mono 面包屑 + 引擎状态药丸 ---------- */
+
+.owb-app .ui-topbar {
+  background: var(--ui-surface-raised);
+}
+
+.owb-breadcrumbs {
+  gap: 6px;
+}
+
+.owb-breadcrumb {
+  flex: none;
+  padding: 4px 8px;
+  border-radius: 6px;
+  color: var(--ui-foreground-muted);
+  font-family: var(--ui-font-mono);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.owb-breadcrumb:first-child {
+  padding-left: 0;
+  color: var(--ui-foreground);
+  font-family: var(--owb-font-display);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.owb-breadcrumb:last-child {
+  background: var(--ui-primary-soft);
+  color: var(--ui-primary);
+  font-weight: 700;
+}
+
+/* 设计稿用独立的 / 分隔符元素取代原 ::before 伪元素方案。 */
+.owb-breadcrumb + .owb-breadcrumb::before {
+  content: none;
+}
+
+.owb-breadcrumb-sep {
+  flex: none;
+  color: var(--ui-foreground-subtle);
+  font-size: 10px;
+}
+
+.owb-src {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 5px 10px;
+  border: 1px solid var(--ui-border);
+  border-radius: 999px;
+  background: var(--ui-surface-inset);
+}
+
+.owb-src__text {
+  color: var(--ui-foreground);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+/* ---------- 主区：14px padding + 两栏 .92fr/1.14fr ---------- */
+
+.owb-main {
+  gap: var(--ui-space-3, 12px);
+  padding: 14px;
+}
+
+.owb-workspace-grid {
+  height: 100%;
+  grid-template-columns: minmax(300px, 0.92fr) minmax(360px, 1.14fr);
+  gap: 14px;
+  align-items: stretch;
+}
+
+.owb-workspace-grid > * {
+  min-height: 0;
+}
+
+.owb-workspace-grid > .owb-turn-panel {
+  height: auto;
+  min-height: 0;
+}
+
+.owb-position-column {
+  min-height: 0;
+  grid-template-rows: minmax(0, 1fr) auto;
+}
+
+/* ---------- 通用面板（取代 antd Card 作为内容卡壳层） ---------- */
+
+.owb-panel {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+  border: 1px solid var(--ui-border);
+  border-radius: var(--ui-radius-md);
+  background: var(--ui-surface);
+}
+
+.owb-panel-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 14px 16px 10px;
+}
+
+.owb-panel-head__main {
+  flex: 1;
+  min-width: 0;
+}
+
+.owb-panel-head__eyebrow {
+  color: var(--ui-foreground-subtle);
+  font-family: var(--ui-font-mono);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.owb-panel-head h2 {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin: 3px 0 0;
+  color: var(--ui-foreground);
+  font-family: var(--owb-font-display);
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+.owb-panel-head__sub {
+  margin: 4px 0 0;
+  color: var(--ui-foreground-muted);
+  font-size: 12px;
+}
+
+.owb-panel-head__right {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.owb-badge {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 8px;
+  border-radius: 999px;
+  font-family: var(--ui-font-mono);
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.owb-badge--read {
+  background: var(--ui-success-soft);
+  color: var(--ui-success);
+}
+
+.owb-badge--approval {
+  background: var(--ui-warning-soft);
+  color: var(--ui-warning);
+}
+
+.owb-badge--ai {
+  background: var(--ui-ai-soft);
+  color: var(--ui-ai);
+}
+
+.owb-badge--muted {
+  background: var(--ui-surface-inset);
+  color: var(--ui-foreground-subtle);
+}
+
+/* ---------- 岗位档案 ---------- */
+
+.owb-pos-body {
+  display: grid;
+  align-content: start;
+  gap: 14px;
+  min-height: 0;
+  overflow: auto;
+  padding: 4px 16px 14px;
+}
+
+.owb-pos-desc {
+  margin: 0;
+  color: var(--ui-foreground-muted);
+  font-size: 12.5px;
+  line-height: 1.6;
+}
+
+.owb-pos-section {
+  display: grid;
+  gap: 8px;
+}
+
+.owb-pos-section > h3 {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin: 0;
+  color: var(--ui-foreground-subtle);
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.owb-pos-section > h3 svg {
+  color: var(--ui-primary);
+}
+
+.owb-tagrow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.owb-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 8px;
+  border: 1px solid var(--ui-border);
+  border-radius: 6px;
+  background: var(--ui-surface-inset);
+  color: var(--ui-foreground);
+  font-family: var(--ui-font-mono);
+  font-size: 10.5px;
+  font-weight: 600;
+}
+
+.owb-tag--deny {
+  border-style: dashed;
+  background: var(--ui-danger-soft);
+  color: var(--ui-danger);
+}
+
+.owb-tag--muted {
+  border: none;
+  background: transparent;
+  padding-left: 2px;
+  color: var(--ui-foreground-subtle);
+}
+
+.owb-scope-line {
+  padding: 7px 10px;
+  border: 1px solid var(--ui-border);
+  border-radius: 7px;
+  background: var(--ui-surface-inset);
+  color: var(--ui-foreground);
+  font-family: var(--ui-font-mono);
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}
+
+.owb-panel__notice {
+  display: grid;
+  place-items: center;
+  gap: 8px;
+  padding: 32px 16px;
+  color: var(--ui-foreground-muted);
+  text-align: center;
+}
+
+/* ---------- 对话面板：eyebrow / session chip / boundaries ---------- */
+
+/* .owb-panel 已是 flex column；对话面板的行是条件渲染的（会话行/边界行可能
+   缺席），用 flex + thread flex:1 取代固定 grid-template-rows，避免行数错位。 */
+.owb-turn-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  border-radius: var(--ui-radius-md);
+}
+
+.owb-turn-panel__header {
+  align-items: flex-start;
+  padding: 14px 16px 10px;
+}
+
+.owb-turn-panel__eyebrow {
+  display: block;
+  color: var(--ui-foreground-subtle);
+  font-family: var(--ui-font-mono);
+  font-size: 10px;
+  letter-spacing: 0.12em;
+}
+
+.owb-turn-panel__header h2 {
+  margin: 3px 0 0;
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.owb-turn-panel__controls,
+.owb-session-controls {
+  padding: 0 16px 4px;
+}
+
+.owb-turn-control__label {
+  font-family: var(--ui-font-mono);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+}
+
+.owb-session-chip {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border: 1px solid var(--ui-border);
+  border-radius: 8px;
+  background: var(--ui-surface-raised);
+  font-size: 11.5px;
+}
+
+.owb-session-chip__kind {
+  color: var(--ui-primary);
+  font-family: var(--ui-font-mono);
+  font-weight: 700;
+}
+
+.owb-session-chip__id {
+  color: var(--ui-foreground-subtle);
+  font-family: var(--ui-font-mono);
+  font-size: 10px;
+}
+
+.owb-turn-panel__boundaries {
+  padding: 0 16px 8px;
+}
+
+/* 边界 chip（设计稿 .boundary）：虚线药丸，key 用小号大写 mono。 */
+.owb-turn-panel__boundaries {
+  flex-wrap: wrap;
+}
+
+.owb-boundary {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 9px;
+  border: 1px dashed var(--ui-border-strong);
+  border-radius: 999px;
+  color: var(--ui-foreground-muted);
+  font-family: var(--ui-font-mono);
+  font-size: 10.5px;
+  white-space: nowrap;
+}
+
+.owb-boundary > b {
+  color: var(--ui-foreground-subtle);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.owb-turn-panel__subject {
+  color: var(--ui-foreground-subtle);
+  font-family: var(--ui-font-mono);
+  font-size: 11px;
+  font-weight: 500;
+}
+
+/* ---------- 回合流：时间线（取代气泡；气泡类仍由群聊消费） ---------- */
+
+.owb-turn-thread {
+  display: block;
+  flex: 1;
+  gap: 0;
+  min-height: 160px;
+  overflow-y: auto;
+  padding: 14px 16px;
+  background:
+    linear-gradient(var(--ui-border) 0 1px, transparent 1px) 30px 0 / 1px 100% no-repeat,
+    var(--ui-surface-inset);
+}
+
+.owb-turn-thread--empty {
+  display: flex;
+  background: var(--ui-surface-inset);
+}
+
+.owb-turn {
+  position: relative;
+  display: grid;
+  gap: 8px;
+  padding: 0 0 18px 30px;
+}
+
+.owb-turn::before {
+  content: "";
+  position: absolute;
+  top: 14px;
+  left: 9px;
+  width: 9px;
+  height: 9px;
+  border: 2.5px solid var(--ui-surface-inset);
+  border-radius: 50%;
+  background: var(--ui-primary);
+  box-shadow: 0 0 0 1px var(--ui-border-strong);
+}
+
+.owb-turn.is-running::before {
+  background: var(--ui-ai);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--ui-ai) 22%, transparent);
+  animation: owb-led-pulse 1.4s var(--owb-ease-out, ease) infinite;
+}
+
+.owb-turn.is-failed::before,
+.owb-turn.is-indeterminate::before {
+  background: var(--ui-danger);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .owb-turn.is-running::before { animation: none; }
+}
+
+.owb-tc {
+  padding: 10px 12px;
+  border: 1px solid var(--ui-border);
+  border-radius: var(--ui-radius-md);
+  background: var(--ui-surface);
+}
+
+.owb-tc.is-running { border-color: var(--ui-ai); }
+.owb-tc.is-failed,
+.owb-tc.is-indeterminate { border-color: var(--ui-danger); }
+
+.owb-tc-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  color: var(--ui-foreground-muted);
+  font-size: 11px;
+}
+
+.owb-tc-head__who {
+  overflow: hidden;
+  color: var(--ui-primary);
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.owb-tc-head__eng {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 6px;
+  border-radius: 999px;
+  background: var(--ui-primary-soft);
+  color: var(--ui-primary);
+  font-family: var(--ui-font-mono);
+  font-size: 9.5px;
+  font-weight: 700;
+}
+
+.owb-tc-head__time {
+  flex: none;
+  margin-left: auto;
+  color: var(--ui-foreground-subtle);
+  font-family: var(--ui-font-mono);
+  font-size: 10px;
+}
+
+.owb-tc__task {
+  display: flex;
+  gap: 6px;
+  margin: 7px 0 0;
+  color: var(--ui-foreground);
+  font-size: 12.5px;
+  line-height: 1.6;
+}
+
+.owb-tc__task-key {
+  flex: none;
+  color: var(--ui-foreground-subtle);
+  font-family: var(--ui-font-mono);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  padding-top: 3px;
+}
+
+.owb-tc__out {
+  margin: 7px 0 0;
+  color: var(--ui-foreground);
+  font-size: 12.5px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+}
+
+/* 状态行：mono + tabular-nums（设计稿 .statusline） */
+.owb-turn__statusline {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin: 8px 0 0;
+  color: var(--ui-foreground-muted);
+  font-family: var(--ui-font-mono);
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+}
+
+.owb-turn__statusline-engine {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 5px;
+  border: 1px solid var(--ui-border);
+  border-radius: 4px;
+  color: var(--ui-foreground);
+  font-weight: 600;
+}
+
+.owb-turn__statusline .is-ok {
+  color: var(--ui-success);
+  font-weight: 700;
+}
+
+.owb-turn__statusline .is-bad {
+  color: var(--ui-danger);
+  font-weight: 700;
+}
+
+/* 证据 chip：印章式小卡（设计稿 .evidence/.ev） */
+.owb-evidence {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 9px;
+}
+
+.owb-ev {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 7px;
+  border: 1px solid var(--ui-border);
+  border-radius: 6px;
+  background: var(--ui-surface-inset);
+  color: var(--ui-foreground-muted);
+  font-family: var(--ui-font-mono);
+  font-size: 9.5px;
+  max-width: 100%;
+}
+
+.owb-ev__key {
+  flex: none;
+  color: var(--ui-foreground-subtle);
+  font-size: 9px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.owb-ev kbd {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--ui-foreground);
+  font-family: inherit;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.owb-ev--button {
+  border-style: dashed;
+  cursor: pointer;
+}
+
+.owb-ev--button:hover {
+  border-color: var(--ui-primary);
+  color: var(--ui-foreground);
+}
+
+/* 审批卡：左 3px lavender 边（设计稿 .approval） */
+.owb-turn__approval {
+  display: grid;
+  gap: 6px;
+  margin-top: 8px;
+  padding: 10px 12px;
+  border: 1px solid var(--ui-border);
+  border-left: 3px solid var(--ui-primary);
+  border-radius: var(--ui-radius-md);
+  background: var(--ui-surface);
+}
+
+.owb-turn__approval.is-decided {
+  border-left-color: var(--ui-border-strong);
+  background: var(--ui-surface-inset);
+}
+
+.owb-turn__approval-title {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin: 0;
+  color: var(--ui-foreground);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.owb-turn__approval-title svg {
+  color: var(--ui-ai);
+}
+
+.owb-turn__approval.is-decided .owb-turn__approval-title {
+  color: var(--ui-foreground-muted);
+}
+
+.owb-turn__approval-description {
+  margin: 0;
+  color: var(--ui-foreground-muted);
+  font-size: 11.5px;
+}
+
+.owb-turn__approval-target,
+.owb-turn__approval-expires {
+  margin: 0;
+  padding: 6px 9px;
+  border: 1px solid var(--ui-border);
+  border-radius: 7px;
+  background: var(--ui-surface-inset);
+  color: var(--ui-foreground-muted);
+  font-family: var(--ui-font-mono);
+  font-size: 10.5px;
+  overflow-wrap: anywhere;
+}
+
+/* 输入区（设计稿 .composer） */
+.owb-turn-composer {
+  gap: 6px;
+  padding: 12px 16px 10px;
+  background: var(--ui-surface);
+}
+
+.owb-turn-composer > label {
+  font-family: var(--ui-font-mono);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ui-foreground-subtle);
+}
+
+.owb-turn-composer__hint {
+  color: var(--ui-foreground-subtle);
+  font-family: var(--ui-font-mono);
+  font-size: 10.5px;
+}
+
+/* 发送键走 AI 紫（设计稿 .send） */
+.owb-turn-composer__surface .ant-btn-primary {
+  background: var(--ui-ai);
+  border-color: var(--ui-ai);
+}
+
+.owb-turn-composer__surface .ant-btn-primary:not(:disabled):hover {
+  background: var(--ui-ai-hover);
+  border-color: var(--ui-ai-hover);
+}
+
+.owb-session-row {
+  padding: 0 16px 8px;
+}
+
+/* Topbar 迷你预算仪表（设计稿 .mini-budget） */
+.owb-mini-budget {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.owb-mini-budget__label {
+  color: var(--ui-foreground-subtle);
+  font-family: var(--ui-font-mono);
+  font-size: 10.5px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.owb-mini-budget__track {
+  width: 110px;
+  height: 8px;
+  border-radius: 4px;
+  background: var(--ui-surface-inset);
+  overflow: hidden;
+}
+
+.owb-mini-budget__track > i {
+  display: block;
+  height: 100%;
+  border-radius: 4px;
+  background: var(--ui-primary);
+}
+
+/* 侧栏内容区通栏：组织树自己管缩进（设计稿的 .tree 是满宽的），DS 默认的
+   12px 横向内边距会白吃 24px、把岗位名挤成省略号。非树内容单独补回缩进。 */
+.owb-app .ui-sidebar__content {
+  padding-inline: 0;
+}
+
+.owb-app .ui-sidebar__content > .owb-muted,
+.owb-app .ui-sidebar__content > .owb-tree-skeleton {
+  padding-inline: 12px;
+}
+
+/* ---------------------------------------------------------------------------
+ * #73 窗口尺寸兼容（设计稿 @media 980 / 680 断点）。桌面窗口可自由缩放，
+ * 组织页必须在窄窗不挤、宽窗不空。放在文件末尾，覆盖前面各 @media 的旧口径。
+ * -------------------------------------------------------------------------*/
+
+/* 宽窗：内容区给一个可读上限并居中，避免超宽屏下两栏被拉成大片空白。 */
+.owb-main > .owb-workspace-grid,
+.owb-main > .owb-reports,
+.owb-main > .owb-groups {
+  width: 100%;
+  max-width: 1680px;
+  margin-inline: auto;
+}
+
+/* 竖向填充链：.ui-app-shell__main 是 grid 的 1fr 行（高度确定），但 .owb-main
+   自身没有高度，于是 .owb-workspace-grid 的 height:100% 落空、两栏只有内容
+   高度，窗口下半部整片空着（"组织页很空"的根因）。逐级 flex:1 打通。 */
+.owb-app .ui-app-shell__main {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.owb-main {
+  flex: 1;
+  min-height: 0;
+}
+
+.owb-main > .owb-workspace-grid,
+.owb-main > .owb-groups,
+.owb-main > .owb-docs-module {
+  flex: 1;
+  min-height: 0;
+}
+
+.owb-workspace-grid {
+  align-items: stretch;
+}
+
+.owb-position-column {
+  gap: var(--ui-space-2, 8px);
+}
+
+.owb-position-column > .ui-org-position-card {
+  min-height: 0;
+}
+
+@media (max-width: 980px) {
+  .owb-app .ui-app-shell {
+    --ui-rail-width: 48px;
+    --ui-sidebar-width: 252px;
+  }
+
+  .owb-workspace-grid {
+    grid-template-columns: 1fr;
+  }
+
+  /* 单栏堆叠时给两栏各自可用的最小高度；选择器特异性必须对齐前面的
+     `.owb-workspace-grid > .owb-turn-panel { min-height: 0 }`，否则被压掉。 */
+  .owb-workspace-grid > .owb-position-column,
+  .owb-workspace-grid > .owb-turn-panel {
+    min-height: 380px;
+  }
+
+  .owb-groups {
+    grid-template-columns: 220px minmax(0, 1fr);
+  }
+
+  /* 单栏堆叠：花名册退成横向名条，消息流保住剩余高度。 */
+  .owb-groups__panel-body {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, 1fr);
+  }
+
+  .owb-groups__roster {
+    max-height: 140px;
+  }
+}
+
+@media (max-width: 680px) {
+  .owb-app .ui-app-shell {
+    --ui-rail-width: 44px;
+  }
+
+  .owb-app .ui-app-shell__sidebar {
+    display: none;
+  }
+
+  .owb-main {
+    padding: 10px;
+  }
+
+  .owb-groups {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .owb-groups__panel-sub {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .owb-mini-budget {
+    display: none;
+  }
+}
+
+/* 竖向压缩（窗口被压扁）：面板不再抢固定最小高度，交给滚动。 */
+@media (max-height: 720px) {
+  .owb-workspace-grid > .owb-position-column,
+  .owb-workspace-grid > .owb-turn-panel {
+    min-height: 0;
+  }
+
+  .owb-turn-thread {
+    min-height: 120px;
+  }
+}
+
+/* 裁撤触发键（#73 优化）：低频不可逆操作用 hairline 幽灵态，hover/focus 才
+   转 danger；实心红留给二次确认弹窗里的最终按钮。 */
+.owb-dismiss {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 26px;
+  padding: 0 9px;
+  border: 1px solid var(--ui-border);
+  border-radius: 7px;
+  background: var(--ui-surface);
+  color: var(--ui-foreground-muted);
+  font: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  transition:
+    background var(--owb-duration-fast, 120ms) var(--owb-ease-out, ease),
+    border-color var(--owb-duration-fast, 120ms) var(--owb-ease-out, ease),
+    color var(--owb-duration-fast, 120ms) var(--owb-ease-out, ease);
+}
+
+.owb-dismiss:hover:not(:disabled),
+.owb-dismiss:focus-visible {
+  border-color: var(--ui-danger);
+  background: var(--ui-danger-soft);
+  color: var(--ui-danger);
+}
+
+.owb-dismiss:focus-visible {
+  outline: 2px solid var(--ui-danger);
+  outline-offset: 1px;
+}
+
+.owb-dismiss:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .owb-dismiss {
+    transition: none;
+  }
 }

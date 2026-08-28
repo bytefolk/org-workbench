@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState, type FormEvent } from "react";
-import { Button as AntButton, Input, Select as AntSelect, Tag } from "antd";
-import { ArrowUp, Database, GitBranch, MessagesSquare, Plus, RefreshCw, Square } from "lucide-react";
+import { Button as AntButton, Input, Select as AntSelect } from "antd";
+import { ArrowUp, MessagesSquare, Plus, RefreshCw, Square } from "lucide-react";
 import type { WorkbenchSession } from "@org-workbench/shared";
 import { PositionMention } from "./PositionMention";
 import { EngineIcon } from "./engine-icon";
@@ -35,8 +35,14 @@ export interface TurnPanelProps {
   /** Approval ids whose verdict was already dispatched this session; their
    * cards settle into a decided state (no duplicate verdicts). */
   decidedApprovalIds?: ReadonlySet<string>;
-  /** Position avatar colors for chat bubbles (org-tree hues; #53/#61). */
-  positionColors?: Record<string, string>;
+  /** SSE stream health for the header badge — honest state only: the badge
+   * goes dim while reconnecting, it never fakes a live stream. */
+  sseConnected?: boolean;
+  /** Selected position's mode / per-task budget for the boundary chips
+   * (设计稿 .boundaries). Both come straight from /positions/:id; absent
+   * means the card has not loaded and the chip shows —, never a guess. */
+  selectedMode?: "read_only" | "approval_required" | null;
+  selectedBudgetLabel?: string | null;
   onSelectSession?: (sessionId: string) => void;
   onCreateSession?: () => void | Promise<void>;
   onRotateSession?: (sessionId: string) => void | Promise<void>;
@@ -92,7 +98,9 @@ export function TurnPanel({
   onCancelTurn,
   onVerdictTurn,
   decidedApprovalIds,
-  positionColors,
+  sseConnected = false,
+  selectedMode = null,
+  selectedBudgetLabel = null,
   onSelectSession,
   onCreateSession,
   onRotateSession,
@@ -134,6 +142,10 @@ export function TurnPanel({
 
   const submit = async (event: FormEvent) => {
     event.preventDefault();
+    await dispatchTurn();
+  };
+
+  const dispatchTurn = async (): Promise<void> => {
     const trimmed = input.trim();
     if (!trimmed || disabledReason || !selectedPosition) return;
     setSending(true);
@@ -161,16 +173,27 @@ export function TurnPanel({
   };
 
   return (
-    <section className="owb-turn-panel" aria-label="岗位对话">
-      <header className="owb-turn-panel__header">
-        <div>
-          <span className="owb-turn-panel__eyebrow">TURN CONTROL</span>
+    <section className="owb-turn-panel owb-panel" aria-label="岗位对话">
+      <header className="owb-turn-panel__header owb-panel-head">
+        <div className="owb-panel-head__main">
+          <span className="owb-turn-panel__eyebrow">TURN STREAM · EVIDENCE-FIRST</span>
           <h2>
-            <MessagesSquare aria-hidden="true" size={17} />
-            {selectedPosition ? `@${selectedPosition.name}` : "@岗位对话"}
+            <MessagesSquare aria-hidden="true" size={15} />
+            本地对话
+            {selectedPosition ? (
+              <span className="owb-turn-panel__subject">· {selectedPosition.id}</span>
+            ) : null}
           </h2>
         </div>
-        <Tag className="owb-turn-panel__history-kind" bordered>本地历史</Tag>
+        <div className="owb-panel-head__right">
+          <span className="owb-badge owb-badge--ai">
+            <span
+              className={sseConnected ? "owb-led owb-led--running" : "owb-led owb-led--off"}
+              aria-hidden="true"
+            />
+            SSE
+          </span>
+        </div>
       </header>
 
       <div className="owb-turn-panel__controls">
@@ -191,6 +214,22 @@ export function TurnPanel({
           />
         </label>
       </div>
+
+      {sessionMode && selectedSession ? (
+        <div className="owb-session-row" aria-label="当前会话">
+          <div className="owb-session-chip">
+            <span
+              className={selectedSession.status === "active" ? "owb-led owb-led--running" : "owb-led owb-led--off"}
+              aria-hidden="true"
+            />
+            <span className="owb-session-chip__kind">session</span>
+            <span className="owb-session-chip__id">
+              {selectedSession.sessionId.slice(0, 8)} · {selectedSession.status === "active" ? "active" : "只读"}
+              {selectedPosition ? ` · ${selectedPosition.id}` : ""}
+            </span>
+          </div>
+        </div>
+      ) : null}
 
       {sessionMode ? (
         <div className="owb-session-controls" aria-label="岗位会话">
@@ -230,13 +269,29 @@ export function TurnPanel({
         </div>
       ) : null}
 
+      {/* 设计稿 .boundaries：host / mode / budget 三枚实况 chip。全部来自
+          /health 与 /positions/:id 的事实，缺失即显示 —，不猜。 */}
       <div className="owb-turn-panel__boundaries" aria-label="能力边界">
-        <Tag icon={<GitBranch aria-hidden="true" size={13} />} bordered>
-          委派链 <strong>Planned</strong>
-        </Tag>
-        <Tag icon={<Database aria-hidden="true" size={13} />} bordered>
-          长期 Context <strong>Planned</strong>
-        </Tag>
+        <span className="owb-boundary">
+          <b>host</b>
+          {engineLabel(engine)} — {engineAvailability[engine].ready
+            ? "available"
+            : engineAvailability[engine].configured
+              ? "blocked"
+              : "idle"}
+        </span>
+        <span className="owb-boundary">
+          <b>mode</b>
+          {selectedMode === null
+            ? "—"
+            : selectedMode === "read_only"
+              ? "read_only · 只读"
+              : "approval_required · 需批准"}
+        </span>
+        <span className="owb-boundary">
+          <b>budget</b>
+          {selectedBudgetLabel ?? "—"}
+        </span>
       </div>
 
       <TurnThread
@@ -246,19 +301,25 @@ export function TurnPanel({
         onRetry={(turn) => void retry(turn)}
         onVerdict={onVerdictTurn === undefined ? undefined : (turn, decision, reason) => void onVerdictTurn(turn, decision, reason)}
         decidedApprovalIds={decidedApprovalIds}
-        positionColors={positionColors}
       />
 
       <form className="owb-turn-composer" onSubmit={(event) => void submit(event)}>
-        <label htmlFor="owb-turn-input">交办任务</label>
+        <label htmlFor="owb-turn-input">下达任务</label>
         <div className="owb-turn-composer__surface">
           <Input.TextArea
             id="owb-turn-input"
             value={input}
             rows={3}
-            placeholder={selectedPosition ? `交办给 @${selectedPosition.name}…` : "先选择一个岗位…"}
+            placeholder={selectedPosition ? `向 @${selectedPosition.name} 下达任务…` : "先选择一个岗位…"}
             disabled={disabledReason !== null}
             onChange={(event) => setInput(event.target.value)}
+            onKeyDown={(event) => {
+              // ⌘↵ / Ctrl+↵ 发送（提示条声明了这个快捷键，就必须真的能用）。
+              if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
+                event.preventDefault();
+                void dispatchTurn();
+              }
+            }}
           />
           {runningTurn ? (
             <AntButton
@@ -286,7 +347,7 @@ export function TurnPanel({
             ? cancelling
               ? "正在请求控制面中断引擎进程…"
               : "回合运行中：点击中断或按 ⌘. 终止该岗位的在途回合"
-            : disabledReason ?? `将通过 ${ENGINE_LABEL[engine]} 创建一个新回合`}
+            : disabledReason ?? "⌘↵ 发送 · ⌘. 中断 · 回合只在本机留痕"}
         </p>
       </form>
     </section>
