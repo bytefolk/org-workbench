@@ -11,6 +11,7 @@
 
 const { app, BrowserWindow, dialog, ipcMain } = require("electron");
 const { spawn } = require("node:child_process");
+const { createControlPlaneChild } = require("./control-plane-launch.cjs");
 const fs = require("node:fs");
 const http = require("node:http");
 const os = require("node:os");
@@ -62,17 +63,16 @@ let currentSseStatus = "connecting";
 
 function startControlPlane() {
   return new Promise((resolve, reject) => {
-    const child = spawn(process.execPath, [SERVER_ENTRY], {
+    const child = createControlPlaneChild({
+      serverEntry: SERVER_ENTRY,
       env: {
         ...process.env,
-        ELECTRON_RUN_AS_NODE: "1",
         // Directly runnable: default the pinned engine to the bundled qoder
         // adapter unless the operator pins a real digital-employee CLI.
         ORG_WORKBENCH_DIGITAL_EMPLOYEE_CLI:
           process.env.ORG_WORKBENCH_DIGITAL_EMPLOYEE_CLI ??
           `node ${path.join(__dirname, "..", "..", "server", "bin", "qoder-engine.mjs")}`,
       },
-      stdio: ["ignore", "pipe", "pipe"],
     });
     let buffer = "";
     const timer = setTimeout(() => {
