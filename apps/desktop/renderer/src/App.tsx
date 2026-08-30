@@ -17,6 +17,7 @@ import type {
   OrgBackupsResponse,
   OrgTreeNodeV1,
   OrgTreeSnapshot,
+  PositionMode,
   ReportsResponse,
   TurnHistory,
   WorkbenchSession,
@@ -47,6 +48,7 @@ import type {
 } from "./turns";
 import { BackupTray, DismissPositionDialog } from "./org/OrgControls";
 import { HireDrawer } from "./org/HireDrawer";
+import { OrgChart } from "./org/OrgChart";
 import { GroupsPanel } from "./groups/GroupsPanel";
 import { DocsModule } from "./docs/DocsModule";
 import { ReportsCenter } from "./reports/ReportsCenter";
@@ -80,6 +82,10 @@ export function App() {
   const [positionNames, setPositionNames] = useState<Record<string, string>>({});
   const positionNamesRef = useRef<Record<string, string>>({});
   const [positionColors, setPositionColors] = useState<Record<string, string>>({});
+  /** P0 组织图：mode / title 展示面按岗位 id（来自 refresh 已在做的
+   * /positions/:id 读取，与侧栏树 displayNames 同源；不新增 IPC 调用）。 */
+  const [positionModes, setPositionModes] = useState<Record<string, PositionMode>>({});
+  const [positionTitles, setPositionTitles] = useState<Record<string, string>>({});
   const [turnEngine, setTurnEngine] = useState<TurnEngine>("qoder");
   const [turns, setTurns] = useState<TurnRecord[]>([]);
   const [turnStream, setTurnStream] = useState<TurnStreamState>(EMPTY_TURN_STREAM);
@@ -157,29 +163,41 @@ export function App() {
         setSnapshot(nextSnapshot);
         const positionIds = flattenPositionIds(nextSnapshot.tree);
         setSelectedId((current) => current && positionIds.includes(current) ? current : null);
-        const cardEntries = await Promise.all(positionIds.map(async (id) => {
+        const cardEntries = await Promise.all(positionIds.map(async (id): Promise<[string, { name: string; color?: string; mode?: PositionMode; title?: string }]> => {
           const response = await window.owb.position(id);
           const body = response.body as { position?: PositionCardData };
           const position = response.status === 200 ? body.position : undefined;
           const color = position?.metadata?.color;
-          return [id, { name: position?.name ?? id, ...(typeof color === "string" && color.length > 0 ? { color } : {}) }] as const;
+          const title = position?.metadata?.title;
+          return [id, {
+            name: position?.name ?? id,
+            ...(typeof color === "string" && color.length > 0 ? { color } : {}),
+            ...(position ? { mode: position.mode } : {}),
+            ...(typeof title === "string" && title.length > 0 ? { title } : {}),
+          }];
         }));
         const names = Object.fromEntries(cardEntries.map(([id, entry]) => [id, entry.name]));
         positionNamesRef.current = names;
         setPositionNames(names);
         setPositionColors(Object.fromEntries(cardEntries.filter(([, entry]) => "color" in entry).map(([id, entry]) => [id, (entry as { color: string }).color])));
+        setPositionModes(Object.fromEntries(cardEntries.filter(([, entry]) => entry.mode !== undefined).map(([id, entry]) => [id, entry.mode as PositionMode])));
+        setPositionTitles(Object.fromEntries(cardEntries.filter(([, entry]) => entry.title !== undefined).map(([id, entry]) => [id, entry.title as string])));
         await Promise.all([loadBackups(), loadReports()]);
       } else {
         setSnapshot(null);
         positionNamesRef.current = {};
         setPositionNames({});
         setPositionColors({});
+        setPositionModes({});
+        setPositionTitles({});
       }
     } else {
       setSnapshot(null);
       positionNamesRef.current = {};
       setPositionNames({});
       setPositionColors({});
+      setPositionModes({});
+      setPositionTitles({});
       setSelectedId(null);
       setCard({ loading: false, data: null, notFound: false });
       setTurns([]);
@@ -937,7 +955,19 @@ export function App() {
             positions={positions}
             selectedPositionId={selectedId}
           />
-        ) : <div className="owb-workspace-grid">
+        ) : <div className="owb-org-module">
+          {/* P0 组织图：应用态汇报树节点图（纯展示，数据与侧栏树同源）。 */}
+          <OrgChart
+            snapshot={snapshot}
+            loading={treeLoading}
+            displayNames={positionNames}
+            displayTitles={positionTitles}
+            displayModes={positionModes}
+            avatarColors={positionColors}
+            selectedId={selectedId}
+            onSelect={selectPosition}
+          />
+          <div className="owb-workspace-grid">
           <div className="owb-position-column">
             <PositionCard
               position={card.data}
@@ -974,6 +1004,7 @@ export function App() {
             onCreateSession={createSession}
             onRotateSession={rotateSession}
           />
+          </div>
         </div>}
       </div>
     </AppShell>

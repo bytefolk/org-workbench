@@ -2989,3 +2989,253 @@
     transition: none;
   }
 }
+
+/* ---------- P0 组织图可视化（.owb-org-chart） ----------
+ * 汇报树节点图：纯 CSS flex + 伪元素连接线（经典族谱树走线），不引图形库。
+ * 走线色取 --ui-border-strong（两主题都有定义）；卡面沿用暖纸色阶与
+ * 6/10 圆角、120ms ease-out 动效纪律（与 DS-73-001 同口径）。 */
+
+/* 组织页主区包壳：组织图在上（收缩），原工作区网格在下（占满剩余高）。 */
+.owb-org-module {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  height: 100%;
+  min-height: 0;
+}
+
+.owb-org-module > .owb-org-chart {
+  flex: none;
+}
+
+.owb-org-module > .owb-workspace-grid {
+  height: auto;
+  flex: 1;
+  min-height: 0;
+}
+
+.owb-org-chart__head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 10px 14px 0;
+}
+
+.owb-org-chart__head-title {
+  color: var(--ui-foreground);
+  font-family: var(--owb-font-display);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.owb-org-chart__body {
+  overflow: auto;
+  padding: 12px 14px 14px;
+  max-height: 240px;
+}
+
+.owb-org-chart__loading {
+  padding: 4px 2px;
+}
+
+.owb-org-chart__body .ant-empty {
+  margin-block: 8px;
+}
+
+/* 舞台：内容比容器宽时横向滚动，窄屏不破版。 */
+.owb-org-chart__stage {
+  display: inline-flex;
+  min-width: 100%;
+  justify-content: center;
+  padding: 2px;
+}
+
+.owb-org-chart__roots {
+  display: flex;
+  justify-content: center;
+  gap: 24px;
+}
+
+/* 分支：卡片 + 其子孙层。伪元素画「横向汇流线 + 向下短竖线」。 */
+.owb-org-chart__branch {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 16px 8px 0;
+}
+
+.owb-org-chart__branch::before,
+.owb-org-chart__branch::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  right: 50%;
+  width: 50%;
+  height: 16px;
+  border-top: 1px solid var(--ui-border-strong);
+}
+
+.owb-org-chart__branch::after {
+  right: auto;
+  left: 50%;
+  border-left: 1px solid var(--ui-border-strong);
+}
+
+.owb-org-chart__branch:first-child::before,
+.owb-org-chart__branch:last-child::after {
+  border: 0;
+}
+
+.owb-org-chart__branch:last-child::before {
+  border-right: 1px solid var(--ui-border-strong);
+  border-radius: 0 var(--ui-radius-sm, 6px) 0 0;
+}
+
+.owb-org-chart__branch:first-child::after {
+  border-radius: var(--ui-radius-sm, 6px) 0 0 0;
+}
+
+.owb-org-chart__branch:only-child::before,
+.owb-org-chart__branch:only-child::after {
+  display: none;
+}
+
+.owb-org-chart__branch:only-child {
+  padding-top: 0;
+}
+
+/* 子孙层：上缘中点的竖线从父卡底部接到汇流线。 */
+.owb-org-chart__children {
+  position: relative;
+  display: flex;
+  justify-content: center;
+  padding-top: 16px;
+}
+
+.owb-org-chart__children::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 50%;
+  width: 0;
+  height: 16px;
+  border-left: 1px solid var(--ui-border-strong);
+}
+
+/* 根层没有上级汇报线。 */
+.owb-org-chart__roots > .owb-org-chart__branch {
+  padding-top: 0;
+}
+
+.owb-org-chart__roots > .owb-org-chart__branch::before,
+.owb-org-chart__roots > .owb-org-chart__branch::after {
+  display: none;
+}
+
+/* 节点卡：角色名 / title / 预算徽标 / mode；点击选中（与侧栏树联动）。 */
+.owb-org-chart__card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 168px;
+  padding: 10px 12px;
+  text-align: left;
+  font: inherit;
+  cursor: pointer;
+  background: var(--ui-surface-raised);
+  border: 1px solid var(--ui-border);
+  border-radius: var(--ui-radius-md, 10px);
+  transition:
+    border-color var(--owb-duration-fast, 120ms) var(--owb-ease-out, ease),
+    background var(--owb-duration-fast, 120ms) var(--owb-ease-out, ease);
+}
+
+.owb-org-chart__card:hover {
+  border-color: var(--ui-border-strong);
+}
+
+.owb-org-chart__card:focus-visible {
+  outline: 2px solid var(--ui-focus);
+  outline-offset: 2px;
+}
+
+.owb-org-chart__card.is-selected {
+  border-color: var(--ui-primary);
+  background: var(--ui-primary-soft);
+}
+
+.owb-org-chart__card-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.owb-org-chart__avatar {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: var(--ui-radius-sm, 6px);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.owb-org-chart__card-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.owb-org-chart__name {
+  color: var(--ui-foreground);
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.owb-org-chart__title {
+  color: var(--ui-foreground-subtle);
+  font-size: 11px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.owb-org-chart__card-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+}
+
+.owb-org-chart__budget {
+  padding: 1px 6px;
+  border: 1px solid var(--ui-border);
+  border-radius: var(--ui-radius-sm, 6px);
+  background: var(--ui-surface-inset);
+  color: var(--ui-foreground-subtle);
+  font-family: var(--ui-font-mono);
+  font-size: 10px;
+  font-weight: 600;
+}
+
+.owb-org-chart__mode.ant-tag {
+  margin-inline-end: 0;
+  border-radius: var(--ui-radius-sm, 6px);
+  font-size: 10px;
+  line-height: 16px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .owb-org-chart__card {
+    transition: none;
+  }
+}
