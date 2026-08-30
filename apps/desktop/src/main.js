@@ -61,6 +61,22 @@ let trustedRendererUrl = null;
 let eventStreamRequest = null;
 let currentSseStatus = "connecting";
 
+function pinnedEngineCommandDefault() {
+  const nodePath = process.execPath;
+  const enginePath = path.join(
+    __dirname,
+    "..",
+    "..",
+    "server",
+    "bin",
+    "qoder-engine.mjs",
+  );
+  // Wrap both paths in double quotes so the server's quote-aware splitCommand
+  // recovers them as two argv tokens even when the install path contains
+  // spaces (Windows `C:\Program Files\...`, macOS OneDrive folders, etc).
+  return `"${nodePath}" "${enginePath}"`;
+}
+
 function startControlPlane() {
   return new Promise((resolve, reject) => {
     const child = createControlPlaneChild({
@@ -71,7 +87,7 @@ function startControlPlane() {
         // adapter unless the operator pins a real digital-employee CLI.
         ORG_WORKBENCH_DIGITAL_EMPLOYEE_CLI:
           process.env.ORG_WORKBENCH_DIGITAL_EMPLOYEE_CLI ??
-          `node ${path.join(__dirname, "..", "..", "server", "bin", "qoder-engine.mjs")}`,
+          pinnedEngineCommandDefault(),
       },
     });
     let buffer = "";
