@@ -1,9 +1,10 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import type { AuditEntry, EvidenceEntry, EscalationEntry, ReportsResponse } from "@org-workbench/shared";
 import { Activity, AlertOctagon, ClipboardList, Fingerprint } from "lucide-react";
 import { BudgetDashboard } from "./BudgetDashboard";
+import { AuditTimeline, type AuditTimelineEvent } from "./AuditTimeline";
 
-type Tab = "budgets" | "escalations" | "audits" | "evidence";
+type Tab = "budgets" | "escalations" | "audits" | "evidence" | "timeline";
 
 export interface ReportsCenterProps {
   reports: ReportsResponse | null;
@@ -15,6 +16,10 @@ export interface ReportsCenterProps {
 
 export function ReportsCenter({ reports, loading, positionNames, positionColors, onOpenTimeline }: ReportsCenterProps) {
   const [tab, setTab] = useState<Tab>("budgets");
+  const timelineEvents = useMemo<AuditTimelineEvent[]>(
+    () => (reports ? buildTimelineEventsFromReports(reports) : []),
+    [reports],
+  );
   if (loading) return <section className="owb-reports"><p className="owb-muted">正在读取本地上报事实…</p></section>;
   if (!reports) return <section className="owb-reports"><p className="owb-muted">上报数据不可用</p></section>;
   return (
@@ -28,6 +33,7 @@ export function ReportsCenter({ reports, loading, positionNames, positionColors,
         <TabButton active={tab === "escalations"} onClick={() => setTab("escalations")} label="失败 / 升级" count={reports.streams.escalations.length} />
         <TabButton active={tab === "audits"} onClick={() => setTab("audits")} label="组织审计" count={reports.streams.audits.length} />
         <TabButton active={tab === "evidence"} onClick={() => setTab("evidence")} label="回合证据" count={reports.streams.evidence.length} />
+        <TabButton active={tab === "timeline"} onClick={() => setTab("timeline")} label="时间线" count={timelineEvents.length} />
       </nav>
       <div className="owb-report-stream">
         {tab === "budgets" ? (
@@ -42,9 +48,91 @@ export function ReportsCenter({ reports, loading, positionNames, positionColors,
         {tab === "escalations" ? <Escalations entries={reports.streams.escalations} /> : null}
         {tab === "audits" ? <Audits entries={reports.streams.audits} /> : null}
         {tab === "evidence" ? <Evidence entries={reports.streams.evidence} /> : null}
+        {tab === "timeline" ? (
+          <AuditTimeline
+            events={timelineEvents}
+            page={{
+              cursor: reports.page.cursor,
+              hasMore: reports.page.hasMore,
+              total: timelineEvents.length,
+            }}
+          />
+        ) : null}
       </div>
     </section>
   );
+}
+
+/**
+ * v1 timeline projection: fold `reports.streams` into the unified timeline event shape.
+ * The full three-source merge (TurnRecord.events / SSE live / org-audit.v1) lands in
+ * the data plane; this projection keeps the UI honest to the fields we already carry.
+ */
+function buildTimelineEventsFromReports(reports: ReportsResponse): AuditTimelineEvent[] {
+  const events: AuditTimelineEvent[] = [];
+  const evidenceByRun = new Map<string, EvidenceEntry>();
+  const evidenceByTurn = new Map<string, EvidenceEntry>();
+  for (const evidence of reports.streams.evidence) {
+    if (evidence.runId) evidenceByRun.set(evidence.runId, evidence);
+    evidenceByTurn.set(evidence.turnId, evidence);
+  }
+  for (const evidence of reports.streams.evidence) {
+    const runId = evidence.runId ?? evidence.turnId;
+    events.push({
+      id: `evidence:started:${evidence.turnId}`,
+      at: evidence.createdAt,
+      runId,
+      positionId: evidence.positionId,
+      engine: evidence.engine,
+      type: "run.started",
+      task: undefined,
+    });
+    const terminalType: AuditTimelineEvent["type"] =
+      evidence.status === "completed"
+        ? "run.completed"
+        : evidence.status === "failed"
+          ? "run.failed"
+          : evidence.status === "indeterminate"
+            ? "turn.indeterminate"
+            : "run.started";
+    events.push({
+      id: `evidence:terminal:${evidence.turnId}`,
+      at: evidence.updatedAt,
+      runId,
+      positionId: evidence.positionId,
+      engine: evidence.engine,
+      type: terminalType,
+      errorCode: evidence.errorCode,
+      envelopeDigest: evidence.envelopeDigest,
+      totalTokens: evidence.usage.totalTokens,
+      summary: `${evidence.status} · ${evidence.usage.totalTokens.toLocaleString()} tokens`,
+    });
+  }
+  for (const escalation of reports.streams.escalations) {
+    const runId = escalation.turnId;
+    events.push({
+      id: `escalation:${escalation.turnId}:${escalation.at}`,
+      at: escalation.at,
+      runId,
+      positionId: escalation.positionId,
+      type: "escalation.created",
+      errorCode: escalation.code,
+      budgetRelated: escalation.budgetRelated,
+      reportingChain: escalation.reportingChain,
+      summary: `${escalation.status} · ${escalation.code}`,
+    });
+  }
+  reports.streams.audits.forEach((audit, index) => {
+    events.push({
+      id: `audit:${audit.at}:${index}`,
+      at: audit.at,
+      runId: `audit-${audit.at}-${index}`,
+      type: "org.audit",
+      summary: `${audit.actor} · 招聘 ${audit.changes.hired.length} · 调岗 ${audit.changes.moved.length} · 裁撤 ${audit.changes.dismissed.length} · 预算 ${audit.changes.budgetUpdated.length} · 应用后 ${audit.positionCount} 岗位`,
+    });
+  });
+  events.sort((a, b) => (a.at < b.at ? 1 : a.at > b.at ? -1 : 0));
+  return events;
 }
 
 function TabButton({ active, onClick, label, count }: { active: boolean; onClick: () => void; label: string; count: number }) {
@@ -81,3 +169,5 @@ function formatTime(value: string): string {
   const date = new Date(value);
   return Number.isNaN(date.getTime()) ? value : date.toLocaleString("zh-CN", { hour12: false });
 }
+// Note: History icon reserved for future timeline-tab-only iconography if needed.
+void History;
