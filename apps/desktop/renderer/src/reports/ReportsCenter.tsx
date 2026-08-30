@@ -1,41 +1,50 @@
 import { useState } from "react";
-import { BudgetBar } from "@org-workbench/ui";
-import type { AuditEntry, BudgetReport, EvidenceEntry, EscalationEntry, ReportsResponse } from "@org-workbench/shared";
+import type { AuditEntry, EvidenceEntry, EscalationEntry, ReportsResponse } from "@org-workbench/shared";
 import { Activity, AlertOctagon, ClipboardList, Fingerprint } from "lucide-react";
+import { BudgetDashboard } from "./BudgetDashboard";
 
-type Tab = "escalations" | "audits" | "evidence";
+type Tab = "budgets" | "escalations" | "audits" | "evidence";
 
-export function ReportsCenter({ reports, loading }: { reports: ReportsResponse | null; loading: boolean }) {
-  const [tab, setTab] = useState<Tab>("escalations");
+export interface ReportsCenterProps {
+  reports: ReportsResponse | null;
+  loading: boolean;
+  positionNames?: Record<string, string>;
+  positionColors?: Record<string, string>;
+  onOpenTimeline?: (positionId: string) => void;
+}
+
+export function ReportsCenter({ reports, loading, positionNames, positionColors, onOpenTimeline }: ReportsCenterProps) {
+  const [tab, setTab] = useState<Tab>("budgets");
   if (loading) return <section className="owb-reports"><p className="owb-muted">正在读取本地上报事实…</p></section>;
   if (!reports) return <section className="owb-reports"><p className="owb-muted">上报数据不可用</p></section>;
   return (
     <section className="owb-reports" aria-label="上报中心">
       <header className="owb-reports__hero">
-        <div><span>LOCAL CONTROL PLANE</span><h1>上报中心</h1><p>只读展示审计、回合证据与失败升级；原始输入和输出默认不进入此视图。</p></div>
+        <div><span>LOCAL CONTROL PLANE</span><h1>上报中心</h1><p>只读展示审计、回合证据、失败升级与预算/成本看板；原始输入和输出默认不进入此视图。</p></div>
         <Activity aria-hidden="true" size={28} />
       </header>
-      <BudgetDeck budgets={reports.budgets} />
       <nav className="owb-report-tabs" aria-label="上报数据流">
+        <TabButton active={tab === "budgets"} onClick={() => setTab("budgets")} label="成本看板" count={reports.budgets.length} />
         <TabButton active={tab === "escalations"} onClick={() => setTab("escalations")} label="失败 / 升级" count={reports.streams.escalations.length} />
         <TabButton active={tab === "audits"} onClick={() => setTab("audits")} label="组织审计" count={reports.streams.audits.length} />
         <TabButton active={tab === "evidence"} onClick={() => setTab("evidence")} label="回合证据" count={reports.streams.evidence.length} />
       </nav>
       <div className="owb-report-stream">
+        {tab === "budgets" ? (
+          <BudgetDashboard
+            budgets={reports.budgets}
+            escalations={reports.streams.escalations}
+            positionNames={positionNames}
+            positionColors={positionColors}
+            onOpenTimeline={onOpenTimeline}
+          />
+        ) : null}
         {tab === "escalations" ? <Escalations entries={reports.streams.escalations} /> : null}
         {tab === "audits" ? <Audits entries={reports.streams.audits} /> : null}
         {tab === "evidence" ? <Evidence entries={reports.streams.evidence} /> : null}
       </div>
     </section>
   );
-}
-
-function BudgetDeck({ budgets }: { budgets: BudgetReport[] }) {
-  return <div className="owb-budget-deck" aria-label="预算仪表">{budgets.map((budget) => {
-    const limit = budget.declared.perTask.tokens;
-    const ratio = limit && budget.latestTurn ? budget.latestTurn.totalTokens / limit : null;
-    return <article key={budget.positionId} data-state={budget.state}><header><strong>{budget.positionId}</strong><span>{budget.state === "unobserved" ? "无回合事实" : budget.state === "exceeded" ? "已超出声明" : "声明内"}</span></header><BudgetBar declared={{ taskLimit: budget.declared.perTask, dailyLimit: budget.declared.perDay }} consumption={ratio} /><small>累计记录 {budget.recorded.totalTokens.toLocaleString()} tokens</small></article>;
-  })}</div>;
 }
 
 function TabButton({ active, onClick, label, count }: { active: boolean; onClick: () => void; label: string; count: number }) {

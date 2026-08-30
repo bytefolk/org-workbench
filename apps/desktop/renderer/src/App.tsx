@@ -936,7 +936,14 @@ export function App() {
           <Alert type={orgFeedback.tone === "warn" ? "warning" : "info"} showIcon role={orgFeedback.tone === "warn" ? "alert" : "status"} title={orgFeedback.text} />
         ) : null}
         {reportsError ? <Alert type="warning" showIcon role="alert" title={reportsError} /> : null}
-        {activeModule === "reports" ? <ReportsCenter reports={reports} loading={reportsLoading} /> : activeModule === "groups" ? (
+        {activeModule === "reports" ? (
+          <ReportsCenter
+            reports={reports}
+            loading={reportsLoading}
+            positionNames={positionNames}
+            positionColors={positionColors}
+          />
+        ) : activeModule === "groups" ? (
           <GroupsPanel
             workspaceOpen={workspaceInfo?.open === true}
             positions={positions}

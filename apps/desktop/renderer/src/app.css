@@ -361,6 +361,182 @@
 .owb-report-chain span { border-left: 1px solid var(--ui-warning); border-radius: 4px; background: var(--ui-warning-soft); color: var(--ui-foreground); padding: 3px 6px; font-size: 11px; }
 .owb-report-empty { border: 1px dashed var(--ui-border); border-radius: var(--ui-radius-md, 10px); color: var(--ui-foreground-muted); padding: 32px; text-align: center; }
 
+/* ---- ② 预算/成本看板 (BudgetDashboard / BudgetDetailDrawer) ---- */
+.owb-budget-dash { display: grid; gap: 12px; }
+.owb-budget-dash__summary {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+.owb-budget-dash__stat {
+  background: var(--ui-surface);
+  border: 1px solid var(--ui-border);
+  border-radius: var(--ui-radius-md, 10px);
+  padding: 12px 14px;
+  transition: border-color 120ms cubic-bezier(0.22, 0.61, 0.36, 1);
+}
+.owb-budget-dash__stat[data-tone="danger"] { border-color: var(--ui-border); }
+.owb-budget-dash__stat .ant-statistic-title {
+  color: var(--ui-foreground-muted);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.owb-budget-dash__stat .ant-statistic-content-value {
+  font-variant-numeric: tabular-nums;
+}
+.owb-budget-dash__alert {
+  border-radius: var(--ui-radius-md, 10px);
+  animation: owb-budget-alert-in 240ms cubic-bezier(0.22, 0.61, 0.36, 1);
+}
+@keyframes owb-budget-alert-in {
+  from { opacity: 0; transform: translateY(-4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.owb-budget-dash__toolbar {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.owb-budget-dash__search { max-width: 260px; }
+.owb-budget-dash__empty {
+  border: 1px dashed var(--ui-border);
+  border-radius: var(--ui-radius-md, 10px);
+  padding: 32px;
+}
+.owb-budget-dash__table {
+  border: 1px solid var(--ui-border);
+  border-radius: var(--ui-radius-lg, 14px);
+  background: var(--ui-surface);
+  overflow: hidden;
+}
+.owb-budget-dash__table .ant-table-thead > tr > th {
+  background: var(--ui-surface-inset);
+  color: var(--ui-foreground-muted);
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.owb-budget-dash__table .ant-table-tbody > tr {
+  cursor: pointer;
+  transition: background-color 120ms cubic-bezier(0.22, 0.61, 0.36, 1);
+}
+.owb-budget-dash__table .ant-table-tbody > tr:hover > td {
+  background: var(--ui-surface-raised);
+}
+.owb-budget-dash__table .ant-table-tbody > tr.is-exceeded > td {
+  background: var(--ui-danger-soft);
+  box-shadow: inset 3px 0 0 0 var(--ui-danger);
+}
+.owb-budget-dash__table .ant-table-tbody > tr.is-approaching > td {
+  background: var(--ui-warning-soft);
+}
+.owb-budget-dash__cell-position {
+  display: flex; gap: 10px; align-items: center;
+}
+.owb-budget-dash__cell-position strong {
+  display: block;
+  color: var(--ui-foreground);
+  font-size: 12px;
+}
+.owb-budget-dash__cell-position code {
+  color: var(--ui-foreground-muted);
+  font-family: var(--ui-font-mono, "JetBrains Mono", monospace);
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+}
+.owb-budget-dash__avatar {
+  display: inline-block;
+  width: 24px; height: 24px;
+  border-radius: 50%;
+  background: var(--ui-surface-inset);
+  border: 1px solid var(--ui-border);
+}
+.owb-budget-dash__daily {
+  color: var(--ui-foreground-muted);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+.owb-budget-dash__recorded {
+  color: var(--ui-foreground);
+  font-family: var(--ui-font-mono, "JetBrains Mono", monospace);
+  font-variant-numeric: tabular-nums;
+}
+.owb-budget-dash__tag { border-radius: var(--ui-radius-sm, 6px); font-size: 11px; }
+.owb-budget-dash__tag.is-danger { background: var(--ui-danger-soft); color: var(--ui-danger-strong); }
+.owb-budget-dash__tag.is-warning { background: var(--ui-warning-soft); color: var(--ui-warning-strong); }
+.owb-budget-dash__tag.is-success { background: var(--ui-success-soft); color: var(--ui-success-strong); }
+.owb-budget-dash__tag.is-neutral { background: var(--ui-surface-inset); color: var(--ui-foreground-muted); }
+.owb-budget-dash__escalations {
+  border: 1px solid var(--ui-border);
+  border-left: 3px solid var(--ui-danger);
+  background: var(--ui-surface);
+  border-radius: var(--ui-radius-md, 10px);
+  padding: 12px 14px;
+}
+.owb-budget-dash__escalations header {
+  display: flex; align-items: center; gap: 6px; margin-bottom: 8px;
+  color: var(--ui-danger);
+}
+.owb-budget-dash__escalations h3 { margin: 0; font-size: 12px; color: var(--ui-foreground); letter-spacing: 0.06em; text-transform: uppercase; }
+.owb-budget-dash__escalations ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.owb-budget-dash__escalations li {
+  display: flex; align-items: center; gap: 8px;
+  color: var(--ui-foreground-muted);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+.owb-budget-dash__escalations code {
+  background: var(--ui-surface-inset);
+  color: var(--ui-foreground);
+  padding: 1px 6px;
+  border-radius: var(--ui-radius-sm, 6px);
+  font-size: 11px;
+}
+.owb-budget-dash__chain { color: var(--ui-foreground-muted); }
+.owb-budget-dash__linkbtn {
+  display: inline-flex; align-items: center; gap: 4px;
+  border: none; background: transparent;
+  color: var(--ui-primary);
+  padding: 2px 6px;
+  border-radius: var(--ui-radius-sm, 6px);
+  cursor: pointer;
+  font-size: 11px;
+  transition: background-color 120ms cubic-bezier(0.22, 0.61, 0.36, 1);
+}
+.owb-budget-dash__linkbtn:hover { background: var(--ui-surface-inset); }
+
+/* ---- BudgetDetailDrawer ---- */
+.owb-budget-drawer .ant-drawer-content {
+  background: var(--ui-surface);
+}
+.owb-budget-drawer__body { display: grid; gap: 16px; }
+.owb-budget-drawer__usage h4 {
+  margin: 0 0 8px 0;
+  color: var(--ui-foreground-muted);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.owb-budget-drawer__stats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  background: var(--ui-surface-inset);
+  border-radius: var(--ui-radius-md, 10px);
+  padding: 12px;
+}
+.owb-budget-drawer__stats .ant-statistic-content-value {
+  font-variant-numeric: tabular-nums;
+}
+.owb-budget-drawer__actions { display: flex; justify-content: flex-end; }
+
+@media (max-width: 1080px) {
+  .owb-budget-dash__summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+
 @media (max-width: 1080px) {
   .owb-workspace-grid { grid-template-columns: minmax(240px, .65fr) minmax(380px, 1.35fr); }
   .owb-form-grid { grid-template-columns: 1fr; }
