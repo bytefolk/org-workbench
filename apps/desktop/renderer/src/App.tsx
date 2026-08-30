@@ -1,5 +1,5 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Alert, Button as AntButton, ConfigProvider, theme } from "antd";
+import { Alert, Badge, Button as AntButton, ConfigProvider, theme } from "antd";
 import zhCN from "antd/locale/zh_CN";
 import {
   AppShell,
@@ -24,7 +24,7 @@ import type {
   WorkbenchSessionList,
   WorkspaceInfoResponse,
 } from "@org-workbench/shared";
-import { FileChartColumn, FolderTree, History, Network, Plus, UsersRound } from "lucide-react";
+import { FileChartColumn, FolderTree, History, Network, Plus, ShieldAlert, UsersRound } from "lucide-react";
 import {
   EMPTY_TURN_STREAM,
   TurnPanel,
@@ -52,6 +52,7 @@ import { OrgChart } from "./org/OrgChart";
 import { GroupsPanel } from "./groups/GroupsPanel";
 import { DocsModule } from "./docs/DocsModule";
 import { ReportsCenter } from "./reports/ReportsCenter";
+import { ApprovalQueue, type ApprovalQueueItem } from "./approvals";
 
 interface PositionCardState {
   loading: boolean;
@@ -67,7 +68,16 @@ interface PositionCardState {
  * (org.updated drives refresh; the UI never polls).
  */
 export function App() {
-  const [activeModule, setActiveModule] = useState<"org" | "groups" | "reports" | "docs">("org");
+  const [activeModule, setActiveModule] = useState<
+    "org" | "groups" | "reports" | "approvals" | "docs"
+  >("org");
+  /**
+   * DATA GAP (TODO, v0): v0 has no dedicated `/approvals` stream. The P0
+   * queue receives an empty items array here; App will later populate this
+   * from a bounded `sessionTurnHistory` scan + SSE `turn.approval.requested`
+   * increments. Kept as a plain state slot so the wiring point is obvious.
+   */
+  const [approvalItems] = useState<ApprovalQueueItem[]>([]);
   const [health, setHealth] = useState<HealthResponse | null>(null);
   const [workspaceInfo, setWorkspaceInfo] = useState<WorkspaceInfoResponse | null>(null);
   const [snapshot, setSnapshot] = useState<OrgTreeSnapshot | null>(null);
@@ -809,6 +819,23 @@ export function App() {
             { id: "org", label: "组织", icon: <Network aria-hidden="true" size={16} />, active: activeModule === "org", onSelect: () => setActiveModule("org") },
             { id: "groups", label: "群聊", icon: <UsersRound aria-hidden="true" size={16} />, active: activeModule === "groups", onSelect: () => setActiveModule("groups") },
             { id: "reports", label: "上报", icon: <FileChartColumn aria-hidden="true" size={16} />, active: activeModule === "reports", onSelect: () => { setActiveModule("reports"); void loadReports(); } },
+            {
+              id: "approvals",
+              label: "审批",
+              icon: (
+                <Badge
+                  count={approvalItems.filter((a) => a.decision.kind === "pending").length}
+                  size="small"
+                  showZero={false}
+                  offset={[6, -2]}
+                  color="var(--ui-primary)"
+                >
+                  <ShieldAlert aria-hidden="true" size={16} />
+                </Badge>
+              ),
+              active: activeModule === "approvals",
+              onSelect: () => setActiveModule("approvals"),
+            },
             { id: "memory", label: "记忆", icon: <History aria-hidden="true" size={16} /> },
             { id: "docs", label: "文档", icon: <FolderTree aria-hidden="true" size={16} />, active: activeModule === "docs", onSelect: () => setActiveModule("docs") },
           ]}
@@ -942,6 +969,18 @@ export function App() {
             loading={reportsLoading}
             positionNames={positionNames}
             positionColors={positionColors}
+          />
+        ) : activeModule === "approvals" ? (
+          <ApprovalQueue
+            items={approvalItems}
+            onApprove={(approvalId, reason) => {
+              // TODO(v0 gap): wire into onVerdictTurn once the queue is
+              // fed by the bounded-scan + SSE derivation path.
+              console.info("approval.approve", { approvalId, reason });
+            }}
+            onDeny={(approvalId, reason) => {
+              console.info("approval.deny", { approvalId, reason });
+            }}
           />
         ) : activeModule === "groups" ? (
           <GroupsPanel
