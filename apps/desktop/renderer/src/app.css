@@ -3620,6 +3620,167 @@
   display: flex;
   gap: 12px;
   margin: 0;
+/* ================================================================
+   Turn / 审计时间线（AuditTimeline）— design-spec §6
+   Read-only, evidence-only stream grouped by runId.
+   ================================================================ */
+
+.owb-timeline {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.owb-timeline__toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  padding: 10px 12px;
+  border: 1px solid var(--ui-border);
+  border-radius: var(--ui-radius-lg, 14px);
+  background: var(--ui-surface-raised);
+}
+
+.owb-timeline__filter {
+  min-width: 160px;
+}
+
+.owb-timeline__filter--position { min-width: 200px; }
+.owb-timeline__filter--class { min-width: 200px; }
+.owb-timeline__filter--range { min-width: 260px; }
+
+.owb-timeline__count {
+  margin-left: auto;
+  color: var(--ui-foreground-muted);
+  font-family: var(--ui-font-mono);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+.owb-timeline__loading {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px;
+}
+
+.owb-timeline__skeleton {
+  height: 44px;
+  border-radius: var(--ui-radius-md, 10px);
+  background: linear-gradient(90deg, var(--ui-surface-inset), var(--ui-surface));
+  animation: owb-timeline-shimmer 1.2s ease-in-out infinite;
+}
+
+@keyframes owb-timeline-shimmer {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.55; }
+}
+
+.owb-timeline__empty {
+  padding: 40px 0;
+}
+
+.owb-timeline__groups {
+  background: transparent;
+}
+
+.owb-timeline__groups .ant-collapse-item {
+  margin-bottom: 8px;
+  border: 1px solid var(--ui-border);
+  border-radius: var(--ui-radius-md, 10px);
+  background: var(--ui-surface);
+  overflow: hidden;
+}
+
+.owb-timeline__groups .ant-collapse-header {
+  padding: 10px 12px !important;
+}
+
+.owb-timeline__groups .ant-collapse-content-box {
+  padding: 8px 12px 12px !important;
+}
+
+.owb-timeline__group.is-failed { border-color: var(--ui-danger); }
+.owb-timeline__group.is-indeterminate { border-color: var(--ui-warning); }
+.owb-timeline__group.is-completed { border-color: var(--ui-success); }
+.owb-timeline__group.is-running { border-color: var(--ui-ai); }
+.owb-timeline__group.has-budget-flag { box-shadow: inset 3px 0 0 var(--ui-danger); }
+
+.owb-timeline__group-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  color: var(--ui-foreground);
+  font-size: 12px;
+}
+
+.owb-timeline__group-time {
+  color: var(--ui-foreground-subtle);
+  font-family: var(--ui-font-mono);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+.owb-timeline__group-who {
+  color: var(--ui-primary);
+  font-weight: 700;
+}
+
+.owb-timeline__group-eng {
+  margin-left: 4px;
+  color: var(--ui-foreground-muted);
+  font-family: var(--ui-font-mono);
+  font-size: 10.5px;
+  font-style: normal;
+  font-weight: 500;
+}
+
+.owb-timeline__group-status {
+  color: var(--ui-foreground-muted);
+  font-size: 11px;
+}
+
+.owb-timeline__group-runid {
+  margin-left: auto;
+  color: var(--ui-foreground-subtle);
+  font-family: var(--ui-font-mono);
+  font-size: 10px;
+}
+
+.owb-timeline__dot {
+  flex: none;
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+  background: var(--ui-border-strong);
+}
+.owb-timeline__dot.is-primary { background: var(--ui-primary); }
+.owb-timeline__dot.is-success { background: var(--ui-success); }
+.owb-timeline__dot.is-warning { background: var(--ui-warning); }
+.owb-timeline__dot.is-danger { background: var(--ui-danger); }
+.owb-timeline__dot.is-neutral { background: var(--ui-foreground-subtle); }
+/* indeterminate is amber, never green — reinforced with dedicated modifier. */
+.owb-timeline__dot.is-indeterminate { background: var(--ui-warning); }
+
+.owb-timeline__events {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.owb-timeline__event { margin: 0; }
+
+.owb-timeline__card { padding: 8px 10px; }
+
+.owb-timeline__event-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
   color: var(--ui-foreground-muted);
   font-size: 11px;
 }
@@ -3686,4 +3847,78 @@
   .owb-approval-card {
     transition: none;
   }
+.owb-timeline__event-type {
+  color: var(--ui-foreground-subtle);
+  font-family: var(--ui-font-mono);
+  font-size: 10.5px;
+}
+
+.owb-timeline__errcode.ant-tag {
+  margin-inline-end: 0;
+  font-family: var(--ui-font-mono);
+  font-size: 10px;
+  line-height: 16px;
+  border-radius: var(--ui-radius-sm, 6px);
+}
+
+.owb-timeline__budget-tag.ant-tag {
+  margin-inline-end: 0;
+  font-size: 10px;
+  line-height: 16px;
+  border-radius: var(--ui-radius-sm, 6px);
+}
+
+.owb-timeline__cost-link {
+  color: var(--ui-primary);
+  font-size: 11px;
+  text-decoration: underline;
+}
+
+.owb-timeline__evidence {
+  display: flex;
+  gap: 12px;
+  margin-top: 6px;
+  color: var(--ui-foreground-muted);
+  font-size: 11px;
+}
+
+.owb-timeline__tokens {
+  font-family: var(--ui-font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+.owb-timeline__digest {
+  overflow-wrap: anywhere;
+  color: var(--ui-foreground);
+  font-family: var(--ui-font-mono);
+  font-size: 10.5px;
+  word-break: break-all;
+}
+
+.owb-timeline__chain {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-top: 6px;
+}
+
+.owb-timeline__chain span {
+  border-left: 1px solid var(--ui-warning);
+  border-radius: 4px;
+  background: var(--ui-warning-soft);
+  color: var(--ui-foreground);
+  padding: 3px 6px;
+  font-size: 11px;
+}
+
+.owb-timeline__pagination {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  justify-content: flex-end;
+  padding: 8px 4px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .owb-timeline__skeleton { animation: none; }
 }

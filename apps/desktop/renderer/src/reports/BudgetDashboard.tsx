@@ -152,6 +152,7 @@ export function BudgetDashboard({
         key: "perTask",
         render: (_: unknown, row: BudgetRow) => (
           <BudgetBar
+            label="单任务"
             declared={{ taskLimit: row.declared.perTask, dailyLimit: null }}
             consumption={row.ratio}
             format="compact"
@@ -167,9 +168,17 @@ export function BudgetDashboard({
           const unit = row.declared.perDay.tokens !== undefined ? "tokens" : "iterations";
           return (
             <span className="owb-budget-dash__daily">
-              {typeof cap === "number"
-                ? `未记录 · 上限 ${cap.toLocaleString()} ${unit}`
-                : "未声明"}
+              <BudgetBar
+                label="单日"
+                declared={{ taskLimit: null, dailyLimit: row.declared.perDay }}
+                consumption={null}
+                format="compact"
+              />
+              <span className="owb-budget-dash__daily-cap">
+                {typeof cap === "number"
+                  ? `未记录 · 上限 ${cap.toLocaleString()} ${unit}`
+                  : "未声明"}
+              </span>
             </span>
           );
         },
