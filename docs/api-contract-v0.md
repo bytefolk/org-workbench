@@ -341,7 +341,7 @@ Workbench 只 spawn 钉定 `context@f63f57f`（或兼容后续 main）的公共 
 
 唯一创建通道：招聘不再经变更清单（§2.5 已移除 `add`）。消费 digital-employee #194/#198（merge b3d54bf）的 hire-request.v1alpha1 **静态参考信封面**；上游 CLI 只有 `hire validate <file> [--json]`，无 spawn/run/审批事件，本端点不虚构任何上游不存在的调用形态。
 
-请求（只允许下列字段，缺一即 400 `hire_request_invalid`）：
+请求（只允许下列字段，除 `deadline`/`network` 外缺一即 400 `hire_request_invalid`）：
 
 ```json
 {
@@ -351,12 +351,14 @@ Workbench 只 spawn 钉定 `context@f63f57f`（或兼容后续 main）的公共 
   "reportTo": "repo-owner",
   "mode": "approval_required",
   "budget": { "perTask": { "tokens": 20000 }, "perDay": { "tokens": 200000, "iterations": 64 } },
-  "deadline": "2026-08-27T00:00:00.000Z"
+  "deadline": "2026-08-27T00:00:00.000Z",
+  "network": "deny"
 }
 ```
 
 - `positionId` 镜像 digital-employee 岗位 ID 契约（`^[a-z0-9]+(?:-[a-z0-9]+)*$`，≤64）；`reportTo` 为岗位 ID 或 `null`（`null` 解析为企业负责人，`targetParentId=owner`）。
 - `budget.perTask.tokens` / `perDay.tokens` 必填正整数且 ≤1,000,000,000；`iterations` 选填；`mode` 只允许 `read_only` / `approval_required`；`deadline` 选填 ISO 时间。
+- `network`（#87 v0 加法，选填）只允许 `"deny"` / `"host_policy"`，省略时默认 `"deny"`（与冻结前行为一致）；直接落入生成的 `employee.json` 的 `policy.network`。MCP 工具授予（`policy.mcpTools`）仍未开放，见 #89。
 
 执行序列（两道静态闸门，全部 fail-closed）：
 

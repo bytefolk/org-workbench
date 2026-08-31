@@ -11,7 +11,7 @@
 //   approval 相位仅为四态机保留位，动作集合刻意没有 approve/deny；turn 内审批
 //   走 #25 Slice B 的 approval 三事件契约，两线零混用。
 
-import type { HirePositionRequest, PositionBudget } from "@org-workbench/shared";
+import type { HirePositionRequest, NetworkPolicy, PositionBudget } from "@org-workbench/shared";
 
 export interface HireDraft {
   id: string;
@@ -20,6 +20,8 @@ export interface HireDraft {
   reportTo: string | null;
   mode: "read_only" | "approval_required";
   budget: PositionBudget;
+  /** #87: network egress policy; MCP tool granting is tracked separately (#89). */
+  network: NetworkPolicy;
 }
 
 export type HireFlowState =
@@ -49,6 +51,7 @@ export function createHireDraft(presets?: Partial<HireDraft>): HireDraft {
       perTask: { tokens: 0 },
       perDay: { tokens: 0 },
     },
+    network: "deny",
     ...presets,
   };
 }
@@ -66,6 +69,7 @@ export function toHirePositionRequest(draft: HireDraft): HirePositionRequest {
     reportTo: draft.reportTo,
     mode: draft.mode,
     budget: draft.budget,
+    network: draft.network,
   };
 }
 

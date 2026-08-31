@@ -173,6 +173,45 @@ test("POST /hire: reportTo=null hires under the company owner", async () => {
   }
 });
 
+test("POST /hire: network policy defaults to deny and can be requested as host_policy (#87)", async () => {
+  const driver = new FakeDriver({ status: "applied" }, emulateEngineHire);
+  const server = await startTestServer(driver);
+  const dir = await copyExampleWorkspace();
+  try {
+    await seedAppliedState(dir);
+    await api(server.baseUrl, "/workspace/open", { method: "POST", token: server.token, body: { path: dir } });
+    const res = await api(server.baseUrl, "/hire", { method: "POST", token: server.token, body: VALID_HIRE });
+    assert.equal(res.status, 200);
+    const employee = await readJson<{ policy: { network: string } }>(
+      path.join(dir, "positions", "repo-owner", "docs-writer", "employee.json"),
+    );
+    assert.equal(employee.policy.network, "deny", "omitting network preserves today's behavior");
+  } finally {
+    await server.close();
+  }
+});
+
+test("POST /hire: an explicit host_policy network request lands in employee.json (#87)", async () => {
+  const driver = new FakeDriver({ status: "applied" }, emulateEngineHire);
+  const server = await startTestServer(driver);
+  const dir = await copyExampleWorkspace();
+  try {
+    await seedAppliedState(dir);
+    await api(server.baseUrl, "/workspace/open", { method: "POST", token: server.token, body: { path: dir } });
+    const res = await api(server.baseUrl, "/hire", {
+      method: "POST", token: server.token,
+      body: { ...VALID_HIRE, network: "host_policy" },
+    });
+    assert.equal(res.status, 200);
+    const employee = await readJson<{ policy: { network: string } }>(
+      path.join(dir, "positions", "repo-owner", "docs-writer", "employee.json"),
+    );
+    assert.equal(employee.policy.network, "host_policy");
+  } finally {
+    await server.close();
+  }
+});
+
 test("POST /hire: static validation failure is fail-closed before any filesystem effect", async () => {
   const driver = new FakeDriver({ status: "applied" }, emulateEngineHire);
   driver.hireOutcome = { status: "failed", code: "hire_request_budget_malformed", message: "budget malformed" };
@@ -253,6 +292,7 @@ test("POST /hire: boundary matrix fails closed at the request gate (400 hire_req
       ["bad deadline", { ...VALID_HIRE, deadline: "not-a-date" }],
       ["invalid position id", { ...VALID_HIRE, positionId: "a--b" }],
       ["reportTo not found", { ...VALID_HIRE, reportTo: "ghost-position" }],
+      ["invalid network", { ...VALID_HIRE, network: "allow" }],
     ];
     for (const [label, body] of cases) {
       const res = await api(server.baseUrl, "/hire", { method: "POST", token: server.token, body });

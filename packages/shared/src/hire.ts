@@ -16,6 +16,9 @@ import type { PositionBudget, PositionMode } from "./org-tree.js";
 
 export const HIRE_REQUEST_SCHEMA_VERSION = "hire-request.v1alpha1" as const;
 
+/** Employee tool/MCP data-plane egress policy (employee-package.schema.json `policy.network`). */
+export type NetworkPolicy = "deny" | "host_policy";
+
 /** Shape POST /hire accepts from the renderer (frozen by docs/api-contract-v0.md §2.13). */
 export interface HirePositionRequest {
   positionId: string;
@@ -28,6 +31,8 @@ export interface HirePositionRequest {
   budget: PositionBudget;
   /** Optional ISO 8601 passthrough onto the envelope deadline (upstream-optional). */
   deadline?: string;
+  /** #87 v0 additive field; omitted or absent means "deny" (today's behavior). */
+  network?: NetworkPolicy;
 }
 
 export interface HirePackageReference {

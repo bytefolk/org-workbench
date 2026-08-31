@@ -37,6 +37,7 @@
 - #73 Control Plane v2：组织树连接线（guide-rail，选中即递推点亮祖先链路）、岗位状态灯（仅映射真实在途回合）、42×6px 微型预算条；对话面板改证据时间线（`.owb-tc` 控制台卡：状态圆点/状态行/证据印章 chip/内嵌审批卡），群聊仍保留气泡布局。
 - #73 无边框窗口自定义标题栏：`owb:window:minimize` / `owb:window:toggle-maximize` / `owb:window:close` 三个枚举式 IPC；每个 handler 均校验 `event.senderFrame` 是 mainWindow 自身主 frame 且仍在展示打包渲染层（`window-ipc.cjs` 纯函数 + 6 条负向单测），并对 mainWindow 加 `will-navigate`/`setWindowOpenHandler` 拦截，拒绝导航到打包文件之外的任何地址与新窗口。
 - `apps/desktop/test/contrast.test.cjs`：对 `--ui-foreground-subtle` 在亮/暗两套主题的全部 5 个背景阶做真实 WCAG 对比度计算断言（≥4.5:1），而非仅检查 token 字符串存在。
+- #87: `POST /hire` 与桌面 IPC 网关新增可选 `network` 字段（`"deny"` | `"host_policy"`，省略时默认 `"deny"`，v0 契约加法，向后兼容），落入生成的 `employee.json` 的 `policy.network`；创建员工抽屉新增「网络访问」下拉。MCP 工具授予（`policy.mcpTools`）范围更大（需声明真实 MCP server 连接），已拆分至 #89。
 
 ### Changed
 
@@ -76,6 +77,7 @@
 - D3 后端以 fixture CLI 和 HTTP 集成测试验证；renderer 以 IPC fixture 验证“打开工作区 → 选岗位 → 加载本地历史 → 发送 → readback”、idle 禁用和 API failure。Qoder/Claude Code live Host 未在本机执行；委派与 mem recall 不在本切片范围。
 - Session E3 以真实临时 workspace 覆盖 create → turn → rotate → restart → old/read-only + successor/zero-turn，另覆盖双 rotate、running conflict、错误请求不触发 Host 和持久化攻击面。Memory recall/write 与 live Host E4 明确未实现/未验证。
 - PR #77：`tsc -b`、`typecheck:ui`、`typecheck:renderer` 全绿；`test:ui` 31/31、`test:renderer` 97/97、`test:desktop-main` 27/27（含新增 `window-ipc.test.cjs` 6 例负向安全测试、`contrast.test.cjs` 1 例真实 WCAG 计算）；`npm audit --audit-level=high` 0 漏洞。`apps/server/*` 未改动，其测试套件本地重跑两次分别为 17 / 20 个失败（非确定性、失败数不稳定，`git diff apps/server/` 为空），系既有 test 隔离问题，非本 PR 引入，CI（干净环境）按 reviewer 记录为全绿；未在本 PR 内处理（越出 AC-005 边界）。窗口边缘拖拽缩放：CDP 视口模拟 940/680/1680 三档均验证通过，真实 WM 交互（WSLg）未验证，已在 macOS 实机验证通过（见 PR review）。
+- Fix for #87: `tsc -b`、`typecheck:renderer` 全绿。`node --test apps/server/dist/test/{hire,apply,contract}.test.js` 全部通过（含新增 4 例：默认 `deny`/显式 `host_policy` 落地 `employee.json`、边界矩阵新增非法 `network` 值 400、IPC 网关镜像同款校验）；全量 `apps/server` 套件 124/142 通过、17 个失败与 #86 一致复现（`git stash` A/B 对比，两侧失败集合完全相同），系既有 test 隔离问题非本 PR 引入。`test:desktop-main` 34/34 全绿（含新增 IPC 网关用例）。`test:renderer` 本地 125/136 通过、11 个失败；`git stash` A/B 对比确认这 11 个失败在改动前后是完全相同的测试集合（仅耗时波动），根因是本地 `design-system`/应用两份 React 副本冲突（`useContext` on null，`antd` Skeleton/ConfigProvider 路径），与本 PR 无关，未在本 PR 内处理；`hire-flow.test.ts` 6/6、`App.test.tsx` 内新增/更新的 hire payload 断言（含 `network: "deny"`）均在通过的 125 例中。`npm run check` 全量（含 `test:ui`/`security:check`）未在本地重跑——本次改动不触达那两块，交由 CI 兜底。
 
 ## [D0] — 骨架
 

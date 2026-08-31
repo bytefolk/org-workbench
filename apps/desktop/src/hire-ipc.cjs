@@ -4,7 +4,8 @@
 const { isPositionId } = require("@org-workbench/shared/position-id");
 
 const MODES = new Set(["read_only", "approval_required"]);
-const KNOWN_KEYS = new Set(["positionId", "name", "description", "reportTo", "mode", "budget", "deadline"]);
+const NETWORK_POLICIES = new Set(["deny", "host_policy"]);
+const KNOWN_KEYS = new Set(["positionId", "name", "description", "reportTo", "mode", "budget", "deadline", "network"]);
 
 function invalid(message) {
   return { status: 400, body: { code: "hire_request_invalid", message, retryable: false } };
@@ -38,6 +39,9 @@ function validateHireRequest(value) {
   }
   if (value.deadline !== undefined && typeof value.deadline !== "string") {
     return { ok: false, response: invalid("deadline must be a string") };
+  }
+  if (value.network !== undefined && !NETWORK_POLICIES.has(value.network)) {
+    return { ok: false, response: invalid("network must be deny or host_policy") };
   }
   return { ok: true, request: value };
 }

@@ -418,6 +418,7 @@ describe("App runtime bridge", () => {
       reportTo: "repo-owner",
       mode: "approval_required",
       budget: { perTask: { tokens: 20000 }, perDay: { tokens: 200000 } },
+      network: "deny",
     }));
     expect(orgApply).not.toHaveBeenCalled();
     expect(await screen.findByText("文档负责人 已加入团队（hire-request.v1alpha1 契约面）")).toBeInTheDocument();
