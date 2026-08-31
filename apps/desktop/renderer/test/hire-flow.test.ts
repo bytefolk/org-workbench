@@ -3,6 +3,7 @@ import {
   createHireDraft,
   initialHireFlow,
   reduceHireFlow,
+  toHirePositionRequest,
   type HireDraft,
   type HireFlowState,
 } from "../src/org/hire-flow";
@@ -86,5 +87,27 @@ describe("#33 hire 四态状态机（本地态骨架，不触契约）", () => {
     const failed: HireFlowState = { phase: "failed", draft: draft(), code: "x", retryable: false };
     const fresh = draft({ id: "community-operator" });
     expect(reduceHireFlow(failed, { type: "reset", draft: fresh })).toEqual({ phase: "draft", draft: fresh });
+  });
+
+  it("#89 未授予 MCP 时 POST /hire 载荷不带 mcp 键（与加法前逐字节一致）", () => {
+    const payload = toHirePositionRequest(draft());
+    expect("mcp" in payload).toBe(false);
+    expect(payload).toEqual({
+      positionId: "docs-writer",
+      name: "文档负责人",
+      description: "维护公开文档与发布说明",
+      reportTo: "repo-owner",
+      mode: "approval_required",
+      budget: { perTask: { tokens: 200_000 }, perDay: { tokens: 800_000 } },
+      network: "deny",
+    });
+  });
+
+  it("#89 授予 MCP 时原样透传给控制面（renderer 不改写词表）", () => {
+    const mcp = {
+      tools: [{ name: "repo.read", requestedMode: "read" as const }],
+      servers: [{ name: "local-fs", transport: { type: "stdio" as const, command: "mcp-fs" } }],
+    };
+    expect(toHirePositionRequest(draft({ mcp })).mcp).toEqual(mcp);
   });
 });

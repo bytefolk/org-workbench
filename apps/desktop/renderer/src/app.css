@@ -203,6 +203,48 @@
   grid-column: 1 / -1;
 }
 
+/* #89 招聘抽屉的 MCP 授权高级区：默认折叠，展开后逐条编辑工具与 server。 */
+.owb-hire-drawer__advanced {
+  border-top: 1px solid var(--ui-border);
+  padding-top: var(--ui-space-3, 12px);
+  margin-bottom: var(--ui-space-4, 16px);
+}
+
+.owb-hire-drawer__toggle {
+  display: flex;
+  align-items: center;
+  gap: var(--ui-space-2, 8px);
+  color: var(--ui-foreground-muted);
+  font-size: var(--ui-text-xs, 12px);
+  font-weight: 600;
+}
+
+.owb-hire-drawer__mcp {
+  display: grid;
+  gap: var(--ui-space-3, 12px);
+  margin-top: var(--ui-space-3, 12px);
+}
+
+.owb-hire-drawer__mcp h4 {
+  margin: 0;
+  color: var(--ui-foreground-muted);
+  font-size: var(--ui-text-xs, 12px);
+  font-weight: 600;
+}
+
+.owb-hire-drawer__row {
+  display: grid;
+  gap: 6px;
+  border: 1px solid var(--ui-border);
+  border-radius: var(--ui-radius-md, 10px);
+  background: var(--ui-surface-inset);
+  padding: var(--ui-space-3, 12px);
+}
+
+.owb-hire-drawer__hint--error {
+  color: var(--ui-danger, #b3261e);
+}
+
 .owb-budget-fieldset {
   border: 1px solid var(--ui-border);
   border-radius: var(--ui-radius-lg, 14px);

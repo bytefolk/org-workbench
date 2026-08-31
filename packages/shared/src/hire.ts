@@ -19,6 +19,61 @@ export const HIRE_REQUEST_SCHEMA_VERSION = "hire-request.v1alpha1" as const;
 /** Employee tool/MCP data-plane egress policy (employee-package.schema.json `policy.network`). */
 export type NetworkPolicy = "deny" | "host_policy";
 
+export const EMPLOYEE_MCP_SCHEMA_VERSION = "employee-mcp.v1alpha1" as const;
+
+/**
+ * #89 MCP grant vocabulary. Mirrors two upstream contracts that the control
+ * plane must satisfy together: `policy.mcpTools` in
+ * employee-package.schema.json (the tool allowlist) and employee-mcp.v1alpha1
+ * (packages/core/src/employee-mcp.ts — the server connections written to
+ * `entrypoints.mcp`). Upstream keeps the two namespaces independent: a tool
+ * name is never matched against a server name.
+ */
+export type McpRequestedMode = "read" | "write";
+
+export interface McpToolRequest {
+  name: string;
+  requestedMode: McpRequestedMode;
+}
+
+export type McpServerTransport =
+  | {
+      type: "stdio";
+      command: string;
+      /** Upstream defaults both list fields to empty when omitted. */
+      args?: string[];
+      /** Environment variable NAMES passed through; never values. */
+      environment?: string[];
+    }
+  | {
+      type: "http";
+      /** HTTPS only upstream; no credentials or fragment in the URL. */
+      url: string;
+      /** Header values are sourced from named environment variables, never inlined. */
+      headers?: Array<{ name: string; valueFromEnv: string }>;
+    };
+
+export interface McpServerRequest {
+  name: string;
+  transport: McpServerTransport;
+}
+
+/**
+ * Atomic grant: upstream rejects a package whose `policy.mcpTools` is
+ * non-empty without an `entrypoints.mcp` file, so the control plane accepts
+ * tools and servers together or not at all.
+ */
+export interface HireMcpGrant {
+  tools: McpToolRequest[];
+  servers: McpServerRequest[];
+}
+
+/** employee-mcp.v1alpha1 file the control plane writes as `entrypoints.mcp`. */
+export interface EmployeeMcpManifest {
+  schemaVersion: typeof EMPLOYEE_MCP_SCHEMA_VERSION;
+  servers: McpServerRequest[];
+}
+
 /** Shape POST /hire accepts from the renderer (frozen by docs/api-contract-v0.md §2.13). */
 export interface HirePositionRequest {
   positionId: string;
@@ -33,6 +88,8 @@ export interface HirePositionRequest {
   deadline?: string;
   /** #87 v0 additive field; omitted or absent means "deny" (today's behavior). */
   network?: NetworkPolicy;
+  /** #89 v0 additive field; omitted means no MCP grant (today's behavior). */
+  mcp?: HireMcpGrant;
 }
 
 export interface HirePackageReference {

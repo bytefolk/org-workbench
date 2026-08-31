@@ -11,7 +11,7 @@
 //   approval 相位仅为四态机保留位，动作集合刻意没有 approve/deny；turn 内审批
 //   走 #25 Slice B 的 approval 三事件契约，两线零混用。
 
-import type { HirePositionRequest, NetworkPolicy, PositionBudget } from "@org-workbench/shared";
+import type { HireMcpGrant, HirePositionRequest, NetworkPolicy, PositionBudget } from "@org-workbench/shared";
 
 export interface HireDraft {
   id: string;
@@ -20,8 +20,13 @@ export interface HireDraft {
   reportTo: string | null;
   mode: "read_only" | "approval_required";
   budget: PositionBudget;
-  /** #87: network egress policy; MCP tool granting is tracked separately (#89). */
+  /** #87: network egress policy. */
   network: NetworkPolicy;
+  /**
+   * #89: optional MCP grant. Absent means no tools and no `entrypoints.mcp` —
+   * the draft carries the grant verbatim; the control plane validates it.
+   */
+  mcp?: HireMcpGrant;
 }
 
 export type HireFlowState =
@@ -70,6 +75,7 @@ export function toHirePositionRequest(draft: HireDraft): HirePositionRequest {
     mode: draft.mode,
     budget: draft.budget,
     network: draft.network,
+    ...(draft.mcp ? { mcp: draft.mcp } : {}),
   };
 }
 

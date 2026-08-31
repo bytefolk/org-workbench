@@ -341,7 +341,7 @@ Workbench 只 spawn 钉定 `context@f63f57f`（或兼容后续 main）的公共 
 
 唯一创建通道：招聘不再经变更清单（§2.5 已移除 `add`）。消费 digital-employee #194/#198（merge b3d54bf）的 hire-request.v1alpha1 **静态参考信封面**；上游 CLI 只有 `hire validate <file> [--json]`，无 spawn/run/审批事件，本端点不虚构任何上游不存在的调用形态。
 
-请求（只允许下列字段，除 `deadline`/`network` 外缺一即 400 `hire_request_invalid`）：
+请求（只允许下列字段，除 `deadline`/`network`/`mcp` 外缺一即 400 `hire_request_invalid`）：
 
 ```json
 {
@@ -352,13 +352,24 @@ Workbench 只 spawn 钉定 `context@f63f57f`（或兼容后续 main）的公共 
   "mode": "approval_required",
   "budget": { "perTask": { "tokens": 20000 }, "perDay": { "tokens": 200000, "iterations": 64 } },
   "deadline": "2026-08-27T00:00:00.000Z",
-  "network": "deny"
+  "network": "deny",
+  "mcp": {
+    "tools": [{ "name": "repo.read", "requestedMode": "read" }],
+    "servers": [
+      { "name": "local-fs", "transport": { "type": "stdio", "command": "mcp-fs", "args": ["--root", "."], "environment": ["FS_ROOT"] } },
+      { "name": "remote-api", "transport": { "type": "http", "url": "https://mcp.example.com/v1", "headers": [{ "name": "Authorization", "valueFromEnv": "MCP_TOKEN" }] } }
+    ]
+  }
 }
 ```
 
 - `positionId` 镜像 digital-employee 岗位 ID 契约（`^[a-z0-9]+(?:-[a-z0-9]+)*$`，≤64）；`reportTo` 为岗位 ID 或 `null`（`null` 解析为企业负责人，`targetParentId=owner`）。
 - `budget.perTask.tokens` / `perDay.tokens` 必填正整数且 ≤1,000,000,000；`iterations` 选填；`mode` 只允许 `read_only` / `approval_required`；`deadline` 选填 ISO 时间。
-- `network`（#87 v0 加法，选填）只允许 `"deny"` / `"host_policy"`，省略时默认 `"deny"`（与冻结前行为一致）；直接落入生成的 `employee.json` 的 `policy.network`。MCP 工具授予（`policy.mcpTools`）仍未开放，见 #89。
+- `network`（#87 v0 加法，选填）只允许 `"deny"` / `"host_policy"`，省略时默认 `"deny"`（与冻结前行为一致）；直接落入生成的 `employee.json` 的 `policy.network`。
+- `mcp`（#89 v0 加法，选填）授予 MCP 工具。省略即无授予、`policy.mcpTools` 为空且不生成 `entrypoints.mcp`（与冻结前行为一致）。给出时 `tools` 与 `servers` **必须同时非空**（上游 `mcp_tools_require_mcp_entrypoint`：`policy.mcpTools` 非空的包必须带 `entrypoints.mcp`），各自 ≤64 条且名称不重复：
+  - `tools[].name` 为小写标识符（`^[a-z0-9](?:[a-z0-9._-]{0,127})$`），`requestedMode` 只允许 `"read"` / `"write"`；`mode:"read_only"` 时任何 `"write"` 请求**直接 400 拒绝**，不静默降级（对齐上游 `read_only_employee_cannot_request_write_mcp_tools`）。
+  - `servers[]` 逐条镜像 employee-mcp.v1alpha1（`packages/core/src/employee-mcp.ts`）：`transport.type` 为 `"stdio"`（必填 `command`，选填 `args`、`environment`）或 `"http"`（必填 https `url`，选填 `headers`）。`url` 必须是 https 且不含账号密码或 `#` 片段；`environment[]` 与 `headers[].valueFromEnv` 只接受**环境变量名**（`^[A-Z][A-Z0-9_]{0,127}$`），凭据值永不进入请求或岗位包，由运行主机在执行时解析。
+  - 控制面据此在骨架中额外生成 `mcp.json`（`employee-mcp.v1alpha1`）并把 `entrypoints.mcp` 指向 `./mcp.json`，与 `employee.json` 一同计入 `packageRef.digest`。
 
 执行序列（两道静态闸门，全部 fail-closed）：
 

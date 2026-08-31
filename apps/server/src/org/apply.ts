@@ -3,6 +3,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import {
   CHANGE_MANIFEST_SCHEMA_VERSION,
+  EMPLOYEE_MCP_SCHEMA_VERSION,
   OrgApiError,
   errorCodes,
   isPositionId,
@@ -10,6 +11,8 @@ import {
 import type {
   ChangeManifest,
   DeletePositionChange,
+  EmployeeMcpManifest,
+  HireMcpGrant,
   MovePositionChange,
   NetworkPolicy,
   OrgApplyFailure,
@@ -512,6 +515,10 @@ function validateReorder(index: number, change: Record<string, unknown>): void {
   }
 }
 
+/** #89 `entrypoints.mcp` target and its portable manifest reference. */
+const MCP_FILE = "mcp.json";
+const MCP_ENTRYPOINT = "./mcp.json";
+
 /** Position inputs the hire route accepts; the skeleton is deterministic in these. */
 export interface SkeletonPosition {
   id: string;
@@ -519,8 +526,14 @@ export interface SkeletonPosition {
   description: string;
   mode: "read_only" | "approval_required";
   budget: PositionBudget;
-  /** employee-package.schema.json policy.network; #89 tracks granting mcpTools. */
+  /** employee-package.schema.json policy.network. */
   network: NetworkPolicy;
+  /**
+   * #89 optional MCP grant. When present the skeleton also emits an
+   * employee-mcp.v1alpha1 `mcp.json` and points `entrypoints.mcp` at it —
+   * upstream rejects a non-empty `policy.mcpTools` without that entrypoint.
+   */
+  mcp?: HireMcpGrant;
 }
 
 /**
@@ -543,12 +556,13 @@ export function buildPositionSkeletonFiles(role: SkeletonPosition): Map<string, 
       skill: "./SKILL.md",
       inputSchema: "./schemas/input.schema.json",
       outputSchema: "./schemas/output.schema.json",
+      ...(role.mcp ? { mcp: MCP_ENTRYPOINT } : {}),
     },
     policy: {
       mode: role.mode,
       network: role.network,
       filesystem: { read: ["./knowledge/**"], write: [] },
-      mcpTools: [],
+      mcpTools: role.mcp ? role.mcp.tools : [],
     },
     assets: ["./knowledge/README.md"],
   };
@@ -571,7 +585,7 @@ export function buildPositionSkeletonFiles(role: SkeletonPosition): Map<string, 
     },
   };
   const skill = `---\nname: ${role.id}\ndescription: ${JSON.stringify(role.description)}\n---\n\n# ${role.name}\n\n${role.description}\n`;
-  return new Map<string, string>([
+  const files = new Map<string, string>([
     ["employee.json", `${JSON.stringify(employee, null, 2)}\n`],
     ["SKILL.md", skill],
     ["schemas/input.schema.json", `${JSON.stringify(inputSchema, null, 2)}\n`],
@@ -579,6 +593,17 @@ export function buildPositionSkeletonFiles(role: SkeletonPosition): Map<string, 
     ["knowledge/README.md", "# Approved knowledge\n\nReplace this generated placeholder with reviewed knowledge.\n"],
     ["budget.json", `${JSON.stringify(role.budget, null, 2)}\n`],
   ]);
+  if (role.mcp) {
+    // employee-mcp.v1alpha1 carries connection details only; header and stdio
+    // credentials stay as environment variable NAMES resolved by the host at
+    // run time, so no secret is ever written into the staged package.
+    const mcpManifest: EmployeeMcpManifest = {
+      schemaVersion: EMPLOYEE_MCP_SCHEMA_VERSION,
+      servers: role.mcp.servers,
+    };
+    files.set(MCP_FILE, `${JSON.stringify(mcpManifest, null, 2)}\n`);
+  }
+  return files;
 }
 
 export async function writeSkeletonFiles(dir: string, files: Map<string, string>): Promise<void> {

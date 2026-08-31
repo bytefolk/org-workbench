@@ -18,6 +18,15 @@ import {
   toHirePositionRequest,
 } from "./hire-flow";
 import type { HireDraft } from "./hire-flow";
+import {
+  createMcpServerDraft,
+  createMcpToolDraft,
+  isMcpGrantValid,
+  isMcpServerValid,
+  isMcpToolValid,
+  toMcpGrant,
+} from "./mcp-grant";
+import type { McpServerDraft, McpToolDraft } from "./mcp-grant";
 
 // Verbatim mirror of the digital-employee position-id contract
 // (packages/shared/position-id.cjs). The ESM wrapper uses node:module's
@@ -70,6 +79,9 @@ export function HireDrawer({ open, positions, presetReportTo, onClose, onHired }
   const [reportTo, setReportTo] = useState<string | null>(presetReportTo);
   const [mode, setMode] = useState<HireDraft["mode"]>("approval_required");
   const [network, setNetwork] = useState<HireDraft["network"]>("deny");
+  const [mcpEnabled, setMcpEnabled] = useState(false);
+  const [mcpTools, setMcpTools] = useState<McpToolDraft[]>([createMcpToolDraft()]);
+  const [mcpServers, setMcpServers] = useState<McpServerDraft[]>([createMcpServerDraft()]);
   const [taskTokens, setTaskTokens] = useState("");
   const [taskIterations, setTaskIterations] = useState("");
   const [dayTokens, setDayTokens] = useState("");
@@ -128,7 +140,8 @@ export function HireDrawer({ open, positions, presetReportTo, onClose, onHired }
   const budgetValid =
     capsValid(taskTokens, true) && capsValid(dayTokens, true) && capsValid(taskIterations, false) && capsValid(dayIterations, false);
   const descriptionValid = description.trim().length > 0;
-  const formValid = nameValid && idValid && descriptionValid && budgetValid;
+  const mcpValid = !mcpEnabled || isMcpGrantValid(mcpTools, mcpServers, mode);
+  const formValid = nameValid && idValid && descriptionValid && budgetValid && mcpValid;
 
   const buildDraft = useCallback(
     (): HireDraft =>
@@ -143,8 +156,9 @@ export function HireDrawer({ open, positions, presetReportTo, onClose, onHired }
           perDay: { tokens: Number(dayTokens), ...(dayIterations.trim() ? { iterations: Number(dayIterations) } : {}) },
         },
         network,
+        ...(mcpEnabled ? { mcp: toMcpGrant(mcpTools, mcpServers) } : {}),
       }),
-    [positionId, name, description, reportTo, mode, taskTokens, taskIterations, dayTokens, dayIterations, network],
+    [positionId, name, description, reportTo, mode, taskTokens, taskIterations, dayTokens, dayIterations, network, mcpEnabled, mcpTools, mcpServers],
   );
 
   const submit = useCallback(async () => {
@@ -169,6 +183,9 @@ export function HireDrawer({ open, positions, presetReportTo, onClose, onHired }
         setTaskIterations("");
         setDayTokens("");
         setDayIterations("");
+        setMcpEnabled(false);
+        setMcpTools([createMcpToolDraft()]);
+        setMcpServers([createMcpServerDraft()]);
         return;
       }
       const body = response.body as { code?: string; retryable?: boolean };
@@ -254,6 +271,173 @@ export function HireDrawer({ open, positions, presetReportTo, onClose, onHired }
             <label>每日迭代上限</label>
             <OwbInput value={dayIterations} inputMode="numeric" onChange={(e) => setDayIterations(e.target.value)} placeholder="选填" />
           </div>
+          <section className="owb-hire-drawer__advanced">
+            <label className="owb-hire-drawer__toggle">
+              <input
+                type="checkbox"
+                checked={mcpEnabled}
+                onChange={(e) => setMcpEnabled(e.target.checked)}
+              />
+              授予 MCP 工具（高级）
+            </label>
+            {mcpEnabled ? (
+              <div className="owb-hire-drawer__mcp">
+                <p className="owb-hire-drawer__hint">
+                  授予后该员工可通过下列 MCP server 调用所列工具。凭据只填环境变量「名」，
+                  值由运行主机在执行时解析，不写入岗位包。
+                </p>
+                <h4>工具</h4>
+                {mcpTools.map((tool, index) => (
+                  <div className="owb-hire-drawer__row" key={`tool-${index}`}>
+                    <OwbInput
+                      aria-label={`工具名称 ${index + 1}`}
+                      value={tool.name}
+                      onChange={(e) =>
+                        setMcpTools((current) =>
+                          current.map((item, i) => (i === index ? { ...item, name: e.target.value } : item)),
+                        )
+                      }
+                      placeholder="小写字母、数字与 . _ -"
+                    />
+                    <Select
+                      aria-label={`工具权限 ${index + 1}`}
+                      value={tool.requestedMode}
+                      onChange={(value: McpToolDraft["requestedMode"]) =>
+                        setMcpTools((current) =>
+                          current.map((item, i) => (i === index ? { ...item, requestedMode: value } : item)),
+                        )
+                      }
+                      options={[
+                        { value: "read", label: "只读（read）" },
+                        { value: "write", label: "可写（write）", disabled: mode === "read_only" },
+                      ]}
+                    />
+                    <AntButton
+                      size="small"
+                      disabled={mcpTools.length === 1}
+                      onClick={() => setMcpTools((current) => current.filter((_, i) => i !== index))}
+                    >
+                      移除
+                    </AntButton>
+                    {!isMcpToolValid(tool, mode) && tool.name !== "" ? (
+                      <p className="owb-hire-drawer__hint owb-hire-drawer__hint--error">
+                        {mode === "read_only" && tool.requestedMode === "write"
+                          ? "只读员工不能请求 write 工具"
+                          : "工具名仅允许小写字母、数字与 . _ -"}
+                      </p>
+                    ) : null}
+                  </div>
+                ))}
+                <AntButton size="small" onClick={() => setMcpTools((current) => [...current, createMcpToolDraft()])}>
+                  添加工具
+                </AntButton>
+                <h4>MCP Server</h4>
+                {mcpServers.map((server, index) => (
+                  <div className="owb-hire-drawer__row" key={`server-${index}`}>
+                    <OwbInput
+                      aria-label={`server 名称 ${index + 1}`}
+                      value={server.name}
+                      onChange={(e) =>
+                        setMcpServers((current) =>
+                          current.map((item, i) => (i === index ? { ...item, name: e.target.value } : item)),
+                        )
+                      }
+                      placeholder="server 名称"
+                    />
+                    <Select
+                      aria-label={`server 连接方式 ${index + 1}`}
+                      value={server.type}
+                      onChange={(value: McpServerDraft["type"]) =>
+                        setMcpServers((current) =>
+                          current.map((item, i) => (i === index ? { ...item, type: value } : item)),
+                        )
+                      }
+                      options={[
+                        { value: "stdio", label: "本地命令（stdio）" },
+                        { value: "http", label: "远程 HTTPS（http）" },
+                      ]}
+                    />
+                    {server.type === "stdio" ? (
+                      <>
+                        <OwbInput
+                          aria-label={`server 命令 ${index + 1}`}
+                          value={server.command}
+                          onChange={(e) =>
+                            setMcpServers((current) =>
+                              current.map((item, i) => (i === index ? { ...item, command: e.target.value } : item)),
+                            )
+                          }
+                          placeholder="可执行命令"
+                        />
+                        <TextArea
+                          aria-label={`server 参数 ${index + 1}`}
+                          value={server.args}
+                          rows={2}
+                          onChange={(e) =>
+                            setMcpServers((current) =>
+                              current.map((item, i) => (i === index ? { ...item, args: e.target.value } : item)),
+                            )
+                          }
+                          placeholder="每行一个参数（选填）"
+                        />
+                        <TextArea
+                          aria-label={`server 环境变量 ${index + 1}`}
+                          value={server.environment}
+                          rows={2}
+                          onChange={(e) =>
+                            setMcpServers((current) =>
+                              current.map((item, i) => (i === index ? { ...item, environment: e.target.value } : item)),
+                            )
+                          }
+                          placeholder="每行一个环境变量名，如 GITHUB_TOKEN（选填）"
+                        />
+                      </>
+                    ) : (
+                      <>
+                        <OwbInput
+                          aria-label={`server 地址 ${index + 1}`}
+                          value={server.url}
+                          onChange={(e) =>
+                            setMcpServers((current) =>
+                              current.map((item, i) => (i === index ? { ...item, url: e.target.value } : item)),
+                            )
+                          }
+                          placeholder="https://…"
+                        />
+                        <TextArea
+                          aria-label={`server 请求头 ${index + 1}`}
+                          value={server.headers}
+                          rows={2}
+                          onChange={(e) =>
+                            setMcpServers((current) =>
+                              current.map((item, i) => (i === index ? { ...item, headers: e.target.value } : item)),
+                            )
+                          }
+                          placeholder="每行一条 Header-Name=ENV_VAR_NAME（选填）"
+                        />
+                      </>
+                    )}
+                    <AntButton
+                      size="small"
+                      disabled={mcpServers.length === 1}
+                      onClick={() => setMcpServers((current) => current.filter((_, i) => i !== index))}
+                    >
+                      移除
+                    </AntButton>
+                    {!isMcpServerValid(server) && server.name !== "" ? (
+                      <p className="owb-hire-drawer__hint owb-hire-drawer__hint--error">
+                        server 配置不合法：名称需小写标识符，stdio 需填命令，HTTPS 需为
+                        https 且不含账号密码或 # 片段，环境变量名需大写下划线格式。
+                      </p>
+                    ) : null}
+                  </div>
+                ))}
+                <AntButton size="small" onClick={() => setMcpServers((current) => [...current, createMcpServerDraft()])}>
+                  添加 server
+                </AntButton>
+              </div>
+            ) : null}
+          </section>
           <p className="owb-hire-drawer__hint">创建将由系统执行，可能需要几秒到一分钟。</p>
           <footer className="owb-modal__footer">
             <AntButton onClick={onClose}>取消</AntButton>

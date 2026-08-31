@@ -17,6 +17,26 @@ test("hire IPC accepts the contracted HirePositionRequest shape", () => {
   assert.equal(validateHireRequest({ ...VALID, deadline: "2026-08-27T00:00:00.000Z" }).ok, true);
   assert.equal(validateHireRequest({ ...VALID, network: "deny" }).ok, true);
   assert.equal(validateHireRequest({ ...VALID, network: "host_policy" }).ok, true);
+  assert.equal(
+    validateHireRequest({
+      ...VALID,
+      mcp: {
+        tools: [{ name: "repo.read", requestedMode: "read" }],
+        servers: [{ name: "local-fs", transport: { type: "stdio", command: "mcp-fs" } }],
+      },
+    }).ok,
+    true,
+  );
+  assert.equal(
+    validateHireRequest({
+      ...VALID,
+      mcp: {
+        tools: [{ name: "repo.read", requestedMode: "read" }],
+        servers: [{ name: "remote", transport: { type: "http", url: "https://mcp.example.com" } }],
+      },
+    }).ok,
+    true,
+  );
 });
 
 test("hire IPC fails closed on unknown fields and malformed inputs", () => {
@@ -36,6 +56,25 @@ test("hire IPC fails closed on unknown fields and malformed inputs", () => {
     { ...VALID, deadline: 1756000000000 },
     { ...VALID, network: "allow" },
     { ...VALID, network: "" },
+    // #89: the grant is atomic, shape-gated, and never lets a read_only
+    // employee through with a write-mode tool.
+    { ...VALID, mcp: null },
+    { ...VALID, mcp: { tools: [], servers: [] } },
+    { ...VALID, mcp: { tools: [{ name: "a", requestedMode: "read" }], servers: [] } },
+    { ...VALID, mcp: { tools: [], servers: [{ name: "s", transport: { type: "stdio", command: "x" } }] } },
+    { ...VALID, mcp: { tools: [{ name: "a", requestedMode: "read" }], servers: [{ name: "s", transport: { type: "stdio", command: "x" } }], catalog: "x" } },
+    { ...VALID, mcp: { tools: [{ name: "a", requestedMode: "admin" }], servers: [{ name: "s", transport: { type: "stdio", command: "x" } }] } },
+    { ...VALID, mcp: { tools: [{ name: "a", requestedMode: "read" }], servers: [{ name: "s", transport: { type: "grpc" } }] } },
+    { ...VALID, mcp: { tools: [{ name: "a", requestedMode: "read" }], servers: [{ name: "s", transport: { type: "stdio", command: "   " } }] } },
+    { ...VALID, mcp: { tools: [{ name: "a", requestedMode: "read" }], servers: [{ name: "s", transport: { type: "http", url: "http://mcp.example.com" } }] } },
+    {
+      ...VALID,
+      mode: "read_only",
+      mcp: {
+        tools: [{ name: "a", requestedMode: "write" }],
+        servers: [{ name: "s", transport: { type: "stdio", command: "x" } }],
+      },
+    },
   ];
   for (const candidate of cases) {
     const result = validateHireRequest(candidate);

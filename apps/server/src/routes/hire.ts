@@ -23,8 +23,11 @@ import {
 } from "@org-workbench/shared";
 import type {
   HireFailure,
+  HireMcpGrant,
   HireRequestEnvelope,
   HireSuccess,
+  McpRequestedMode,
+  McpServerTransport,
   NetworkPolicy,
   PositionBudget,
 } from "@org-workbench/shared";
@@ -47,6 +50,28 @@ const MAX_DESCRIPTION_BYTES = 2048;
 const MAX_BUDGET_CAP = 1_000_000_000;
 /** Upstream packageRef.version pattern (configs/hire-request.schema.json). */
 const PACKAGE_VERSION = "v1alpha1";
+
+/**
+ * #89 MCP grant bounds, mirrored verbatim from the two upstream validators the
+ * staged package must survive: employee-package.schema.json `policy.mcpTools`
+ * (`validateMcpTools`) and employee-mcp.v1alpha1
+ * (packages/core/src/employee-mcp.ts). The control plane rejects here so an
+ * operator sees a 400 at the request gate instead of an opaque upstream
+ * `employee_mcp_*` code after staging.
+ */
+const MCP_IDENTIFIER_PATTERN = /^[a-z0-9](?:[a-z0-9._-]{0,127})$/;
+const MCP_ENVIRONMENT_NAME_PATTERN = /^[A-Z][A-Z0-9_]{0,127}$/;
+const MCP_HEADER_NAME_PATTERN = /^[!#$%&'*+.^_`|~0-9A-Za-z-]{1,128}$/;
+const MCP_CONTROL_CHARACTERS = /[\u0000-\u001f\u007f]/;
+const MAX_MCP_SERVERS = 64;
+/** Upstream bounds mcpTools only by uniqueness; the control plane also caps count. */
+const MAX_MCP_TOOLS = 64;
+const MAX_MCP_COMMAND_LENGTH = 1_024;
+const MAX_MCP_ARGS = 128;
+const MAX_MCP_ARG_LENGTH = 4_096;
+const MAX_MCP_ENVIRONMENT = 128;
+const MAX_MCP_HEADERS = 64;
+const MAX_MCP_URL_LENGTH = 2_000;
 
 function invalid(message: string): OrgApiError {
   return new OrgApiError(errorCodes.hire_request_invalid, 400, message);
@@ -86,6 +111,144 @@ function assertBudgetScope(scope: unknown, label: string): Record<string, number
   return result;
 }
 
+/** Mirrors employee-mcp.ts `requireString`: non-empty, bounded, no control characters. */
+function mcpString(value: unknown, label: string, limit: number, pattern?: RegExp): string {
+  if (
+    typeof value !== "string" ||
+    !value.trim() ||
+    value.length > limit ||
+    MCP_CONTROL_CHARACTERS.test(value) ||
+    (pattern && !pattern.test(value.trim()))
+  ) {
+    throw invalid(`${label} is invalid`);
+  }
+  return value.trim();
+}
+
+/** Mirrors employee-mcp.ts `stringList`: bounded, element-validated, duplicate-free. */
+function mcpStringList(value: unknown, label: string, maxItems: number, limit: number, pattern?: RegExp): string[] {
+  if (value === undefined) return [];
+  if (!Array.isArray(value) || value.length > maxItems) throw invalid(`${label} is invalid`);
+  const result = value.map((item, index) => mcpString(item, `${label}[${index}]`, limit, pattern));
+  if (new Set(result).size !== result.length) throw invalid(`${label} contains a duplicate value`);
+  return result;
+}
+
+function assertKnownMcpKeys(value: unknown, allowed: readonly string[], label: string): Record<string, unknown> {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    throw invalid(`${label} must be an object`);
+  }
+  const record = value as Record<string, unknown>;
+  for (const key of Object.keys(record)) {
+    if (!allowed.includes(key)) throw invalid(`unknown field: ${label}.${key}`);
+  }
+  return record;
+}
+
+/** HTTPS only, and never a URL that smuggles credentials or a fragment (employee-mcp.ts parity). */
+function assertMcpHttpsUrl(value: unknown, label: string): string {
+  const normalized = mcpString(value, label, MAX_MCP_URL_LENGTH);
+  let parsed: URL;
+  try {
+    parsed = new URL(normalized);
+  } catch {
+    throw invalid(`${label} must be an absolute https URL`);
+  }
+  if (parsed.protocol !== "https:" || parsed.username || parsed.password || parsed.hash) {
+    throw invalid(`${label} must be an https URL without credentials or a fragment`);
+  }
+  return parsed.toString();
+}
+
+function assertMcpTransport(value: unknown, label: string): McpServerTransport {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    throw invalid(`${label} must be an object`);
+  }
+  const type = (value as Record<string, unknown>).type;
+  if (type === "stdio") {
+    const transport = assertKnownMcpKeys(value, ["type", "command", "args", "environment"], label);
+    return {
+      type: "stdio",
+      command: mcpString(transport.command, `${label}.command`, MAX_MCP_COMMAND_LENGTH),
+      args: mcpStringList(transport.args, `${label}.args`, MAX_MCP_ARGS, MAX_MCP_ARG_LENGTH),
+      // Environment variable NAMES only: the operator never types a secret
+      // value into the hire request, and none is written to the package.
+      environment: mcpStringList(
+        transport.environment,
+        `${label}.environment`,
+        MAX_MCP_ENVIRONMENT,
+        MAX_MCP_ENVIRONMENT,
+        MCP_ENVIRONMENT_NAME_PATTERN,
+      ),
+    };
+  }
+  if (type === "http") {
+    const transport = assertKnownMcpKeys(value, ["type", "url", "headers"], label);
+    const rawHeaders = transport.headers ?? [];
+    if (!Array.isArray(rawHeaders) || rawHeaders.length > MAX_MCP_HEADERS) {
+      throw invalid(`${label}.headers is invalid`);
+    }
+    return {
+      type: "http",
+      url: assertMcpHttpsUrl(transport.url, `${label}.url`),
+      headers: rawHeaders.map((header, index) => {
+        const headerLabel = `${label}.headers[${index}]`;
+        const item = assertKnownMcpKeys(header, ["name", "valueFromEnv"], headerLabel);
+        return {
+          name: mcpString(item.name, `${headerLabel}.name`, 128, MCP_HEADER_NAME_PATTERN),
+          valueFromEnv: mcpString(item.valueFromEnv, `${headerLabel}.valueFromEnv`, 128, MCP_ENVIRONMENT_NAME_PATTERN),
+        };
+      }),
+    };
+  }
+  throw invalid(`${label}.type must be stdio or http`);
+}
+
+/**
+ * #89: tools and servers are accepted together or not at all — upstream
+ * rejects a non-empty `policy.mcpTools` without an `entrypoints.mcp` file
+ * (`mcp_tools_require_mcp_entrypoint`), and a server list with no granted tool
+ * would stage a connection the employee can never use.
+ */
+function assertMcpGrant(value: unknown, mode: "read_only" | "approval_required"): HireMcpGrant {
+  const grant = assertKnownMcpKeys(value, ["tools", "servers"], "mcp");
+  if (!Array.isArray(grant.tools) || grant.tools.length === 0 || grant.tools.length > MAX_MCP_TOOLS) {
+    throw invalid(`mcp.tools must be a non-empty array of at most ${MAX_MCP_TOOLS} tools`);
+  }
+  if (!Array.isArray(grant.servers) || grant.servers.length === 0 || grant.servers.length > MAX_MCP_SERVERS) {
+    throw invalid(`mcp.servers must be a non-empty array of at most ${MAX_MCP_SERVERS} servers`);
+  }
+  const toolNames = new Set<string>();
+  const tools = grant.tools.map((tool, index) => {
+    const label = `mcp.tools[${index}]`;
+    const entry = assertKnownMcpKeys(tool, ["name", "requestedMode"], label);
+    const name = mcpString(entry.name, `${label}.name`, 128, MCP_IDENTIFIER_PATTERN);
+    if (toolNames.has(name)) throw invalid(`${label}.name is a duplicate`);
+    toolNames.add(name);
+    if (entry.requestedMode !== "read" && entry.requestedMode !== "write") {
+      throw invalid(`${label}.requestedMode must be read or write`);
+    }
+    const requestedMode: McpRequestedMode = entry.requestedMode;
+    // Upstream `read_only_employee_cannot_request_write_mcp_tools`: reject
+    // rather than silently downgrade, so the operator's granted capability is
+    // never quietly different from what they asked for.
+    if (mode === "read_only" && requestedMode === "write") {
+      throw invalid(`${label}.requestedMode must be read for a read_only employee`);
+    }
+    return { name, requestedMode };
+  });
+  const serverNames = new Set<string>();
+  const servers = grant.servers.map((server, index) => {
+    const label = `mcp.servers[${index}]`;
+    const entry = assertKnownMcpKeys(server, ["name", "transport"], label);
+    const name = mcpString(entry.name, `${label}.name`, 128, MCP_IDENTIFIER_PATTERN);
+    if (serverNames.has(name)) throw invalid(`${label}.name is a duplicate`);
+    serverNames.add(name);
+    return { name, transport: assertMcpTransport(entry.transport, `${label}.transport`) };
+  });
+  return { tools, servers };
+}
+
 interface ValidatedHireRequest {
   positionId: string;
   name: string;
@@ -96,6 +259,8 @@ interface ValidatedHireRequest {
   deadline?: string;
   /** #87: defaults to "deny" when the request omits it (today's behavior). */
   network: NetworkPolicy;
+  /** #89: absent means no MCP grant and no `entrypoints.mcp` (today's behavior). */
+  mcp?: HireMcpGrant;
 }
 
 function assertHireRequest(raw: unknown): ValidatedHireRequest {
@@ -103,7 +268,7 @@ function assertHireRequest(raw: unknown): ValidatedHireRequest {
     throw invalid("hire request must be a JSON object");
   }
   const body = raw as Record<string, unknown>;
-  const known = new Set(["positionId", "name", "description", "reportTo", "mode", "budget", "deadline", "network"]);
+  const known = new Set(["positionId", "name", "description", "reportTo", "mode", "budget", "deadline", "network", "mcp"]);
   for (const key of Object.keys(body)) {
     if (!known.has(key)) throw invalid(`unknown field: ${key}`);
   }
@@ -136,6 +301,7 @@ function assertHireRequest(raw: unknown): ValidatedHireRequest {
     budget: { perTask, perDay } as PositionBudget,
     ...(body.deadline !== undefined ? { deadline: body.deadline } : {}),
     network: body.network === "host_policy" ? "host_policy" : "deny",
+    ...(body.mcp !== undefined ? { mcp: assertMcpGrant(body.mcp, body.mode) } : {}),
   };
 }
 
@@ -209,6 +375,7 @@ async function hireUnlocked(
     mode: request.mode,
     budget: request.budget,
     network: request.network,
+    ...(request.mcp !== undefined ? { mcp: request.mcp } : {}),
   });
   const employeeBytes = files.get("employee.json");
   if (employeeBytes === undefined) throw new Error("skeleton builder must emit employee.json");

@@ -212,6 +212,106 @@ test("POST /hire: an explicit host_policy network request lands in employee.json
   }
 });
 
+test("POST /hire: omitting mcp leaves mcpTools empty and writes no mcp entrypoint (#89)", async () => {
+  const driver = new FakeDriver({ status: "applied" }, emulateEngineHire);
+  const server = await startTestServer(driver);
+  const dir = await copyExampleWorkspace();
+  try {
+    await seedAppliedState(dir);
+    await api(server.baseUrl, "/workspace/open", { method: "POST", token: server.token, body: { path: dir } });
+    const res = await api(server.baseUrl, "/hire", { method: "POST", token: server.token, body: VALID_HIRE });
+    assert.equal(res.status, 200);
+    const staged = path.join(dir, "positions", "repo-owner", "docs-writer");
+    const employee = await readJson<{ policy: { mcpTools: unknown[] }; entrypoints: Record<string, unknown> }>(
+      path.join(staged, "employee.json"),
+    );
+    assert.deepEqual(employee.policy.mcpTools, [], "omitting mcp preserves today's behavior");
+    assert.equal(employee.entrypoints.mcp, undefined, "no mcp entrypoint without a grant");
+    assert.equal(await exists(path.join(staged, "mcp.json")), false);
+  } finally {
+    await server.close();
+  }
+});
+
+test("POST /hire: a granted mcp tool lands with a valid employee-mcp.v1alpha1 entrypoint (#89)", async () => {
+  const driver = new FakeDriver({ status: "applied" }, emulateEngineHire);
+  const server = await startTestServer(driver);
+  const dir = await copyExampleWorkspace();
+  try {
+    await seedAppliedState(dir);
+    await api(server.baseUrl, "/workspace/open", { method: "POST", token: server.token, body: { path: dir } });
+    const res = await api(server.baseUrl, "/hire", {
+      method: "POST", token: server.token,
+      body: {
+        ...VALID_HIRE,
+        mcp: {
+          tools: [{ name: "repo.read", requestedMode: "read" }],
+          servers: [
+            { name: "local-fs", transport: { type: "stdio", command: "mcp-fs", args: ["--root", "."], environment: ["FS_ROOT"] } },
+            { name: "remote-api", transport: { type: "http", url: "https://mcp.example.com/v1", headers: [{ name: "Authorization", valueFromEnv: "MCP_TOKEN" }] } },
+          ],
+        },
+      },
+    });
+    assert.equal(res.status, 200);
+    const staged = path.join(dir, "positions", "repo-owner", "docs-writer");
+    const employee = await readJson<{
+      policy: { mcpTools: Array<{ name: string; requestedMode: string }> };
+      entrypoints: Record<string, string>;
+    }>(path.join(staged, "employee.json"));
+    assert.deepEqual(employee.policy.mcpTools, [{ name: "repo.read", requestedMode: "read" }]);
+    // Upstream mcp_tools_require_mcp_entrypoint: a non-empty mcpTools list is
+    // only valid when the manifest also points at an mcp entrypoint file.
+    assert.equal(employee.entrypoints.mcp, "./mcp.json");
+    const mcp = await readJson<{ schemaVersion: string; servers: Array<{ name: string; transport: Record<string, unknown> }> }>(
+      path.join(staged, "mcp.json"),
+    );
+    assert.equal(mcp.schemaVersion, "employee-mcp.v1alpha1");
+    assert.deepEqual(mcp.servers.map((server) => server.name), ["local-fs", "remote-api"]);
+    assert.deepEqual(mcp.servers[0]!.transport, {
+      type: "stdio", command: "mcp-fs", args: ["--root", "."], environment: ["FS_ROOT"],
+    });
+    assert.deepEqual(mcp.servers[1]!.transport, {
+      type: "http",
+      url: "https://mcp.example.com/v1",
+      headers: [{ name: "Authorization", valueFromEnv: "MCP_TOKEN" }],
+    });
+    // The staged package carries variable NAMES only — never a secret value.
+    assert.equal(JSON.stringify(mcp).includes("MCP_TOKEN"), true);
+  } finally {
+    await server.close();
+  }
+});
+
+test("POST /hire: a read_only employee cannot be granted a write-mode mcp tool (#89)", async () => {
+  const driver = new FakeDriver({ status: "applied" }, emulateEngineHire);
+  const server = await startTestServer(driver);
+  const dir = await copyExampleWorkspace();
+  try {
+    await seedAppliedState(dir);
+    await api(server.baseUrl, "/workspace/open", { method: "POST", token: server.token, body: { path: dir } });
+    const res = await api(server.baseUrl, "/hire", {
+      method: "POST", token: server.token,
+      body: {
+        ...VALID_HIRE,
+        mode: "read_only",
+        mcp: {
+          tools: [{ name: "repo.write", requestedMode: "write" }],
+          servers: [{ name: "local-fs", transport: { type: "stdio", command: "mcp-fs" } }],
+        },
+      },
+    });
+    // Rejected at the request gate rather than silently downgraded, and long
+    // before upstream's read_only_employee_cannot_request_write_mcp_tools.
+    assert.equal(res.status, 400);
+    assert.equal((res.body as { code: string }).code, "hire_request_invalid");
+    assert.equal(await exists(path.join(dir, "positions", "repo-owner", "docs-writer")), false);
+    assert.equal(driver.calls.length, 0);
+  } finally {
+    await server.close();
+  }
+});
+
 test("POST /hire: static validation failure is fail-closed before any filesystem effect", async () => {
   const driver = new FakeDriver({ status: "applied" }, emulateEngineHire);
   driver.hireOutcome = { status: "failed", code: "hire_request_budget_malformed", message: "budget malformed" };
@@ -293,6 +393,20 @@ test("POST /hire: boundary matrix fails closed at the request gate (400 hire_req
       ["invalid position id", { ...VALID_HIRE, positionId: "a--b" }],
       ["reportTo not found", { ...VALID_HIRE, reportTo: "ghost-position" }],
       ["invalid network", { ...VALID_HIRE, network: "allow" }],
+      // #89 MCP grant boundaries, mirroring employee-mcp.v1alpha1 upstream.
+      ["mcp tools without servers", { ...VALID_HIRE, mcp: { tools: [{ name: "a", requestedMode: "read" }], servers: [] } }],
+      ["mcp servers without tools", { ...VALID_HIRE, mcp: { tools: [], servers: [{ name: "s", transport: { type: "stdio", command: "x" } }] } }],
+      ["mcp unknown field", { ...VALID_HIRE, mcp: { tools: [{ name: "a", requestedMode: "read" }], servers: [{ name: "s", transport: { type: "stdio", command: "x" } }], catalog: "x" } }],
+      ["mcp invalid tool name", { ...VALID_HIRE, mcp: { tools: [{ name: "Bad Name", requestedMode: "read" }], servers: [{ name: "s", transport: { type: "stdio", command: "x" } }] } }],
+      ["mcp duplicate tool name", { ...VALID_HIRE, mcp: { tools: [{ name: "a", requestedMode: "read" }, { name: "a", requestedMode: "read" }], servers: [{ name: "s", transport: { type: "stdio", command: "x" } }] } }],
+      ["mcp invalid requestedMode", { ...VALID_HIRE, mcp: { tools: [{ name: "a", requestedMode: "admin" }], servers: [{ name: "s", transport: { type: "stdio", command: "x" } }] } }],
+      ["mcp unknown transport", { ...VALID_HIRE, mcp: { tools: [{ name: "a", requestedMode: "read" }], servers: [{ name: "s", transport: { type: "grpc", command: "x" } }] } }],
+      ["mcp stdio without command", { ...VALID_HIRE, mcp: { tools: [{ name: "a", requestedMode: "read" }], servers: [{ name: "s", transport: { type: "stdio", command: "  " } }] } }],
+      ["mcp lowercase env name", { ...VALID_HIRE, mcp: { tools: [{ name: "a", requestedMode: "read" }], servers: [{ name: "s", transport: { type: "stdio", command: "x", environment: ["token"] } }] } }],
+      ["mcp plaintext http url", { ...VALID_HIRE, mcp: { tools: [{ name: "a", requestedMode: "read" }], servers: [{ name: "s", transport: { type: "http", url: "http://mcp.example.com" } }] } }],
+      ["mcp url with credentials", { ...VALID_HIRE, mcp: { tools: [{ name: "a", requestedMode: "read" }], servers: [{ name: "s", transport: { type: "http", url: "https://user:pass@mcp.example.com" } }] } }],
+      ["mcp header value inlined instead of env name", { ...VALID_HIRE, mcp: { tools: [{ name: "a", requestedMode: "read" }], servers: [{ name: "s", transport: { type: "http", url: "https://mcp.example.com", headers: [{ name: "Authorization", valueFromEnv: "Bearer sk-live-123" }] } }] } }],
+      ["mcp duplicate server name", { ...VALID_HIRE, mcp: { tools: [{ name: "a", requestedMode: "read" }], servers: [{ name: "s", transport: { type: "stdio", command: "x" } }, { name: "s", transport: { type: "stdio", command: "y" } }] } }],
     ];
     for (const [label, body] of cases) {
       const res = await api(server.baseUrl, "/hire", { method: "POST", token: server.token, body });
