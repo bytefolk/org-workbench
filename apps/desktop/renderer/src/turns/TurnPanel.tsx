@@ -58,9 +58,9 @@ export function engineLabel(engine: TurnEngine): string {
   return ENGINE_LABEL[engine];
 }
 
-/** antd Select options for the Agent Host pickers (#57): brand icon + label +
- * availability suffix, shared by TurnPanel and GroupsPanel. */
-export function engineSelectOptions(
+/** antd Select option list for the Agent Host picker (#57): brand icon + label
+ * + availability suffix. Only EngineSelect consumes it. */
+function engineSelectOptions(
   engines: readonly TurnEngine[],
   engineAvailability: Record<TurnEngine, TurnEngineAvailability>,
 ) {
@@ -78,6 +78,58 @@ export function engineSelectOptions(
       </span>
     ),
   }));
+}
+
+function isTurnEngine(value: unknown): value is TurnEngine {
+  return typeof value === "string" && value in ENGINE_LABEL;
+}
+
+/** Compact trigger label (#94 defect 2). The popup keeps the full option text
+ * including the availability suffix; the trigger only ever has ~220px, so it
+ * shows icon + host name. Readiness is already stated in prose right under the
+ * control (see the engine hint below) and in GroupsPanel's engine chip, so the
+ * suffix is the redundant half and the right thing to drop here. */
+function engineTriggerLabel(engine: TurnEngine) {
+  return (
+    <span className="owb-engine-option">
+      <EngineIcon engine={engine} />
+      {ENGINE_LABEL[engine]}
+    </span>
+  );
+}
+
+/** Agent Host picker, shared by TurnPanel and GroupsPanel so the two cannot
+ * drift apart again.
+ *
+ * `popupMatchSelectWidth={false}` is load-bearing rather than cosmetic: left
+ * unset, @rc-component/select pins the popup to the trigger's *width* (not
+ * min-width), so a trigger too narrow for the longest label ellipsises every
+ * option too and no interaction is left that reveals the full text (#94). */
+export function EngineSelect({
+  engines,
+  engineAvailability,
+  value,
+  disabled = false,
+  onChange,
+}: {
+  engines: readonly TurnEngine[];
+  engineAvailability: Record<TurnEngine, TurnEngineAvailability>;
+  value: TurnEngine;
+  disabled?: boolean;
+  onChange: (engine: TurnEngine) => void;
+}) {
+  return (
+    <AntSelect
+      aria-label="选择 Agent Host"
+      value={value}
+      disabled={disabled}
+      onChange={(next) => onChange(next as TurnEngine)}
+      options={engineSelectOptions(engines, engineAvailability)}
+      labelRender={({ value: selected, label }) =>
+        isTurnEngine(selected) ? engineTriggerLabel(selected) : label}
+      popupMatchSelectWidth={false}
+    />
+  );
 }
 
 export function TurnPanel({
@@ -205,12 +257,12 @@ export function TurnPanel({
         />
         <label className="owb-turn-engine">
           <span className="owb-turn-control__label">Agent Host</span>
-          <AntSelect
-            aria-label="选择 Agent Host"
+          <EngineSelect
+            engines={Object.keys(ENGINE_LABEL) as TurnEngine[]}
+            engineAvailability={engineAvailability}
             value={engine}
             disabled={!workspaceOpen}
-            onChange={(next) => onSelectEngine(next as TurnEngine)}
-            options={engineSelectOptions(Object.keys(ENGINE_LABEL) as TurnEngine[], engineAvailability)}
+            onChange={onSelectEngine}
           />
         </label>
       </div>

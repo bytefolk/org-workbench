@@ -4,7 +4,7 @@ import { ArrowUp, Plus, UserRound, UserRoundPlus, UsersRound } from "lucide-reac
 import { PositionAvatar } from "../PositionAvatar";
 import { TypingIndicator } from "../turns/TurnThread";
 import type { GroupConversation, GroupConversationList, GroupTimeline } from "@org-workbench/shared";
-import { engineLabel, engineSelectOptions } from "../turns/TurnPanel";
+import { EngineSelect, engineLabel } from "../turns/TurnPanel";
 import { EngineIcon } from "../turns/engine-icon";
 import { adaptTurnRecord } from "../turns/adapter";
 import type { LiveRunState } from "../turns/turnStream";
@@ -440,11 +440,11 @@ export function GroupsPanel({
               </div>
               <label className="owb-turn-engine">
                 <span className="owb-turn-control__label">Agent Host</span>
-                <AntSelect
-                  aria-label="选择 Agent Host"
+                <EngineSelect
+                  engines={GROUP_ENGINES}
+                  engineAvailability={engineAvailability}
                   value={engine}
-                  onChange={(next) => onSelectEngine(next as TurnEngine)}
-                  options={engineSelectOptions(GROUP_ENGINES, engineAvailability)}
+                  onChange={onSelectEngine}
                 />
               </label>
             </div>

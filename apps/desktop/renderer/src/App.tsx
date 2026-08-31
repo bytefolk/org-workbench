@@ -25,6 +25,7 @@ import type {
   WorkspaceInfoResponse,
 } from "@org-workbench/shared";
 import { FileChartColumn, FolderTree, History, Network, Plus, ShieldAlert, UsersRound } from "lucide-react";
+import { ThemeToggle, useThemeMode } from "./theme-toggle";
 import {
   EMPTY_TURN_STREAM,
   TurnPanel,
@@ -793,6 +794,7 @@ export function App() {
         <WindowControls />
         <span className="owb-wintitle__name">org-workbench</span>
         <span className="owb-wintitle__spacer" />
+        <ThemeToggle mode={themeMode} />
         <span className="owb-wintitle__chip">
           <span
             className={engineOk ? "owb-led" : "owb-led owb-led--off"}
@@ -1172,25 +1174,6 @@ function WindowControls() {
       </button>
     </span>
   );
-}
-
-/** Live `data-theme` on <html> (index.html seeds "light"). antd's cssinjs
- * algorithm has to follow the same switch as the --ui-* skin, otherwise the
- * shell goes dark while every antd control stays light (spec §5 双主题验收). */
-function useThemeMode(): "light" | "dark" {
-  const [mode, setMode] = useState<"light" | "dark">(() =>
-    document.documentElement.getAttribute("data-theme") === "dark" ? "dark" : "light",
-  );
-  useEffect(() => {
-    const target = document.documentElement;
-    const sync = (): void =>
-      setMode(target.getAttribute("data-theme") === "dark" ? "dark" : "light");
-    const observer = new MutationObserver(sync);
-    observer.observe(target, { attributes: true, attributeFilter: ["data-theme"] });
-    sync();
-    return () => observer.disconnect();
-  }, []);
-  return mode;
 }
 
 /** antd seed tokens per theme — values mirror antd-skin.css exactly so the
