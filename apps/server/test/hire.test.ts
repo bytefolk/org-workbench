@@ -246,6 +246,8 @@ test("POST /hire: boundary matrix fails closed at the request gate (400 hire_req
       ["missing budget", (() => { const { budget: _budget, ...rest } = VALID_HIRE; return rest; })()],
       ["empty name", { ...VALID_HIRE, name: "   " }],
       ["oversized name", { ...VALID_HIRE, name: "名".repeat(64) }],
+      // #92: one character past the upstream SKILL.md frontmatter bound.
+      ["oversized description", { ...VALID_HIRE, description: "a".repeat(1025) }],
       ["invalid mode", { ...VALID_HIRE, mode: "autonomous" }],
       ["zero perTask tokens", { ...VALID_HIRE, budget: { perTask: { tokens: 0 }, perDay: { tokens: 200000 } } }],
       ["unknown budget scope key", { ...VALID_HIRE, budget: { perTask: { tokens: 1, cost: 2 }, perDay: { tokens: 2 } } }],

@@ -478,3 +478,77 @@ test("buildPositionSkeletonFiles: numeric position ids stay quoted in SKILL.md f
   // same JSON-quoted form as employee.json's `name` field.
   assert.equal(frontmatterName, JSON.stringify(employee.name));
 });
+
+/**
+ * #92: the invariant that matters is not a constant but a relationship — the
+ * longest description POST /hire accepts must still satisfy every upstream
+ * bound the staged package is validated against. Asserting a hardcoded number
+ * here would neither have caught the original 2048-byte/1024-character
+ * mismatch nor prevent the next drift.
+ *
+ * Upstream bounds mirrored (digital-employee):
+ *   - SKILL.md frontmatter: `description.length > 1_024` → employee_skill_description_required
+ *     (apps/cli/employee-package.ts, validateSkillFrontmatter)
+ *   - employee.json: requireString default maxLength 2_000 → employee_package_invalid_field:description
+ *     (packages/core/src/employee-package.ts)
+ */
+const UPSTREAM_FRONTMATTER_DESCRIPTION_MAX = 1_024;
+const UPSTREAM_MANIFEST_DESCRIPTION_MAX = 2_000;
+
+test("hire gate: the longest accepted description survives every upstream description bound (#92)", async () => {
+  const server = await startTestServer(new FakeDriver({ status: "applied" }));
+  const dir = await copyExampleWorkspace();
+  try {
+    await seedAppliedState(dir);
+    await api(server.baseUrl, "/workspace/open", { method: "POST", token: server.token, body: { path: dir } });
+    const hireBody = (description: string) => ({
+      positionId: "docs-writer",
+      name: "Docs Writer",
+      description,
+      reportTo: "repo-owner",
+      mode: "read_only",
+      budget: { perTask: { tokens: 20000 }, perDay: { tokens: 200000 } },
+    });
+    // Binary-search the true accepted maximum through the real request gate,
+    // rather than trusting the constant the gate happens to declare.
+    let accepted = 0;
+    let low = 1;
+    let high = 4096;
+    while (low <= high) {
+      const middle = Math.floor((low + high) / 2);
+      const res = await api(server.baseUrl, "/hire", {
+        method: "POST", token: server.token, body: hireBody("a".repeat(middle)),
+      });
+      if (res.status === 400 && (res.body as { code: string }).code === "hire_request_invalid") {
+        high = middle - 1;
+      } else {
+        accepted = middle;
+        low = middle + 1;
+      }
+    }
+    assert.ok(accepted > 0, "the gate must accept some description");
+
+    // The bytes that reach upstream come from the skeleton builder, so assert
+    // against the generated artifacts rather than the request payload.
+    const files = buildPositionSkeletonFiles({
+      id: "docs-writer",
+      name: "Docs Writer",
+      description: "a".repeat(accepted),
+      mode: "read_only",
+      budget: { perTask: { tokens: 20000 }, perDay: { tokens: 200000 } },
+    });
+    const frontmatter = files.get("SKILL.md")!.match(/^---\r?\n([\s\S]*?)\r?\n---/)![1]!;
+    const frontmatterDescription = JSON.parse(frontmatter.match(/^description: (.+)$/m)![1]!) as string;
+    assert.ok(
+      frontmatterDescription.length <= UPSTREAM_FRONTMATTER_DESCRIPTION_MAX,
+      `accepted description of ${accepted} chars yields ${frontmatterDescription.length} in SKILL.md frontmatter, over the upstream ${UPSTREAM_FRONTMATTER_DESCRIPTION_MAX} bound`,
+    );
+    const employee = JSON.parse(files.get("employee.json")!) as { description: string };
+    assert.ok(
+      employee.description.length <= UPSTREAM_MANIFEST_DESCRIPTION_MAX,
+      `accepted description exceeds the upstream employee.json bound of ${UPSTREAM_MANIFEST_DESCRIPTION_MAX}`,
+    );
+  } finally {
+    await server.close();
+  }
+});
