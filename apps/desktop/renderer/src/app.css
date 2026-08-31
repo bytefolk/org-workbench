@@ -3674,6 +3674,7 @@
   display: flex;
   gap: 12px;
   margin: 0;
+}
 /* ================================================================
    Turn / 审计时间线（AuditTimeline）— design-spec §6
    Read-only, evidence-only stream grouped by runId.
@@ -3901,6 +3902,7 @@
   .owb-approval-card {
     transition: none;
   }
+}
 .owb-timeline__event-type {
   color: var(--ui-foreground-subtle);
   font-family: var(--ui-font-mono);
