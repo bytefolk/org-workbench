@@ -4,7 +4,6 @@
 const { isPositionId } = require("@org-workbench/shared/position-id");
 
 const MODES = new Set(["read_only", "approval_required"]);
-const NETWORK_POLICIES = new Set(["deny", "host_policy"]);
 const KNOWN_KEYS = new Set(["positionId", "name", "description", "reportTo", "mode", "budget", "deadline", "network"]);
 
 function invalid(message) {
@@ -40,8 +39,8 @@ function validateHireRequest(value) {
   if (value.deadline !== undefined && typeof value.deadline !== "string") {
     return { ok: false, response: invalid("deadline must be a string") };
   }
-  if (value.network !== undefined && !NETWORK_POLICIES.has(value.network)) {
-    return { ok: false, response: invalid("network must be deny or host_policy") };
+  if (value.network !== undefined && value.network !== "deny") {
+    return { ok: false, response: invalid("network must be deny; host_policy is not supported by the current org apply/turn/Host path") };
   }
   return { ok: true, request: value };
 }

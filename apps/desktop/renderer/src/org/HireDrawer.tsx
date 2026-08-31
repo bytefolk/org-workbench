@@ -79,10 +79,26 @@ export function HireDrawer({ open, positions, presetReportTo, onClose, onHired }
   const stallTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const unsubscribe = useRef<(() => void) | null>(null);
 
+  const resetCreationState = useCallback(() => {
+    const fresh = createHireDraft({ reportTo: presetReportTo });
+    dispatch({ type: "reset", draft: fresh });
+    setName("");
+    setPositionId("");
+    setDescription("");
+    setReportTo(fresh.reportTo);
+    setMode(fresh.mode);
+    setNetwork(fresh.network);
+    setTaskTokens("");
+    setTaskIterations("");
+    setDayTokens("");
+    setDayIterations("");
+    setPhaseCopy("正在提交…");
+  }, [presetReportTo]);
+
   useEffect(() => {
     if (!open) return;
-    setReportTo(presetReportTo);
-  }, [open, presetReportTo]);
+    resetCreationState();
+  }, [open, resetCreationState]);
 
   const clearTimers = useCallback(() => {
     if (stallTimer.current !== null) {
@@ -147,6 +163,14 @@ export function HireDrawer({ open, positions, presetReportTo, onClose, onHired }
     [positionId, name, description, reportTo, mode, taskTokens, taskIterations, dayTokens, dayIterations, network],
   );
 
+  const completeHire = useCallback((draft: HireDraft) => {
+    dispatch({ type: "succeed", positionId: draft.id });
+    messageApi.success(`${draft.name} 已加入团队`);
+    onHired(draft.id, draft.name);
+    resetCreationState();
+    onClose();
+  }, [messageApi, onClose, onHired, resetCreationState]);
+
   const submit = useCallback(async () => {
     const draft = buildDraft();
     dispatch({ type: "edit", draft });
@@ -157,18 +181,7 @@ export function HireDrawer({ open, positions, presetReportTo, onClose, onHired }
       const response = await window.owb.hire(toHirePositionRequest(draft));
       clearTimers();
       if (response.status === 200 && response.body.status === "hired") {
-        dispatch({ type: "succeed", positionId: draft.id });
-        messageApi.success(`${draft.name} 已加入团队`);
-        onHired(draft.id, draft.name);
-        onClose();
-        dispatch({ type: "reset", draft: createHireDraft({ reportTo: presetReportTo }) });
-        setName("");
-        setPositionId("");
-        setDescription("");
-        setTaskTokens("");
-        setTaskIterations("");
-        setDayTokens("");
-        setDayIterations("");
+        completeHire(draft);
         return;
       }
       const body = response.body as { code?: string; retryable?: boolean };
@@ -177,7 +190,7 @@ export function HireDrawer({ open, positions, presetReportTo, onClose, onHired }
       clearTimers();
       dispatch({ type: "fail", code: "control_plane_unreachable", retryable: true });
     }
-  }, [armStallTimer, buildDraft, clearTimers, messageApi, onClose, onHired, presetReportTo]);
+  }, [armStallTimer, buildDraft, clearTimers, completeHire]);
 
   const retry = useCallback(async () => {
     dispatch({ type: "retry" });
@@ -191,10 +204,7 @@ export function HireDrawer({ open, positions, presetReportTo, onClose, onHired }
       const response = await window.owb.hire(toHirePositionRequest(draft));
       clearTimers();
       if (response.status === 200 && response.body.status === "hired") {
-        dispatch({ type: "succeed", positionId: draft.id });
-        messageApi.success(`${draft.name} 已加入团队`);
-        onHired(draft.id, draft.name);
-        onClose();
+        completeHire(draft);
         return;
       }
       const body = response.body as { code?: string; retryable?: boolean };
@@ -203,7 +213,14 @@ export function HireDrawer({ open, positions, presetReportTo, onClose, onHired }
       clearTimers();
       dispatch({ type: "fail", code: "control_plane_unreachable", retryable: true });
     }
-  }, [armStallTimer, buildDraft, clearTimers, flow, messageApi, onClose, onHired]);
+  }, [armStallTimer, buildDraft, clearTimers, completeHire, flow]);
+
+  const close = useCallback(() => {
+    if (flow.phase === "submitting" || flow.phase === "approval") return;
+    clearTimers();
+    resetCreationState();
+    onClose();
+  }, [clearTimers, flow.phase, onClose, resetCreationState]);
 
   const stepCurrent = useMemo(() => {
     if (flow.phase === "draft") return 0;
@@ -217,11 +234,7 @@ export function HireDrawer({ open, positions, presetReportTo, onClose, onHired }
       title="创建员工"
       width={480}
       open={open}
-      onClose={() => {
-        if (flow.phase === "submitting" || flow.phase === "approval") return;
-        clearTimers();
-        onClose();
-      }}
+      onClose={close}
       destroyOnHidden
     >
       {contextHolder}
@@ -242,9 +255,10 @@ export function HireDrawer({ open, positions, presetReportTo, onClose, onHired }
               options={[{ value: "", label: "企业负责人（根）" }, ...positions.map((p) => ({ value: p.id, label: `${p.name}（${p.id}）` }))]}
             />
             <label>运行模式</label>
-            <Select value={mode} onChange={(value: HireDraft["mode"]) => setMode(value)} options={[{ value: "read_only", label: "只读（read_only）" }, { value: "approval_required", label: "需审批（approval_required）" }]} />
+            <Select aria-label="运行模式" value={mode} onChange={(value: HireDraft["mode"]) => setMode(value)} options={[{ value: "read_only", label: "只读（read_only）" }, { value: "approval_required", label: "需审批（approval_required）" }]} />
             <label>网络访问</label>
-            <Select value={network} onChange={(value: HireDraft["network"]) => setNetwork(value)} options={[{ value: "deny", label: "拒绝网络（deny）" }, { value: "host_policy", label: "允许网络（host_policy）" }]} />
+            <Select aria-label="网络访问" value={network} disabled options={[{ value: "deny", label: "拒绝网络（deny）" }]} />
+            <p className="owb-hire-drawer__hint">当前 org apply → turn → 内置 Host 链路仅支持 deny；网络授权尚未开放。</p>
             <label>每任务 token 上限*</label>
             <OwbInput value={taskTokens} inputMode="numeric" onChange={(e) => setTaskTokens(e.target.value)} placeholder="正整数" />
             <label>每任务迭代上限</label>
@@ -256,7 +270,7 @@ export function HireDrawer({ open, positions, presetReportTo, onClose, onHired }
           </div>
           <p className="owb-hire-drawer__hint">创建将由系统执行，可能需要几秒到一分钟。</p>
           <footer className="owb-modal__footer">
-            <AntButton onClick={onClose}>取消</AntButton>
+            <AntButton onClick={close}>取消</AntButton>
             <AntButton type="primary" disabled={!formValid} onClick={() => void submit()}>开始创建</AntButton>
           </footer>
         </div>

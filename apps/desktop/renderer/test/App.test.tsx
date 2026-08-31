@@ -402,6 +402,8 @@ describe("App runtime bridge", () => {
     render(<App />);
     fireEvent.click(await screen.findByRole("button", { name: "创建员工" }));
     expect(await screen.findByRole("button", { name: "开始创建" })).toBeDisabled();
+    expect(screen.getByRole("combobox", { name: "网络访问" })).toBeDisabled();
+    expect(screen.queryByText(/host_policy/)).not.toBeInTheDocument();
     fireEvent.change(screen.getByPlaceholderText("员工姓名（≤24 字）"), { target: { value: "文档负责人" } });
     fireEvent.change(screen.getByPlaceholderText("小写字母、数字与连字符，≤64 位"), { target: { value: "docs-writer" } });
     fireEvent.change(screen.getByPlaceholderText("≤500 字"), { target: { value: "维护文档" } });

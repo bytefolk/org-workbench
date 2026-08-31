@@ -16,8 +16,15 @@ import type { PositionBudget, PositionMode } from "./org-tree.js";
 
 export const HIRE_REQUEST_SCHEMA_VERSION = "hire-request.v1alpha1" as const;
 
-/** Employee tool/MCP data-plane egress policy (employee-package.schema.json `policy.network`). */
-export type NetworkPolicy = "deny" | "host_policy";
+/**
+ * Network policy supported by the hire control plane today.
+ *
+ * The upstream package schema also names `host_policy`, but org apply/turn do
+ * not carry it to a Host and every bundled Host rejects it. Keep the public
+ * hire boundary fail-closed until that complete path is implemented and
+ * qualified.
+ */
+export type NetworkPolicy = "deny";
 
 /** Shape POST /hire accepts from the renderer (frozen by docs/api-contract-v0.md §2.13). */
 export interface HirePositionRequest {
@@ -31,7 +38,7 @@ export interface HirePositionRequest {
   budget: PositionBudget;
   /** Optional ISO 8601 passthrough onto the envelope deadline (upstream-optional). */
   deadline?: string;
-  /** #87 v0 additive field; omitted or absent means "deny" (today's behavior). */
+  /** Optional explicit deny; omitted or absent also means "deny". */
   network?: NetworkPolicy;
 }
 

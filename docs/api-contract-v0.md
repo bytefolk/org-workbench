@@ -358,11 +358,11 @@ Workbench 只 spawn 钉定 `context@f63f57f`（或兼容后续 main）的公共 
 
 - `positionId` 镜像 digital-employee 岗位 ID 契约（`^[a-z0-9]+(?:-[a-z0-9]+)*$`，≤64）；`reportTo` 为岗位 ID 或 `null`（`null` 解析为企业负责人，`targetParentId=owner`）。
 - `budget.perTask.tokens` / `perDay.tokens` 必填正整数且 ≤1,000,000,000；`iterations` 选填；`mode` 只允许 `read_only` / `approval_required`；`deadline` 选填 ISO 时间。
-- `network`（#87 v0 加法，选填）只允许 `"deny"` / `"host_policy"`，省略时默认 `"deny"`（与冻结前行为一致）；直接落入生成的 `employee.json` 的 `policy.network`。MCP 工具授予（`policy.mcpTools`）仍未开放，见 #89。
+- `network`（选填）当前只允许显式 `"deny"`，省略时同样默认 `"deny"`；控制面生成骨架时再次硬编码 `policy.network="deny"`。虽然上游 package schema 含 `"host_policy"` 词项，但 org apply → turn → 四个内置 Host 尚未贯通/qualification，该值在 HTTP 与 IPC 首门禁均以 400 `hire_request_invalid` fail closed，renderer 不提供授权入口。MCP 工具授予（`policy.mcpTools`）仍未开放，见 #89。
 
 执行序列（两道静态闸门，全部 fail-closed）：
 
-1. 形状/冲突预检 → 重名 409 `hire_position_exists`；`reportTo` 幽灵岗位 400。
+1. 形状/能力/冲突预检 → 重名 409 `hire_position_exists`；`reportTo` 幽灵岗位或不受支持的 `network="host_policy"` → 400 `hire_request_invalid`，且不触发校验 CLI、staging 或引擎 apply。
 2. 控制面组装岗位骨架并封装 hire-request.v1alpha1 信封：`workspaceRef`、`packageRef{name, version:"v1alpha1", digest}`（digest 为骨架 `employee.json` 字节的 SHA-256，先于 staging 计算）、`targetParentId`、`budget`、`requestedBy:"operator"`、`deadline?`、`envelopeDigest`（canonical JSON + SHA-256，与 turn-envelope.v1 同算法）。信封词表只由控制面组装，renderer 不构造、不扩展。
 3. 闸门一：`digital-employee hire validate <envelope> --json`（静态校验，先于任何副作用）。引擎不可用 → 503 `engine_unavailable`（retryable=true）；构建缺 hire 面 → 503 `engine_capability_missing`；上游拒绝 → 422 原样透传上游稳定码。
 4. 闸门二：staging 骨架到 `positions/` 提案树（0600 `budget.json`），再走与 move/delete 同一接缝的 `digital-employee org apply <workspace> --json` 引擎裁决；失败 → 422 透传稳定码并回滚已 staging 的目录，不留半吊子岗位。

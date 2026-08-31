@@ -20,7 +20,7 @@ export interface HireDraft {
   reportTo: string | null;
   mode: "read_only" | "approval_required";
   budget: PositionBudget;
-  /** #87: network egress policy; MCP tool granting is tracked separately (#89). */
+  /** Fail-closed egress policy; the current hire path supports deny only. */
   network: NetworkPolicy;
 }
 

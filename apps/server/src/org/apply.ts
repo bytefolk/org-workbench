@@ -11,7 +11,6 @@ import type {
   ChangeManifest,
   DeletePositionChange,
   MovePositionChange,
-  NetworkPolicy,
   OrgApplyFailure,
   OrgApplyResult,
   OrgApplySuccess,
@@ -519,8 +518,6 @@ export interface SkeletonPosition {
   description: string;
   mode: "read_only" | "approval_required";
   budget: PositionBudget;
-  /** employee-package.schema.json policy.network; #89 tracks granting mcpTools. */
-  network: NetworkPolicy;
 }
 
 /**
@@ -546,7 +543,9 @@ export function buildPositionSkeletonFiles(role: SkeletonPosition): Map<string, 
     },
     policy: {
       mode: role.mode,
-      network: role.network,
+      // Fail closed even for internal callers: the org apply/turn/Host chain
+      // has no qualified propagation path for `host_policy` yet.
+      network: "deny",
       filesystem: { read: ["./knowledge/**"], write: [] },
       mcpTools: [],
     },

@@ -16,7 +16,6 @@ test("hire IPC accepts the contracted HirePositionRequest shape", () => {
   assert.equal(validateHireRequest({ ...VALID, reportTo: null }).ok, true);
   assert.equal(validateHireRequest({ ...VALID, deadline: "2026-08-27T00:00:00.000Z" }).ok, true);
   assert.equal(validateHireRequest({ ...VALID, network: "deny" }).ok, true);
-  assert.equal(validateHireRequest({ ...VALID, network: "host_policy" }).ok, true);
 });
 
 test("hire IPC fails closed on unknown fields and malformed inputs", () => {
@@ -36,6 +35,7 @@ test("hire IPC fails closed on unknown fields and malformed inputs", () => {
     { ...VALID, deadline: 1756000000000 },
     { ...VALID, network: "allow" },
     { ...VALID, network: "" },
+    { ...VALID, network: "host_policy" },
   ];
   for (const candidate of cases) {
     const result = validateHireRequest(candidate);
