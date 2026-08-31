@@ -5,6 +5,9 @@ const { isPositionId } = require("@org-workbench/shared/position-id");
 
 const MODES = new Set(["read_only", "approval_required"]);
 const KNOWN_KEYS = new Set(["positionId", "name", "description", "reportTo", "mode", "budget", "deadline"]);
+// Mirrors the control plane's MAX_DESCRIPTION_CHARACTERS (#92), which in turn
+// mirrors digital-employee's 1024-code-unit SKILL.md frontmatter bound.
+const MAX_DESCRIPTION_CHARACTERS = 1024;
 
 function invalid(message) {
   return { status: 400, body: { code: "hire_request_invalid", message, retryable: false } };
@@ -26,6 +29,12 @@ function validateHireRequest(value) {
     if (typeof value[key] !== "string" || value[key].trim().length === 0) {
       return { ok: false, response: invalid(`${key} must be a non-empty string`) };
     }
+  }
+  if (value.description.trim().length > MAX_DESCRIPTION_CHARACTERS) {
+    return {
+      ok: false,
+      response: invalid(`description must be at most ${MAX_DESCRIPTION_CHARACTERS} characters`),
+    };
   }
   if (value.reportTo !== null && !isPositionId(value.reportTo)) {
     return { ok: false, response: invalid("reportTo must be a position id or null") };

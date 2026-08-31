@@ -15,6 +15,8 @@ test("hire IPC accepts the contracted HirePositionRequest shape", () => {
   assert.deepEqual(validateHireRequest(VALID), { ok: true, request: VALID });
   assert.equal(validateHireRequest({ ...VALID, reportTo: null }).ok, true);
   assert.equal(validateHireRequest({ ...VALID, deadline: "2026-08-27T00:00:00.000Z" }).ok, true);
+  // #92: exactly at the bound is accepted; 1025 is rejected below.
+  assert.equal(validateHireRequest({ ...VALID, description: "a".repeat(1024) }).ok, true);
 });
 
 test("hire IPC fails closed on unknown fields and malformed inputs", () => {
@@ -28,6 +30,8 @@ test("hire IPC fails closed on unknown fields and malformed inputs", () => {
     { ...VALID, name: "" },
     { ...VALID, name: "   " },
     { ...VALID, description: "" },
+    // #92: mirrors the control plane's 1024-character description bound.
+    { ...VALID, description: "a".repeat(1025) },
     { ...VALID, reportTo: "../secret" },
     { ...VALID, mode: "autonomous" },
     { ...VALID, budget: null },

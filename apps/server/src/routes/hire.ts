@@ -41,7 +41,19 @@ import {
 import { parentKey } from "../org/layout.js";
 
 const MAX_NAME_BYTES = 128;
-const MAX_DESCRIPTION_BYTES = 2048;
+/**
+ * The binding upstream constraint on a description is the SKILL.md frontmatter
+ * check in digital-employee (`validateSkillFrontmatter`, apps/cli/employee-package.ts):
+ * 1024 UTF-16 code units on the parsed value. It is stricter than
+ * employee.json's own 2000-character bound, and it counts characters where
+ * this gate previously counted UTF-8 bytes — so a 1025-2048 character ASCII
+ * description used to pass here and fail late at `org apply` with an opaque
+ * `employee_skill_description_required` (#92, same defect class as #86).
+ *
+ * Measured against the trimmed value, because that is what reaches the
+ * frontmatter (`assertHireRequest` trims before the skeleton builder runs).
+ */
+const MAX_DESCRIPTION_CHARACTERS = 1_024;
 /** Upstream MAX_BUDGET_CAP (packages/engine/src/budget.ts), mirrored. */
 const MAX_BUDGET_CAP = 1_000_000_000;
 /** Upstream packageRef.version pattern (configs/hire-request.schema.json). */
@@ -56,6 +68,15 @@ function boundedNonEmptyString(value: unknown, limit: number): value is string {
     typeof value === "string" &&
     value.trim().length > 0 &&
     Buffer.byteLength(value, "utf8") <= limit
+  );
+}
+
+/** Character-bounded variant for fields whose upstream limit counts code units. */
+function boundedNonEmptyCharacters(value: unknown, limit: number): value is string {
+  return (
+    typeof value === "string" &&
+    value.trim().length > 0 &&
+    value.trim().length <= limit
   );
 }
 
@@ -106,7 +127,7 @@ function assertHireRequest(raw: unknown): ValidatedHireRequest {
   }
   if (!isPositionId(body.positionId)) throw invalid("positionId is invalid");
   if (!boundedNonEmptyString(body.name, MAX_NAME_BYTES)) throw invalid("name must be a non-empty string no larger than 128 bytes");
-  if (!boundedNonEmptyString(body.description, MAX_DESCRIPTION_BYTES)) throw invalid("description must be a non-empty string no larger than 2048 bytes");
+  if (!boundedNonEmptyCharacters(body.description, MAX_DESCRIPTION_CHARACTERS)) throw invalid(`description must be a non-empty string of at most ${MAX_DESCRIPTION_CHARACTERS} characters`);
   if (body.reportTo !== null && !isPositionId(body.reportTo)) throw invalid("reportTo must be a position id or null");
   if (body.mode !== "read_only" && body.mode !== "approval_required") throw invalid("mode must be read_only or approval_required");
   if (typeof body.budget !== "object" || body.budget === null || Array.isArray(body.budget)) {

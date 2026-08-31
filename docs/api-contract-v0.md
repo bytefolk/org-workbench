@@ -357,6 +357,7 @@ Workbench 只 spawn 钉定 `context@f63f57f`（或兼容后续 main）的公共 
 
 - `positionId` 镜像 digital-employee 岗位 ID 契约（`^[a-z0-9]+(?:-[a-z0-9]+)*$`，≤64）；`reportTo` 为岗位 ID 或 `null`（`null` 解析为企业负责人，`targetParentId=owner`）。
 - `budget.perTask.tokens` / `perDay.tokens` 必填正整数且 ≤1,000,000,000；`iterations` 选填；`mode` 只允许 `read_only` / `approval_required`；`deadline` 选填 ISO 时间。
+- `description` 必填、非空，去除首尾空白后 **≤1024 字符**（按 UTF-16 code unit 计，非字节）。该上限镜像上游 digital-employee `validateSkillFrontmatter` 对 SKILL.md frontmatter `description` 的约束——它比 `employee.json` 自身的 2000 字符上限更严，是真正的瓶颈。控制面在请求闸门按此拒绝，避免 staging 之后才在 `org apply` 阶段撞上 `employee_skill_description_required`（#92）。`name` 仍按 ≤128 **字节** 校验：它只进入 SKILL.md 正文，不受上游 frontmatter 约束。
 
 执行序列（两道静态闸门，全部 fail-closed）：
 
