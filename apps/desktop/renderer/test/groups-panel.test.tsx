@@ -94,6 +94,20 @@ describe("GroupsPanel collaboration visuals (#53)", () => {
     expect(screen.getByRole("button", { name: "创建群聊" })).toBeDisabled();
   });
 
+  // #94 defect 2: this panel's Agent Host column was a *fixed* 150px track, so
+  // it never widened at any window size. It must render the same compact
+  // trigger label as TurnPanel — i.e. go through the shared EngineSelect.
+  it("renders the Agent Host trigger through the shared compact picker", async () => {
+    renderPanel();
+    await waitFor(() => {
+      expect(screen.getByRole("combobox", { name: "选择 Agent Host" })).toBeInTheDocument();
+    });
+    const trigger = document.querySelector(".owb-groups__panel-sub .ant-select-content");
+    expect(trigger).toHaveTextContent("Qoder");
+    expect(trigger).not.toHaveTextContent("Configured");
+    expect(trigger?.querySelector("img.owb-engine-icon")).not.toBeNull();
+  });
+
   it("ignores a draftSeed whose members are all unknown positions", async () => {
     const { container } = renderPanel({ draftSeed: { members: ["ghost-position"], nonce: 1 } });
     await waitFor(() => {

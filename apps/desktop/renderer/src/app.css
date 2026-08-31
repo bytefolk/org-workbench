@@ -638,9 +638,13 @@
   text-transform: none;
 }
 
+/* Agent Host 列的下限要容得下最长的紧凑触发标签（icon + `Claude Code ·
+   本地登录`，Inter 14px 下约 208px），而不是它的一半——旧的 150px 会把
+   选中值截在第一个中文字符后（#94 defect 2）。下拉面板不再受触发器宽度
+   约束，见 EngineSelect 的 popupMatchSelectWidth={false}。 */
 .owb-turn-panel__controls {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(150px, 0.45fr);
+  grid-template-columns: minmax(0, 1fr) minmax(220px, 0.5fr);
   gap: var(--ui-space-2, 8px);
   padding: 0 var(--ui-space-4, 16px);
 }
@@ -683,6 +687,7 @@
 .owb-engine-option {
   display: inline-flex;
   align-items: center;
+  white-space: nowrap;
 }
 
 .owb-session-controls button:focus-visible,
@@ -1562,10 +1567,12 @@
   font-variant-numeric: tabular-nums;
 }
 
-/* engine chip 行（设计稿 .g-panel-sub）：chip 1fr + 引擎选择 150px。 */
+/* engine chip 行（设计稿 .g-panel-sub）：chip 1fr + 引擎选择 220px。
+   同 .owb-turn-panel__controls，只是这里原本是**固定** 150px 轨，窗口再宽
+   也不会变宽，是两个 Agent Host 选择器里更严重的那个（#94 defect 2）。 */
 .owb-groups__panel-sub {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 150px;
+  grid-template-columns: minmax(0, 1fr) 220px;
   align-items: end;
   gap: 8px;
   padding: 0 16px 10px;
@@ -2074,9 +2081,44 @@
   outline-offset: 2px;
 }
 
+/* 主题切换（#94）：标题栏里唯一常显图标的按钮。.owb-wctl 的「平时是干净的
+   三点、hover 才显形」口径在这里不适用——图标本身就是当前主题的读数，藏起来
+   等于藏掉这个控件要报告的状态。其余（hairline 描边 / inset 底 / 焦点环）
+   与窗口控制同一套语义 token。 */
+.owb-wintitle__theme {
+  -webkit-app-region: no-drag;
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 1px solid var(--ui-border);
+  border-radius: var(--ui-radius-sm, 6px);
+  background: var(--ui-surface-inset);
+  color: var(--ui-foreground-muted);
+  cursor: pointer;
+  transition:
+    background var(--owb-duration-fast, 120ms) var(--owb-ease-out, ease),
+    border-color var(--owb-duration-fast, 120ms) var(--owb-ease-out, ease),
+    color var(--owb-duration-fast, 120ms) var(--owb-ease-out, ease);
+}
+
+.owb-wintitle__theme:hover {
+  border-color: var(--ui-border-strong);
+  background: var(--ui-surface-raised);
+  color: var(--ui-foreground);
+}
+
+.owb-wintitle__theme:focus-visible {
+  outline: 2px solid var(--ui-focus);
+  outline-offset: 2px;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .owb-wctl,
-  .owb-wctl > svg {
+  .owb-wctl > svg,
+  .owb-wintitle__theme {
     transition: none;
   }
 }
