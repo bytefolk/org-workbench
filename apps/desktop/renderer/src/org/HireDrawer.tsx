@@ -69,6 +69,7 @@ export function HireDrawer({ open, positions, presetReportTo, onClose, onHired }
   const [description, setDescription] = useState("");
   const [reportTo, setReportTo] = useState<string | null>(presetReportTo);
   const [mode, setMode] = useState<HireDraft["mode"]>("approval_required");
+  const [network, setNetwork] = useState<HireDraft["network"]>("deny");
   const [taskTokens, setTaskTokens] = useState("");
   const [taskIterations, setTaskIterations] = useState("");
   const [dayTokens, setDayTokens] = useState("");
@@ -141,8 +142,9 @@ export function HireDrawer({ open, positions, presetReportTo, onClose, onHired }
           perTask: { tokens: Number(taskTokens), ...(taskIterations.trim() ? { iterations: Number(taskIterations) } : {}) },
           perDay: { tokens: Number(dayTokens), ...(dayIterations.trim() ? { iterations: Number(dayIterations) } : {}) },
         },
+        network,
       }),
-    [positionId, name, description, reportTo, mode, taskTokens, taskIterations, dayTokens, dayIterations],
+    [positionId, name, description, reportTo, mode, taskTokens, taskIterations, dayTokens, dayIterations, network],
   );
 
   const submit = useCallback(async () => {
@@ -241,6 +243,8 @@ export function HireDrawer({ open, positions, presetReportTo, onClose, onHired }
             />
             <label>运行模式</label>
             <Select value={mode} onChange={(value: HireDraft["mode"]) => setMode(value)} options={[{ value: "read_only", label: "只读（read_only）" }, { value: "approval_required", label: "需审批（approval_required）" }]} />
+            <label>网络访问</label>
+            <Select value={network} onChange={(value: HireDraft["network"]) => setNetwork(value)} options={[{ value: "deny", label: "拒绝网络（deny）" }, { value: "host_policy", label: "允许网络（host_policy）" }]} />
             <label>每任务 token 上限*</label>
             <OwbInput value={taskTokens} inputMode="numeric" onChange={(e) => setTaskTokens(e.target.value)} placeholder="正整数" />
             <label>每任务迭代上限</label>

@@ -25,6 +25,7 @@ import type {
   HireFailure,
   HireRequestEnvelope,
   HireSuccess,
+  NetworkPolicy,
   PositionBudget,
 } from "@org-workbench/shared";
 import type { ControlPlaneContext } from "../context.js";
@@ -93,6 +94,8 @@ interface ValidatedHireRequest {
   mode: "read_only" | "approval_required";
   budget: PositionBudget;
   deadline?: string;
+  /** #87: defaults to "deny" when the request omits it (today's behavior). */
+  network: NetworkPolicy;
 }
 
 function assertHireRequest(raw: unknown): ValidatedHireRequest {
@@ -100,7 +103,7 @@ function assertHireRequest(raw: unknown): ValidatedHireRequest {
     throw invalid("hire request must be a JSON object");
   }
   const body = raw as Record<string, unknown>;
-  const known = new Set(["positionId", "name", "description", "reportTo", "mode", "budget", "deadline"]);
+  const known = new Set(["positionId", "name", "description", "reportTo", "mode", "budget", "deadline", "network"]);
   for (const key of Object.keys(body)) {
     if (!known.has(key)) throw invalid(`unknown field: ${key}`);
   }
@@ -109,6 +112,9 @@ function assertHireRequest(raw: unknown): ValidatedHireRequest {
   if (!boundedNonEmptyString(body.description, MAX_DESCRIPTION_BYTES)) throw invalid("description must be a non-empty string no larger than 2048 bytes");
   if (body.reportTo !== null && !isPositionId(body.reportTo)) throw invalid("reportTo must be a position id or null");
   if (body.mode !== "read_only" && body.mode !== "approval_required") throw invalid("mode must be read_only or approval_required");
+  if (body.network !== undefined && body.network !== "deny" && body.network !== "host_policy") {
+    throw invalid("network must be deny or host_policy");
+  }
   if (typeof body.budget !== "object" || body.budget === null || Array.isArray(body.budget)) {
     throw invalid("budget is required");
   }
@@ -129,6 +135,7 @@ function assertHireRequest(raw: unknown): ValidatedHireRequest {
     mode: body.mode,
     budget: { perTask, perDay } as PositionBudget,
     ...(body.deadline !== undefined ? { deadline: body.deadline } : {}),
+    network: body.network === "host_policy" ? "host_policy" : "deny",
   };
 }
 
@@ -201,6 +208,7 @@ async function hireUnlocked(
     description: request.description,
     mode: request.mode,
     budget: request.budget,
+    network: request.network,
   });
   const employeeBytes = files.get("employee.json");
   if (employeeBytes === undefined) throw new Error("skeleton builder must emit employee.json");
