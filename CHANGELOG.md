@@ -67,6 +67,7 @@
 - #73（`a47a803`，先于 PR #77 review，非本轮修复）：`antd-skin.css` 头注释里 `--ui-duration-*/--ui-ease` 中的 `*/` 提前闭合整块 light token（CSSOM 解析丢弃，仅 CDP 计算值能看出，静态检查看不出），改写措辞避开 `*/` 组合。
 - PR #77 review：`--ui-foreground-subtle` 对卡面对比度只有 3.49:1/3.81:1（9-11px 文本不适用 large-text 的 3:1 门槛），调整为 `#66685f`/`#92958b`，全部背景阶 ≥4.62:1。
 - PR #77 review：预算仪表 `>100%` 时宽度被夹到 100%、且 `aria-valuenow` 可超出固定的 `aria-valuemax=100`（非法 meter）——改为不夹宽度（轨道 `overflow:hidden` 移除，允许圆角端帽出界）、`aria-valuemax` 随读数动态取 `max(100, 当前值)`，保证 `valuenow <= valuemax` 恒成立。
+- #86: `buildPositionSkeletonFiles` now JSON-quotes the generated SKILL.md frontmatter's `name` field (matching `description`'s existing escaping), so a purely numeric or YAML-reserved-word position ID (e.g. `1234`) no longer parses as a non-string YAML scalar and fails `org apply` with `employee_skill_name_mismatch`.
 
 ### Verification
 
@@ -76,6 +77,7 @@
 - D3 后端以 fixture CLI 和 HTTP 集成测试验证；renderer 以 IPC fixture 验证“打开工作区 → 选岗位 → 加载本地历史 → 发送 → readback”、idle 禁用和 API failure。Qoder/Claude Code live Host 未在本机执行；委派与 mem recall 不在本切片范围。
 - Session E3 以真实临时 workspace 覆盖 create → turn → rotate → restart → old/read-only + successor/zero-turn，另覆盖双 rotate、running conflict、错误请求不触发 Host 和持久化攻击面。Memory recall/write 与 live Host E4 明确未实现/未验证。
 - PR #77：`tsc -b`、`typecheck:ui`、`typecheck:renderer` 全绿；`test:ui` 31/31、`test:renderer` 97/97、`test:desktop-main` 27/27（含新增 `window-ipc.test.cjs` 6 例负向安全测试、`contrast.test.cjs` 1 例真实 WCAG 计算）；`npm audit --audit-level=high` 0 漏洞。`apps/server/*` 未改动，其测试套件本地重跑两次分别为 17 / 20 个失败（非确定性、失败数不稳定，`git diff apps/server/` 为空），系既有 test 隔离问题，非本 PR 引入，CI（干净环境）按 reviewer 记录为全绿；未在本 PR 内处理（越出 AC-005 边界）。窗口边缘拖拽缩放：CDP 视口模拟 940/680/1680 三档均验证通过，真实 WM 交互（WSLg）未验证，已在 macOS 实机验证通过（见 PR review）。
+- Fix for #86: `tsc -b` clean; new `buildPositionSkeletonFiles` regression test (numeric position ID stays quoted in SKILL.md) passes. `node --test apps/server/dist/test/*.test.js` locally: 112/130 pass, 17 fail, 1 skipped — the 17 failures reproduce identically against unmodified `main` (verified via a `git stash`/rebuild A/B check isolating this change), matching the pre-existing, already-documented test-isolation flake noted in the PR #77 verification entry above (not introduced by this change; CI clean-environment runs are the gate of record). Renderer/desktop suites are untouched by this diff and were not rerun locally.
 
 ## [D0] — 骨架
 
