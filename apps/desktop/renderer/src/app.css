@@ -3251,9 +3251,47 @@
 
 .owb-org-chart__head {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   gap: 8px;
-  padding: 10px 14px 0;
+  padding: 8px 14px;
+}
+
+.owb-org-chart__toggle {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border: none;
+  border-radius: var(--ui-radius-sm, 6px);
+  background: transparent;
+  color: var(--ui-foreground-subtle);
+  cursor: pointer;
+  transition: color var(--owb-duration-fast, 120ms) var(--owb-ease-out, ease);
+}
+
+.owb-org-chart__toggle:hover {
+  background: color-mix(in srgb, var(--ui-surface) 60%, transparent);
+  color: var(--ui-foreground);
+}
+
+.owb-org-chart__toggle:focus-visible {
+  outline: 2px solid var(--ui-focus, Highlight);
+  outline-offset: 1px;
+}
+
+.owb-org-chart__toggle svg {
+  transition: transform var(--owb-duration-mid, 160ms) var(--owb-ease-out, ease);
+}
+
+.owb-org-chart.is-collapsed .owb-org-chart__toggle svg {
+  transform: rotate(-90deg);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .owb-org-chart__toggle svg {
+    transition: none;
+  }
 }
 
 .owb-org-chart__head-title {
@@ -3263,10 +3301,16 @@
   font-weight: 700;
 }
 
+/* 不设固定高度上限——组织图按实际深度自然撑开，深层组织不再被硬顶掉根节点；
+ * 选中岗位变化时会自动滚动定位（见 OrgChart.tsx 的 scrollIntoView 效果）。
+ * 想省空间就用头部折叠按钮，而不是靠系统偷偷裁掉内容。 */
 .owb-org-chart__body {
-  overflow: auto;
-  padding: 12px 14px 14px;
-  max-height: 240px;
+  overflow: visible;
+  padding: 4px 14px 14px;
+}
+
+.owb-org-chart.is-collapsed .owb-org-chart__body {
+  display: none;
 }
 
 .owb-org-chart__loading {

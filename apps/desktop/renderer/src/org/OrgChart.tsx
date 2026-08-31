@@ -11,6 +11,7 @@
  * 缺条目时回退岗位 id，绝不编造语义。汇报线走线之外，节点 tooltip 同时给出
  * 「汇报给 X」的文字面。
  */
+import { useEffect, useRef, useState } from "react";
 import { Empty, Skeleton, Tag, Tooltip } from "antd";
 import type {
   OrgTreeNodeV1,
@@ -150,6 +151,8 @@ function ChartNode({
   );
 }
 
+/** 折叠态默认展开——收起只是把面积让给下面的对话面板，由使用者自己权衡，
+ * 绝不是系统用固定高度替他做这个决定（那正是旧实现 240px 硬顶的问题）。 */
 export function OrgChart({
   snapshot,
   loading = false,
@@ -162,12 +165,45 @@ export function OrgChart({
   className,
 }: OrgChartProps) {
   const empty = snapshot === null || snapshot.tree.length === 0;
+  const [collapsed, setCollapsed] = useState(false);
+  const bodyRef = useRef<HTMLDivElement | null>(null);
+
+  // 选中岗位变化时自动定位：深层节点不再要求使用者手动滚动去找选中卡。
+  useEffect(() => {
+    if (!selectedId || collapsed) return;
+    const target = bodyRef.current?.querySelector<HTMLElement>(
+      `[data-org-chart-node="${CSS.escape(selectedId)}"]`,
+    );
+    if (!target) return;
+    const reduceMotion =
+      typeof window !== "undefined" &&
+      window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+    target.scrollIntoView?.({
+      block: "nearest",
+      inline: "nearest",
+      behavior: reduceMotion ? "auto" : "smooth",
+    });
+  }, [selectedId, collapsed, snapshot]);
+
   return (
     <section
-      className={`owb-panel owb-org-chart${className ? ` ${className}` : ""}`}
+      className={`owb-panel owb-org-chart${collapsed ? " is-collapsed" : ""}${className ? ` ${className}` : ""}`}
       aria-label="组织图"
     >
       <header className="owb-org-chart__head">
+        <button
+          type="button"
+          className="owb-org-chart__toggle"
+          aria-expanded={!collapsed}
+          aria-controls="owb-org-chart-body"
+          aria-label={collapsed ? "展开组织图" : "折叠组织图"}
+          title={collapsed ? "展开组织图" : "折叠组织图"}
+          onClick={() => setCollapsed((v) => !v)}
+        >
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.6} strokeLinecap="round" strokeLinejoin="round">
+            <path d="M6 9l6 6 6-6" />
+          </svg>
+        </button>
         <span className="owb-org-chart__head-title">组织图</span>
         {snapshot && !empty ? (
           <span className="owb-muted">
@@ -175,7 +211,7 @@ export function OrgChart({
           </span>
         ) : null}
       </header>
-      <div className="owb-org-chart__body">
+      <div className="owb-org-chart__body" id="owb-org-chart-body" ref={bodyRef}>
         {loading ? (
           <div className="owb-org-chart__loading" aria-label="组织图加载中">
             <Skeleton active title={false} paragraph={{ rows: 3 }} />
