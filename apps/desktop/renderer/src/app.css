@@ -1329,8 +1329,16 @@
   cursor: pointer;
 }
 
+/* #94: dimming the whole button (icon + saturated brand bg) toward the same
+   backdrop collapses both toward each other — measured ~2.2:1 on the send
+   button (white icon on `--ui-ai` #722ed1), well under the 3:1 WCAG floor for
+   a UI icon, and the reported symptom ("看不清标志了"). Swap to the neutral
+   pair `--ui-surface-raised` / `--ui-foreground-subtle` instead: it is the
+   same pairing contrast.test.cjs already holds to ≥4.5:1 on every surface in
+   both themes, and it reads as "receded/inactive" without going illegible. */
 .owb-turn-composer__surface button:disabled {
-  opacity: 0.45;
+  background: var(--ui-surface-raised);
+  color: var(--ui-foreground-subtle);
   cursor: not-allowed;
 }
 
