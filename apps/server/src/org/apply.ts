@@ -567,7 +567,7 @@ export function buildPositionSkeletonFiles(role: SkeletonPosition): Map<string, 
       citations: { type: "array", items: { type: "object" } },
     },
   };
-  const skill = `---\nname: ${role.id}\ndescription: ${JSON.stringify(role.description)}\n---\n\n# ${role.name}\n\n${role.description}\n`;
+  const skill = `---\nname: ${JSON.stringify(role.id)}\ndescription: ${JSON.stringify(role.description)}\n---\n\n# ${role.name}\n\n${role.description}\n`;
   return new Map<string, string>([
     ["employee.json", `${JSON.stringify(employee, null, 2)}\n`],
     ["SKILL.md", skill],

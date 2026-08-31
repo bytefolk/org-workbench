@@ -3,6 +3,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import test from "node:test";
 import type { OrgApplyFailure, OrganizationFile } from "@org-workbench/shared";
+import { buildPositionSkeletonFiles } from "../src/org/apply.js";
 import { FakeDriver, api, copyExampleWorkspace, startTestServer } from "./helpers.js";
 
 const STATE_FILES = ["org.json", "org-audit.jsonl", "permissions.json"] as const;
@@ -460,4 +461,20 @@ test("org apply: maxDepth=8 rejects before mutating the proposal", async () => {
   } finally {
     await server.close();
   }
+});
+
+test("buildPositionSkeletonFiles: numeric position ids stay quoted in SKILL.md frontmatter", () => {
+  const files = buildPositionSkeletonFiles({
+    id: "1234",
+    name: "Numeric Id",
+    description: "Regression test for employee_skill_name_mismatch (#86).",
+    mode: "read_only",
+    budget: { perTask: { tokens: 1000 }, perDay: { tokens: 2000 } },
+  });
+  const employee = JSON.parse(files.get("employee.json")!) as { name: unknown };
+  const frontmatterName = files.get("SKILL.md")!.match(/^name: (.+)$/m)?.[1];
+  // An unquoted all-digit YAML scalar parses as a number, not the string
+  // digital-employee compares it against — the frontmatter must carry the
+  // same JSON-quoted form as employee.json's `name` field.
+  assert.equal(frontmatterName, JSON.stringify(employee.name));
 });
