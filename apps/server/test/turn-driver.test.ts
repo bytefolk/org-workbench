@@ -99,6 +99,139 @@ test("claude-local turn env forwards the binary override and never a service cre
   }
 });
 
+test("claude-code turn env forwards ANTHROPIC_BASE_URL when set (#81)", async () => {
+  const saved = {
+    baseUrl: process.env.ANTHROPIC_BASE_URL,
+    apiKey: process.env.ANTHROPIC_API_KEY,
+  };
+  process.env.ANTHROPIC_BASE_URL = "https://gateway.internal.example/anthropic";
+  process.env.ANTHROPIC_API_KEY = "sk-only-inside-service";
+  try {
+    const command = await fixtureCli(`
+      let input = "";
+      process.stdin.setEncoding("utf8");
+      for await (const chunk of process.stdin) input += chunk;
+      if (process.env.DIGITAL_EMPLOYEE_ENGINE_MODEL !== "claude-code") process.exit(8);
+      if (process.env.ANTHROPIC_BASE_URL !== "https://gateway.internal.example/anthropic") process.exit(7);
+      if (process.env.ANTHROPIC_API_KEY !== "sk-only-inside-service") process.exit(6);
+      const base = { runId: "run-1", timestamp: "2026-08-24T00:00:00.000Z" };
+      console.log(JSON.stringify({ ...base, type: "run.started" }));
+      console.log(JSON.stringify({ ...base, type: "run.completed", output: "ok", terminalReason: "goal_met" }));
+    `);
+    const driver = new DigitalEmployeeCliDriver(command);
+    const result = await driver.turnRun({
+      workspace: "/workspace",
+      positionId: "repo-owner",
+      engine: "claude-code",
+      envelope: ENVELOPE,
+    });
+    assert.equal(result.status, "trusted");
+  } finally {
+    if (saved.baseUrl === undefined) delete process.env.ANTHROPIC_BASE_URL;
+    else process.env.ANTHROPIC_BASE_URL = saved.baseUrl;
+    if (saved.apiKey === undefined) delete process.env.ANTHROPIC_API_KEY;
+    else process.env.ANTHROPIC_API_KEY = saved.apiKey;
+  }
+});
+
+test("claude-code turn env leaves ANTHROPIC_BASE_URL unset when the operator did not set it (#81)", async () => {
+  const saved = { baseUrl: process.env.ANTHROPIC_BASE_URL };
+  delete process.env.ANTHROPIC_BASE_URL;
+  try {
+    const command = await fixtureCli(`
+      let input = "";
+      process.stdin.setEncoding("utf8");
+      for await (const chunk of process.stdin) input += chunk;
+      if (process.env.DIGITAL_EMPLOYEE_ENGINE_MODEL !== "claude-code") process.exit(8);
+      if (typeof process.env.ANTHROPIC_BASE_URL !== "undefined") process.exit(7);
+      const base = { runId: "run-1", timestamp: "2026-08-24T00:00:00.000Z" };
+      console.log(JSON.stringify({ ...base, type: "run.started" }));
+      console.log(JSON.stringify({ ...base, type: "run.completed", output: "ok", terminalReason: "goal_met" }));
+    `);
+    const driver = new DigitalEmployeeCliDriver(command);
+    const result = await driver.turnRun({
+      workspace: "/workspace",
+      positionId: "repo-owner",
+      engine: "claude-code",
+      envelope: ENVELOPE,
+    });
+    assert.equal(result.status, "trusted");
+  } finally {
+    if (saved.baseUrl === undefined) delete process.env.ANTHROPIC_BASE_URL;
+    else process.env.ANTHROPIC_BASE_URL = saved.baseUrl;
+  }
+});
+
+test("claude-local turn env still rejects ANTHROPIC_BASE_URL leakage (#81)", async () => {
+  const saved = {
+    baseUrl: process.env.ANTHROPIC_BASE_URL,
+    apiKey: process.env.ANTHROPIC_API_KEY,
+  };
+  process.env.ANTHROPIC_BASE_URL = "https://gateway.internal.example/anthropic";
+  process.env.ANTHROPIC_API_KEY = "sk-must-not-leak";
+  try {
+    const command = await fixtureCli(`
+      let input = "";
+      process.stdin.setEncoding("utf8");
+      for await (const chunk of process.stdin) input += chunk;
+      if (process.env.DIGITAL_EMPLOYEE_ENGINE_MODEL !== "claude-local") process.exit(8);
+      if (typeof process.env.ANTHROPIC_BASE_URL !== "undefined") process.exit(7);
+      if (typeof process.env.ANTHROPIC_API_KEY !== "undefined") process.exit(6);
+      const base = { runId: "run-1", timestamp: "2026-08-24T00:00:00.000Z" };
+      console.log(JSON.stringify({ ...base, type: "run.started" }));
+      console.log(JSON.stringify({ ...base, type: "run.completed", output: "ok", terminalReason: "goal_met" }));
+    `);
+    const driver = new DigitalEmployeeCliDriver(command);
+    const result = await driver.turnRun({
+      workspace: "/workspace",
+      positionId: "repo-owner",
+      engine: "claude-local",
+      envelope: ENVELOPE,
+    });
+    assert.equal(result.status, "trusted");
+  } finally {
+    if (saved.baseUrl === undefined) delete process.env.ANTHROPIC_BASE_URL;
+    else process.env.ANTHROPIC_BASE_URL = saved.baseUrl;
+    if (saved.apiKey === undefined) delete process.env.ANTHROPIC_API_KEY;
+    else process.env.ANTHROPIC_API_KEY = saved.apiKey;
+  }
+});
+
+test("claude-code turn actually reaches ANTHROPIC_BASE_URL via a loopback HTTP mock (#81)", async () => {
+  const http = await import("node:http");
+  const server = http.createServer(() => {});
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", () => resolve()));
+  const address = server.address();
+  assert.ok(address && typeof address === "object");
+  const gateway = `http://127.0.0.1:${(address as import("node:net").AddressInfo).port}`;
+  const saved = { baseUrl: process.env.ANTHROPIC_BASE_URL };
+  process.env.ANTHROPIC_BASE_URL = gateway;
+  try {
+    const command = await fixtureCli(`
+      let input = "";
+      process.stdin.setEncoding("utf8");
+      for await (const chunk of process.stdin) input += chunk;
+      if (process.env.DIGITAL_EMPLOYEE_ENGINE_MODEL !== "claude-code") process.exit(8);
+      if (process.env.ANTHROPIC_BASE_URL !== ${JSON.stringify(gateway)}) process.exit(7);
+      const base = { runId: "run-1", timestamp: "2026-08-24T00:00:00.000Z" };
+      console.log(JSON.stringify({ ...base, type: "run.started" }));
+      console.log(JSON.stringify({ ...base, type: "run.completed", output: "ok", terminalReason: "goal_met" }));
+    `);
+    const driver = new DigitalEmployeeCliDriver(command);
+    const result = await driver.turnRun({
+      workspace: "/workspace",
+      positionId: "repo-owner",
+      engine: "claude-code",
+      envelope: ENVELOPE,
+    });
+    assert.equal(result.status, "trusted");
+  } finally {
+    if (saved.baseUrl === undefined) delete process.env.ANTHROPIC_BASE_URL;
+    else process.env.ANTHROPIC_BASE_URL = saved.baseUrl;
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+  }
+});
+
 test("turn driver rejects malformed or multi-terminal engine.v1 streams", async () => {
   const command = await fixtureCli(`
     process.stdin.resume();

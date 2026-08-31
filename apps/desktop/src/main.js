@@ -11,6 +11,7 @@
 
 const { app, BrowserWindow, dialog, ipcMain } = require("electron");
 const { spawn } = require("node:child_process");
+const { createControlPlaneChild } = require("./control-plane-launch.cjs");
 const fs = require("node:fs");
 const http = require("node:http");
 const os = require("node:os");
@@ -18,7 +19,7 @@ const path = require("node:path");
 const { pathToFileURL } = require("node:url");
 const { rendererEntryPath } = require("./runtime-paths.cjs");
 const { isAllowedNavigationTarget, isTrustedWindowSender } = require("./window-ipc.cjs");
-const { validateRestoreRequest } = require("./org-ipc.cjs");
+const { validateRestoreRequest, validateOrgApply } = require("./org-ipc.cjs");
 const {
   validateAssetsCreateRequest,
   validateAssetsListRequest,
@@ -60,19 +61,34 @@ let trustedRendererUrl = null;
 let eventStreamRequest = null;
 let currentSseStatus = "connecting";
 
+function pinnedEngineCommandDefault() {
+  const nodePath = process.execPath;
+  const enginePath = path.join(
+    __dirname,
+    "..",
+    "..",
+    "server",
+    "bin",
+    "qoder-engine.mjs",
+  );
+  // Wrap both paths in double quotes so the server's quote-aware splitCommand
+  // recovers them as two argv tokens even when the install path contains
+  // spaces (Windows `C:\Program Files\...`, macOS OneDrive folders, etc).
+  return `"${nodePath}" "${enginePath}"`;
+}
+
 function startControlPlane() {
   return new Promise((resolve, reject) => {
-    const child = spawn(process.execPath, [SERVER_ENTRY], {
+    const child = createControlPlaneChild({
+      serverEntry: SERVER_ENTRY,
       env: {
         ...process.env,
-        ELECTRON_RUN_AS_NODE: "1",
         // Directly runnable: default the pinned engine to the bundled qoder
         // adapter unless the operator pins a real digital-employee CLI.
         ORG_WORKBENCH_DIGITAL_EMPLOYEE_CLI:
           process.env.ORG_WORKBENCH_DIGITAL_EMPLOYEE_CLI ??
-          `node ${path.join(__dirname, "..", "..", "server", "bin", "qoder-engine.mjs")}`,
+          pinnedEngineCommandDefault(),
       },
-      stdio: ["ignore", "pipe", "pipe"],
     });
     let buffer = "";
     const timer = setTimeout(() => {
@@ -279,8 +295,11 @@ ipcMain.handle("owb:workspace:get", async () => apiRequest("/workspace"));
 
 ipcMain.handle("owb:org:tree", async () => apiRequest("/org/tree"));
 
-ipcMain.handle("owb:org:apply", async (_event, manifest) =>
-  apiRequest("/org/apply", { method: "POST", body: manifest }));
+ipcMain.handle("owb:org:apply", async (_event, manifest) => {
+  const validated = validateOrgApply(manifest);
+  if (!validated.ok) return validated.response;
+  return apiRequest("/org/apply", { method: "POST", body: validated.request });
+});
 
 ipcMain.handle("owb:org:backups", async () => apiRequest("/org/backups"));
 

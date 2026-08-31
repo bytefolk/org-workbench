@@ -305,6 +305,14 @@ function turnEnvironment(engine: TurnEngine): NodeJS.ProcessEnv {
     if (source.QODER_PERSONAL_ACCESS_TOKEN !== undefined) environment.QODER_PERSONAL_ACCESS_TOKEN = source.QODER_PERSONAL_ACCESS_TOKEN;
   } else if (engine === "claude-code") {
     if (source.ANTHROPIC_API_KEY !== undefined) environment.ANTHROPIC_API_KEY = source.ANTHROPIC_API_KEY;
+    // #81: allow a self-hosted or proxy ANTHROPIC_BASE_URL through, so turn-run
+    // matches org apply / hire validate (which pass env: process.env in full).
+    // Forward verbatim without local validation — the engine adapter's
+    // validatedBaseUrl() is the single source of truth (HTTPS or loopback HTTP,
+    // no embedded credentials / fragments / control chars / >2 KiB); an invalid
+    // value fails closed on the engine side as `claude_base_url_invalid` via
+    // probe / preflight / run. A duplicate implementation here would drift.
+    if (source.ANTHROPIC_BASE_URL !== undefined) environment.ANTHROPIC_BASE_URL = source.ANTHROPIC_BASE_URL;
   } else {
     // claude-local runs on the operator's logged-in Claude Code; it must not
     // receive a service credential. DIGITAL_EMPLOYEE_CLAUDE_COMMAND only

@@ -1,5 +1,5 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Alert, Button as AntButton, ConfigProvider, theme } from "antd";
+import { Alert, Badge, Button as AntButton, ConfigProvider, theme } from "antd";
 import zhCN from "antd/locale/zh_CN";
 import {
   AppShell,
@@ -17,13 +17,14 @@ import type {
   OrgBackupsResponse,
   OrgTreeNodeV1,
   OrgTreeSnapshot,
+  PositionMode,
   ReportsResponse,
   TurnHistory,
   WorkbenchSession,
   WorkbenchSessionList,
   WorkspaceInfoResponse,
 } from "@org-workbench/shared";
-import { FileChartColumn, FolderTree, History, Network, Plus, UsersRound } from "lucide-react";
+import { FileChartColumn, FolderTree, History, Network, Plus, ShieldAlert, UsersRound } from "lucide-react";
 import {
   EMPTY_TURN_STREAM,
   TurnPanel,
@@ -47,9 +48,11 @@ import type {
 } from "./turns";
 import { BackupTray, DismissPositionDialog } from "./org/OrgControls";
 import { HireDrawer } from "./org/HireDrawer";
+import { OrgChart } from "./org/OrgChart";
 import { GroupsPanel } from "./groups/GroupsPanel";
 import { DocsModule } from "./docs/DocsModule";
 import { ReportsCenter } from "./reports/ReportsCenter";
+import { ApprovalQueue, type ApprovalQueueItem } from "./approvals";
 
 interface PositionCardState {
   loading: boolean;
@@ -65,7 +68,16 @@ interface PositionCardState {
  * (org.updated drives refresh; the UI never polls).
  */
 export function App() {
-  const [activeModule, setActiveModule] = useState<"org" | "groups" | "reports" | "docs">("org");
+  const [activeModule, setActiveModule] = useState<
+    "org" | "groups" | "reports" | "approvals" | "docs"
+  >("org");
+  /**
+   * DATA GAP (TODO, v0): v0 has no dedicated `/approvals` stream. The P0
+   * queue receives an empty items array here; App will later populate this
+   * from a bounded `sessionTurnHistory` scan + SSE `turn.approval.requested`
+   * increments. Kept as a plain state slot so the wiring point is obvious.
+   */
+  const [approvalItems] = useState<ApprovalQueueItem[]>([]);
   const [health, setHealth] = useState<HealthResponse | null>(null);
   const [workspaceInfo, setWorkspaceInfo] = useState<WorkspaceInfoResponse | null>(null);
   const [snapshot, setSnapshot] = useState<OrgTreeSnapshot | null>(null);
@@ -80,6 +92,10 @@ export function App() {
   const [positionNames, setPositionNames] = useState<Record<string, string>>({});
   const positionNamesRef = useRef<Record<string, string>>({});
   const [positionColors, setPositionColors] = useState<Record<string, string>>({});
+  /** P0 组织图：mode / title 展示面按岗位 id（来自 refresh 已在做的
+   * /positions/:id 读取，与侧栏树 displayNames 同源；不新增 IPC 调用）。 */
+  const [positionModes, setPositionModes] = useState<Record<string, PositionMode>>({});
+  const [positionTitles, setPositionTitles] = useState<Record<string, string>>({});
   const [turnEngine, setTurnEngine] = useState<TurnEngine>("qoder");
   const [turns, setTurns] = useState<TurnRecord[]>([]);
   const [turnStream, setTurnStream] = useState<TurnStreamState>(EMPTY_TURN_STREAM);
@@ -157,29 +173,41 @@ export function App() {
         setSnapshot(nextSnapshot);
         const positionIds = flattenPositionIds(nextSnapshot.tree);
         setSelectedId((current) => current && positionIds.includes(current) ? current : null);
-        const cardEntries = await Promise.all(positionIds.map(async (id) => {
+        const cardEntries = await Promise.all(positionIds.map(async (id): Promise<[string, { name: string; color?: string; mode?: PositionMode; title?: string }]> => {
           const response = await window.owb.position(id);
           const body = response.body as { position?: PositionCardData };
           const position = response.status === 200 ? body.position : undefined;
           const color = position?.metadata?.color;
-          return [id, { name: position?.name ?? id, ...(typeof color === "string" && color.length > 0 ? { color } : {}) }] as const;
+          const title = position?.metadata?.title;
+          return [id, {
+            name: position?.name ?? id,
+            ...(typeof color === "string" && color.length > 0 ? { color } : {}),
+            ...(position ? { mode: position.mode } : {}),
+            ...(typeof title === "string" && title.length > 0 ? { title } : {}),
+          }];
         }));
         const names = Object.fromEntries(cardEntries.map(([id, entry]) => [id, entry.name]));
         positionNamesRef.current = names;
         setPositionNames(names);
         setPositionColors(Object.fromEntries(cardEntries.filter(([, entry]) => "color" in entry).map(([id, entry]) => [id, (entry as { color: string }).color])));
+        setPositionModes(Object.fromEntries(cardEntries.filter(([, entry]) => entry.mode !== undefined).map(([id, entry]) => [id, entry.mode as PositionMode])));
+        setPositionTitles(Object.fromEntries(cardEntries.filter(([, entry]) => entry.title !== undefined).map(([id, entry]) => [id, entry.title as string])));
         await Promise.all([loadBackups(), loadReports()]);
       } else {
         setSnapshot(null);
         positionNamesRef.current = {};
         setPositionNames({});
         setPositionColors({});
+        setPositionModes({});
+        setPositionTitles({});
       }
     } else {
       setSnapshot(null);
       positionNamesRef.current = {};
       setPositionNames({});
       setPositionColors({});
+      setPositionModes({});
+      setPositionTitles({});
       setSelectedId(null);
       setCard({ loading: false, data: null, notFound: false });
       setTurns([]);
@@ -791,6 +819,23 @@ export function App() {
             { id: "org", label: "组织", icon: <Network aria-hidden="true" size={16} />, active: activeModule === "org", onSelect: () => setActiveModule("org") },
             { id: "groups", label: "群聊", icon: <UsersRound aria-hidden="true" size={16} />, active: activeModule === "groups", onSelect: () => setActiveModule("groups") },
             { id: "reports", label: "上报", icon: <FileChartColumn aria-hidden="true" size={16} />, active: activeModule === "reports", onSelect: () => { setActiveModule("reports"); void loadReports(); } },
+            {
+              id: "approvals",
+              label: "审批",
+              icon: (
+                <Badge
+                  count={approvalItems.filter((a) => a.decision.kind === "pending").length}
+                  size="small"
+                  showZero={false}
+                  offset={[6, -2]}
+                  color="var(--ui-primary)"
+                >
+                  <ShieldAlert aria-hidden="true" size={16} />
+                </Badge>
+              ),
+              active: activeModule === "approvals",
+              onSelect: () => setActiveModule("approvals"),
+            },
             { id: "memory", label: "记忆", icon: <History aria-hidden="true" size={16} /> },
             { id: "docs", label: "文档", icon: <FolderTree aria-hidden="true" size={16} />, active: activeModule === "docs", onSelect: () => setActiveModule("docs") },
           ]}
@@ -918,7 +963,26 @@ export function App() {
           <Alert type={orgFeedback.tone === "warn" ? "warning" : "info"} showIcon role={orgFeedback.tone === "warn" ? "alert" : "status"} title={orgFeedback.text} />
         ) : null}
         {reportsError ? <Alert type="warning" showIcon role="alert" title={reportsError} /> : null}
-        {activeModule === "reports" ? <ReportsCenter reports={reports} loading={reportsLoading} /> : activeModule === "groups" ? (
+        {activeModule === "reports" ? (
+          <ReportsCenter
+            reports={reports}
+            loading={reportsLoading}
+            positionNames={positionNames}
+            positionColors={positionColors}
+          />
+        ) : activeModule === "approvals" ? (
+          <ApprovalQueue
+            items={approvalItems}
+            onApprove={(approvalId, reason) => {
+              // TODO(v0 gap): wire into onVerdictTurn once the queue is
+              // fed by the bounded-scan + SSE derivation path.
+              console.info("approval.approve", { approvalId, reason });
+            }}
+            onDeny={(approvalId, reason) => {
+              console.info("approval.deny", { approvalId, reason });
+            }}
+          />
+        ) : activeModule === "groups" ? (
           <GroupsPanel
             workspaceOpen={workspaceInfo?.open === true}
             positions={positions}
@@ -937,7 +1001,19 @@ export function App() {
             positions={positions}
             selectedPositionId={selectedId}
           />
-        ) : <div className="owb-workspace-grid">
+        ) : <div className="owb-org-module">
+          {/* P0 组织图：应用态汇报树节点图（纯展示，数据与侧栏树同源）。 */}
+          <OrgChart
+            snapshot={snapshot}
+            loading={treeLoading}
+            displayNames={positionNames}
+            displayTitles={positionTitles}
+            displayModes={positionModes}
+            avatarColors={positionColors}
+            selectedId={selectedId}
+            onSelect={selectPosition}
+          />
+          <div className="owb-workspace-grid">
           <div className="owb-position-column">
             <PositionCard
               position={card.data}
@@ -974,6 +1050,7 @@ export function App() {
             onCreateSession={createSession}
             onRotateSession={rotateSession}
           />
+          </div>
         </div>}
       </div>
     </AppShell>
