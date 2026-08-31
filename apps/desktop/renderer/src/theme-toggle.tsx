@@ -23,9 +23,9 @@ export function useThemeMode(): ThemeMode {
 
 /** The theme entry point (#94): the only writer of `data-theme`, driving the
  * dark palette that antd-skin.css has shipped complete but unreachable since
- * #73. Unlike `.owb-wctl`, the icon stays visible instead of appearing on
- * title-bar hover — here the icon *is* the state readout, so hiding it would
- * hide the very thing the control reports. */
+ * #73. The icon is always visible, never hover-revealed — it *is* the state
+ * readout, so hiding it by default would hide the very thing the control
+ * reports (the same reasoning `.owb-wctl`'s icons were missing before #94). */
 export function ThemeToggle({ mode }: { mode: ThemeMode }) {
   const next: ThemeMode = mode === "dark" ? "light" : "dark";
   const label = next === "dark" ? "切换到深色主题" : "切换到浅色主题";
