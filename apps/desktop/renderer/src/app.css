@@ -2422,9 +2422,14 @@
   min-height: 0;
 }
 
+/* 不跟对话面板拉伸到同一高度——岗位卡内容（简介/预算声明/权限摘要/Context
+ * Scope）没有一段是为撑满剩余空间设计的（不像对话面板的证据流有 1fr 空态兜
+ * 底），硬拉伸只会在卡片底部留一片没有意义的空白。按内容高度显示，多出来的
+ * 高度还给对话面板一栏，而不是留在卡片里晾着。 */
 .owb-position-column {
   min-height: 0;
-  grid-template-rows: minmax(0, 1fr) auto;
+  align-self: start;
+  grid-template-rows: auto auto;
 }
 
 /* ---------- 通用面板（取代 antd Card 作为内容卡壳层） ---------- */
