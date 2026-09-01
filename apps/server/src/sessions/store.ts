@@ -9,6 +9,7 @@ import {
   isPositionId,
 } from "@org-workbench/shared";
 import type { WorkbenchSession, WorkbenchSessionList } from "@org-workbench/shared";
+import { StableReadError, decodeStableUtf8, readStableBoundedFile } from "../stable-read.js";
 
 const SESSION_ROOT_SEGMENTS = [".digital-employee", "workbench", "sessions"];
 const POSITIONS_SEGMENT = "positions";
@@ -19,6 +20,9 @@ const MAX_POSITION_RECORD_BYTES = 4 * 1024 * 1024;
 const MAX_WORKSPACE_RECORD_BYTES = 16 * 1024;
 const MAX_POSITIONS = 1024;
 const MAX_SESSIONS_PER_POSITION = 128;
+const MAX_POSITION_TEMP_FILES = MAX_POSITIONS;
+const MAX_POSITION_DIRECTORY_ENTRIES = MAX_POSITIONS + MAX_POSITION_TEMP_FILES;
+const MAX_AUTHORITATIVE_POSITION_BYTES = 64 * 1024 * 1024;
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 
 interface WorkspaceInstanceRecord {
@@ -33,6 +37,11 @@ interface PositionSessionState {
   positionId: string;
   activeSessionId: string | null;
   sessions: WorkbenchSession[];
+}
+
+export interface AuthoritativeSessionIndex {
+  workspaceInstanceId: string;
+  sessions: ReadonlyMap<string, WorkbenchSession>;
 }
 
 export interface RotateResult {
@@ -216,21 +225,159 @@ async function ensureRealDirectories(workspace: string): Promise<void> {
   }
 }
 
-async function readBoundedJson(file: string, maxBytes: number): Promise<unknown> {
-  let stat;
+interface BoundedJsonRead {
+  value: unknown;
+  bytes: number;
+}
+
+async function readBoundedFile(file: string, maxBytes: number) {
   try {
-    stat = await fs.lstat(file);
+    return await readStableBoundedFile(file, maxBytes);
   } catch (error) {
-    throw error;
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") throw error;
+    if (error instanceof StableReadError) {
+      throw sessionError("local session record is not a stable bounded regular file");
+    }
+    throw sessionError("local session record is unreadable");
   }
-  if (!stat.isFile() || stat.isSymbolicLink() || stat.size > maxBytes) {
-    throw sessionError("local session record is not a bounded regular file");
-  }
+}
+
+async function readBoundedJson(
+  file: string,
+  maxBytes: number,
+  beforeParse?: (bytes: number) => void,
+): Promise<BoundedJsonRead> {
+  const stable = await readBoundedFile(file, maxBytes);
+  beforeParse?.(stable.bytes);
   try {
-    return JSON.parse(await fs.readFile(file, "utf8")) as unknown;
+    return { value: JSON.parse(decodeStableUtf8(stable.buffer)) as unknown, bytes: stable.bytes };
   } catch {
     throw sessionError("local session record is not valid JSON");
   }
+}
+
+function atomicTemporaryTarget(name: string): string | null {
+  if (!name.startsWith(".") || !name.endsWith(".tmp")) return null;
+  const stem = name.slice(1, -4);
+  if (stem.length <= 37 || stem.at(-37) !== ".") return null;
+  const nonce = stem.slice(-36);
+  if (!UUID_PATTERN.test(nonce)) return null;
+  const target = stem.slice(0, -37);
+  return target.length > 0 ? target : null;
+}
+
+function isPositionStateTemporary(name: string): boolean {
+  const target = atomicTemporaryTarget(name);
+  return target !== null && target.endsWith(".json") && isPositionId(target.slice(0, -5));
+}
+
+async function assertExistingSessionStateDirectories(workspace: string): Promise<void> {
+  let current = path.resolve(workspace);
+  for (const segment of [...SESSION_ROOT_SEGMENTS, POSITIONS_SEGMENT]) {
+    let stat;
+    try {
+      stat = await fs.lstat(current);
+    } catch {
+      throw sessionError("authoritative session state path is unreadable");
+    }
+    if (!stat.isDirectory() || stat.isSymbolicLink()) {
+      throw sessionError("authoritative session state path is unsafe");
+    }
+    current = path.join(current, segment);
+  }
+  let stat;
+  try {
+    stat = await fs.lstat(current);
+  } catch {
+    throw sessionError("authoritative session state path is unreadable");
+  }
+  if (!stat.isDirectory() || stat.isSymbolicLink()) {
+    throw sessionError("authoritative session state path is unsafe");
+  }
+}
+
+/** Read-only authoritative session identity used by derived reporting views.
+ * It consumes the same frozen workspace/position/session validators as the
+ * lifecycle store and never creates, chmods, or repairs local state. */
+export async function readAuthoritativeSessionIndex(
+  workspace: string,
+): Promise<AuthoritativeSessionIndex> {
+  await assertExistingSessionStateDirectories(workspace);
+  const identityRead = await readBoundedJson(
+    path.join(sessionsRoot(workspace), WORKSPACE_RECORD),
+    MAX_WORKSPACE_RECORD_BYTES,
+  );
+  const identity = identityRead.value;
+  if (!isWorkspaceRecord(identity)) {
+    throw sessionError("authoritative workspace session identity is invalid");
+  }
+
+  let entries;
+  try {
+    entries = await fs.readdir(positionsDir(workspace), { withFileTypes: true });
+  } catch {
+    throw sessionError("authoritative session position index is unreadable");
+  }
+  if (entries.length > MAX_POSITION_DIRECTORY_ENTRIES) {
+    throw sessionError("authoritative session position index exceeds its entry bound");
+  }
+
+  let positionCount = 0;
+  let temporaryCount = 0;
+  let totalBytes = 0;
+  const chargePositionBytes = (bytes: number): void => {
+    totalBytes += bytes;
+    if (totalBytes > MAX_AUTHORITATIVE_POSITION_BYTES) {
+      throw sessionError("authoritative session position index exceeds its byte budget");
+    }
+  };
+  const sessions = new Map<string, WorkbenchSession>();
+  for (const entry of entries) {
+    const file = path.join(positionsDir(workspace), entry.name);
+    if (entry.name.endsWith(".tmp")) {
+      temporaryCount += 1;
+      if (
+        temporaryCount > MAX_POSITION_TEMP_FILES ||
+        !isPositionStateTemporary(entry.name) ||
+        !entry.isFile() ||
+        entry.isSymbolicLink()
+      ) {
+        throw sessionError("authoritative session position index contains an unsafe temporary");
+      }
+      const temporary = await readBoundedFile(file, MAX_POSITION_RECORD_BYTES);
+      chargePositionBytes(temporary.bytes);
+      continue;
+    }
+
+    positionCount += 1;
+    if (
+      positionCount > MAX_POSITIONS ||
+      !entry.isFile() ||
+      entry.isSymbolicLink() ||
+      !entry.name.endsWith(".json")
+    ) {
+      throw sessionError("authoritative session position index contains an unsafe record");
+    }
+    const positionId = entry.name.slice(0, -5);
+    if (!isPositionId(positionId)) {
+      throw sessionError("authoritative session position index contains an unsafe id");
+    }
+    const { value: raw } = await readBoundedJson(
+      file,
+      MAX_POSITION_RECORD_BYTES,
+      chargePositionBytes,
+    );
+    if (!isPositionState(raw, positionId, identity.workspaceInstanceId)) {
+      throw sessionError("authoritative session position state is invalid");
+    }
+    for (const session of raw.sessions) {
+      if (sessions.has(session.sessionId)) {
+        throw sessionError("authoritative session id is duplicated across positions");
+      }
+      sessions.set(session.sessionId, session);
+    }
+  }
+  return { workspaceInstanceId: identity.workspaceInstanceId, sessions };
 }
 
 async function atomicWriteJson(file: string, value: unknown, maxBytes: number): Promise<void> {
@@ -403,7 +550,7 @@ export class SessionStore {
       await ensureRealDirectories(workspace);
       const file = path.join(sessionsRoot(workspace), WORKSPACE_RECORD);
       try {
-        const raw = await readBoundedJson(file, MAX_WORKSPACE_RECORD_BYTES);
+        const { value: raw } = await readBoundedJson(file, MAX_WORKSPACE_RECORD_BYTES);
         if (!isWorkspaceRecord(raw)) throw sessionError("workspace session identity is invalid");
         await fs.chmod(file, 0o600);
         return raw;
@@ -428,7 +575,7 @@ export class SessionStore {
   ): Promise<PositionSessionState | null> {
     const file = positionFile(workspace, positionId);
     try {
-      const raw = await readBoundedJson(file, MAX_POSITION_RECORD_BYTES);
+      const { value: raw } = await readBoundedJson(file, MAX_POSITION_RECORD_BYTES);
       if (!isPositionState(raw, positionId, workspaceInstanceId)) {
         throw sessionError("position session state is invalid or belongs to another workspace");
       }
