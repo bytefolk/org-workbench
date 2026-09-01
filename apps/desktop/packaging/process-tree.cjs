@@ -39,11 +39,9 @@ function sameProcessIdentity(expected, current) {
 }
 
 function residualProcesses(processes, { stagingRoot, trackedProcesses = [], processGroup = null }) {
-  const root = normalizedCommand(stagingRoot);
   return processes.filter((processInfo) => (
     trackedProcesses.some((identity) => identityCoreMatches(identity, processInfo)) ||
-    (Number.isInteger(processGroup) && processInfo.pgid === processGroup) ||
-    (root.length > 0 && normalizedCommand(processInfo.command).includes(root))
+    (Number.isInteger(processGroup) && processInfo.pgid === processGroup)
   ));
 }
 
@@ -229,12 +227,20 @@ function identityKey(identity) {
   return `${identity.pid}:${identity.startTime}:${identity.executable}`;
 }
 
+function spawnOriginGenerationIsAmbiguous(inventory, rootIdentity, originPid) {
+  if (!Number.isInteger(originPid)) return false;
+  const currentOrigin = inventory.find(({ pid }) => pid === originPid) ?? null;
+  if (currentOrigin === null) return false;
+  return rootIdentity === null || !identityCoreMatches(rootIdentity, currentOrigin);
+}
+
 function selectCleanupCandidates(
   inventory,
   {
     rootIdentity = null,
     stagingRoot,
     knownIdentities = [],
+    originPid = null,
     processGroup = null,
     nativePlatform = process.platform,
   },
@@ -247,35 +253,68 @@ function selectCleanupCandidates(
       ? []
       : descendantProcesses(inventory, currentRoot.pid).map(({ pid }) => pid),
   );
-  const rootCommand = normalizedCommand(stagingRoot);
-  const mayUseStagingPath = nativePlatform === "win32" || currentRoot !== null;
+  const ambiguousOrigin = spawnOriginGenerationIsAmbiguous(
+    inventory,
+    rootIdentity,
+    originPid,
+  );
   return inventory.filter((processInfo) => (
     (currentRoot !== null && processInfo === currentRoot) ||
     descendantPids.has(processInfo.pid) ||
     (nativePlatform !== "win32" &&
       Number.isInteger(processGroup) &&
+      !ambiguousOrigin &&
       processInfo.pgid === processGroup) ||
-    (mayUseStagingPath &&
-      rootCommand.length > 0 &&
-      normalizedCommand(processInfo.command).includes(rootCommand)) ||
     knownIdentities.some((identity) => identityCoreMatches(identity, processInfo))
   ));
 }
 
 function collectBoundTree(rootIdentity, stagingRoot, known, provenance = {}) {
   const inventory = listNativeProcesses();
+  const requireVerifiedRoot = provenance.requireVerifiedRoot === true;
+  if (spawnOriginGenerationIsAmbiguous(inventory, rootIdentity, provenance.originPid)) {
+    throw new Error("refusing cleanup because spawn origin PID is unbound or has been reused");
+  }
+  const currentRoot = rootIdentity === null
+    ? null
+    : inventory.find((processInfo) => identityCoreMatches(rootIdentity, processInfo)) ?? null;
+  if (requireVerifiedRoot && process.platform === "win32" && rootIdentity !== null && currentRoot === null) {
+    throw new Error("refusing Windows cleanup because the bound root is no longer current");
+  }
+  if (requireVerifiedRoot && currentRoot !== null) {
+    const verifiedRoot = bindNativeProcessIdentity(currentRoot);
+    if (verifiedRoot === null || !sameProcessIdentity(rootIdentity, verifiedRoot)) {
+      throw new Error("refusing cleanup because the root process identity changed");
+    }
+  }
   const candidates = selectCleanupCandidates(inventory, {
     rootIdentity,
     stagingRoot,
     knownIdentities: [...known.values()],
+    originPid: provenance.originPid,
     processGroup: provenance.processGroup,
   });
   for (const processInfo of candidates) {
     const identity = bindNativeProcessIdentity(processInfo);
     if (identity !== null) {
+      const expectedIdentity = [rootIdentity, ...known.values()]
+        .find((expected) => identityCoreMatches(expected, processInfo));
+      if (expectedIdentity !== undefined && !sameProcessIdentity(expectedIdentity, identity)) {
+        if (requireVerifiedRoot) {
+          throw new Error(`refusing cleanup because process identity ${processInfo.pid} changed`);
+        }
+        // It may be a short-lived POSIX zombie, or the same generation may
+        // have exec'd. Either way the old bound identity has no signal
+        // authority. Leave it un-signalled; the identity/group residual oracle
+        // must observe it disappear or fail the cleanup.
+        continue;
+      }
       known.set(identityKey(identity), identity);
       continue;
     }
+    const expectedIdentity = [rootIdentity, ...known.values()]
+      .find((expected) => identityCoreMatches(expected, processInfo));
+    if (!requireVerifiedRoot && expectedIdentity !== undefined) continue;
     const stillPresent = listNativeProcesses().find((current) => identityCoreMatches(processInfo, current));
     if (stillPresent) {
       throw new Error(`refusing cleanup because process identity ${processInfo.pid} is denied or ambiguous`);
@@ -336,13 +375,25 @@ async function terminateNativeProcessTree(rootIdentity, stagingRoot, provenance 
   if (rootIdentity === null && originPid === null && processGroup === null) {
     throw new Error("cleanup requires a bound root identity or spawn provenance");
   }
+  if (process.platform === "win32" && rootIdentity === null) {
+    throw new Error("Windows cleanup requires a bound root identity; raw spawn provenance cannot prove ownership");
+  }
+  if (rootIdentity !== null && originPid !== rootIdentity.pid) {
+    throw new Error("spawn origin PID does not match the bound root identity");
+  }
   if (process.platform !== "win32" && processGroup !== originPid) {
     throw new Error("POSIX spawn provenance must name the detached leader's own process group");
+  }
+  if (rootIdentity !== null && process.platform !== "win32" && rootIdentity.pgid !== processGroup) {
+    throw new Error("refusing to clean a POSIX process that does not own an isolated process group");
   }
   const boundedProvenance = { originPid, processGroup };
   const known = new Map();
   if (rootIdentity) known.set(identityKey(rootIdentity), rootIdentity);
-  collectBoundTree(rootIdentity, stagingRoot, known, boundedProvenance);
+  collectBoundTree(rootIdentity, stagingRoot, known, {
+    ...boundedProvenance,
+    requireVerifiedRoot: true,
+  });
 
   if (process.platform === "win32") {
     // Re-enumerate after each forced-kill wave. Windows has no POSIX TERM
@@ -361,10 +412,6 @@ async function terminateNativeProcessTree(rootIdentity, stagingRoot, provenance 
       if (stableEmptyInventories >= 3) return;
     }
     throw new Error("Windows staged process tree did not reach three stable empty inventories");
-  }
-
-  if (rootIdentity !== null && rootIdentity.pgid !== processGroup) {
-    throw new Error("refusing to clean a POSIX process that does not own an isolated process group");
   }
 
   for (const identity of [...known.values()].reverse()) signalBoundProcess(identity, "SIGTERM");

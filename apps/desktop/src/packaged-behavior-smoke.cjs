@@ -1,4 +1,6 @@
 const {
+  packagedSmokeControlFamilies,
+  packagedSmokeControlValue,
   packagedSmokeRequest,
   writeSmokeReport,
 } = require("./packaged-smoke.cjs");
@@ -85,15 +87,57 @@ const PACKAGED_BEHAVIOR_SMOKE_SCRIPT = String.raw`(async () => {
   };
 })()`;
 
-function packagedBehaviorSmokeRequest(env) {
+function packagedBehaviorSmokeRequest(
+  env,
+  tempRoot = undefined,
+  nativePlatform = process.platform,
+) {
   return packagedSmokeRequest({
     ORG_WORKBENCH_PACKAGED_SMOKE_NONCE:
-      env.ORG_WORKBENCH_PACKAGED_BEHAVIOR_SMOKE_NONCE,
+      packagedSmokeControlValue(
+        env,
+        "ORG_WORKBENCH_PACKAGED_BEHAVIOR_SMOKE_NONCE",
+        nativePlatform,
+      ),
     ORG_WORKBENCH_PACKAGED_SMOKE_REPORT:
-      env.ORG_WORKBENCH_PACKAGED_BEHAVIOR_SMOKE_REPORT,
+      packagedSmokeControlValue(
+        env,
+        "ORG_WORKBENCH_PACKAGED_BEHAVIOR_SMOKE_REPORT",
+        nativePlatform,
+      ),
     ORG_WORKBENCH_PACKAGED_SMOKE_ROOT:
-      env.ORG_WORKBENCH_PACKAGED_BEHAVIOR_SMOKE_ROOT,
-  });
+      packagedSmokeControlValue(
+        env,
+        "ORG_WORKBENCH_PACKAGED_BEHAVIOR_SMOKE_ROOT",
+        nativePlatform,
+      ),
+  }, tempRoot, nativePlatform);
+}
+
+function reservePackagedSmokeRequests(
+  env,
+  {
+    isPackaged,
+    nativePlatform = process.platform,
+    tempRoot = undefined,
+  },
+) {
+  if (!isPackaged) {
+    return { conflict: false, smokeRequest: null, behaviorSmokeRequest: null };
+  }
+  const families = packagedSmokeControlFamilies(env, nativePlatform);
+  if (families.static && families.behavior) {
+    return { conflict: true, smokeRequest: null, behaviorSmokeRequest: null };
+  }
+  return {
+    conflict: false,
+    smokeRequest: families.static
+      ? packagedSmokeRequest(env, tempRoot, nativePlatform)
+      : null,
+    behaviorSmokeRequest: families.behavior
+      ? packagedBehaviorSmokeRequest(env, tempRoot, nativePlatform)
+      : null,
+  };
 }
 
 function safeError(error) {
@@ -107,6 +151,7 @@ async function runPackagedBehaviorSmoke({
   webContents,
   serverPid,
   resourcesPath,
+  onReportWritten = () => {},
   quit,
 }) {
   let report;
@@ -131,11 +176,13 @@ async function runPackagedBehaviorSmoke({
     };
   }
   writeSmokeReport(reportRequest, report);
+  onReportWritten();
   quit();
 }
 
 module.exports = {
   PACKAGED_BEHAVIOR_SMOKE_SCRIPT,
   packagedBehaviorSmokeRequest,
+  reservePackagedSmokeRequests,
   runPackagedBehaviorSmoke,
 };

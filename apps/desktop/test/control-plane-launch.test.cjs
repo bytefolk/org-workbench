@@ -79,3 +79,38 @@ test("control-plane child cannot inherit or forge packaged smoke controls", asyn
   assert.equal(code, 0);
   assert.deepEqual(JSON.parse(output), { smoke: [], safe: "retained" });
 });
+
+test("control-plane child strips lower and mixed-case smoke controls", async (t) => {
+  const env = {
+    PATH: process.env.PATH,
+    Org_Workbench_Packaged_Smoke_Root: "/forged/static-root",
+    org_workbench_packaged_smoke_report: "/forged/static-report.json",
+    ORG_WORKBENCH_PACKAGED_SMOKE_NONCE: "a".repeat(64),
+    Org_Workbench_Packaged_Behavior_Smoke_Root: "/forged/behavior-root",
+    org_workbench_packaged_behavior_smoke_report: "/forged/behavior-report.json",
+    ORG_WORKBENCH_PACKAGED_BEHAVIOR_SMOKE_NONCE: "b".repeat(64),
+    SAFE_SENTINEL: "retained",
+  };
+  assert.deepEqual(stripPackagedSmokeControls(env), {
+    PATH: process.env.PATH,
+    SAFE_SENTINEL: "retained",
+  });
+
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "owb-control-env-case-"));
+  t.after(() => fs.rmSync(root, { force: true, recursive: true }));
+  const fixture = path.join(root, "inspect-env.cjs");
+  fs.writeFileSync(
+    fixture,
+    [
+      "const upper=(value)=>value.replace(/[a-z]/g,(c)=>String.fromCharCode(c.charCodeAt(0)-32))",
+      "const controls=Object.keys(process.env).filter((key)=>upper(key).startsWith('ORG_WORKBENCH_PACKAGED_SMOKE_')||upper(key).startsWith('ORG_WORKBENCH_PACKAGED_BEHAVIOR_SMOKE_'))",
+      "process.stdout.write(JSON.stringify({controls,safe:process.env.SAFE_SENTINEL}))",
+    ].join(";"),
+  );
+  const child = createControlPlaneChild({ serverEntry: fixture, env });
+  let output = "";
+  child.stdout.on("data", (chunk) => { output += String(chunk); });
+  const [code] = await once(child, "close");
+  assert.equal(code, 0);
+  assert.deepEqual(JSON.parse(output), { controls: [], safe: "retained" });
+});

@@ -26,6 +26,39 @@ const PACKAGED_SMOKE_SCRIPT = String.raw`(async () => {
 
 const PACKAGED_SMOKE_QUERY_KEY = "orgWorkbenchPackagedSmoke";
 const NONCE_PATTERN = /^[a-f0-9]{64}$/;
+const PACKAGED_SMOKE_CONTROL_PREFIX = "ORG_WORKBENCH_PACKAGED_SMOKE_";
+const PACKAGED_BEHAVIOR_SMOKE_CONTROL_PREFIX =
+  "ORG_WORKBENCH_PACKAGED_BEHAVIOR_SMOKE_";
+
+function asciiUppercase(value) {
+  return String(value).replace(/[a-z]/g, (character) =>
+    String.fromCharCode(character.charCodeAt(0) - 32));
+}
+
+function canonicalEnvironmentKey(key, nativePlatform) {
+  return nativePlatform === "win32" ? asciiUppercase(key) : key;
+}
+
+function packagedSmokeControlValue(env, expectedKey, nativePlatform = process.platform) {
+  if (nativePlatform !== "win32") return env[expectedKey];
+  const matches = Object.entries(env).filter(([key]) =>
+    canonicalEnvironmentKey(key, nativePlatform) === expectedKey);
+  // A real Windows environment cannot contain two differently-cased versions
+  // of one key. Treat a fabricated/ambiguous object as invalid, not as a source
+  // whose enumeration order chooses the active report path.
+  return matches.length === 1 ? matches[0][1] : undefined;
+}
+
+function packagedSmokeControlFamilies(env, nativePlatform = process.platform) {
+  let staticMode = false;
+  let behaviorMode = false;
+  for (const key of Object.keys(env)) {
+    const canonicalKey = canonicalEnvironmentKey(key, nativePlatform);
+    if (canonicalKey.startsWith(PACKAGED_SMOKE_CONTROL_PREFIX)) staticMode = true;
+    if (canonicalKey.startsWith(PACKAGED_BEHAVIOR_SMOKE_CONTROL_PREFIX)) behaviorMode = true;
+  }
+  return { static: staticMode, behavior: behaviorMode };
+}
 
 function isDirectChild(root, candidate) {
   return path.dirname(path.resolve(candidate)) === path.resolve(root);
@@ -81,10 +114,22 @@ function assertReservedReport(request) {
   }
 }
 
-function packagedSmokeRequest(env, tempRoot = os.tmpdir()) {
-  const requestedRoot = env.ORG_WORKBENCH_PACKAGED_SMOKE_ROOT;
-  const report = env.ORG_WORKBENCH_PACKAGED_SMOKE_REPORT;
-  const nonce = env.ORG_WORKBENCH_PACKAGED_SMOKE_NONCE;
+function packagedSmokeRequest(env, tempRoot = os.tmpdir(), nativePlatform = process.platform) {
+  const requestedRoot = packagedSmokeControlValue(
+    env,
+    "ORG_WORKBENCH_PACKAGED_SMOKE_ROOT",
+    nativePlatform,
+  );
+  const report = packagedSmokeControlValue(
+    env,
+    "ORG_WORKBENCH_PACKAGED_SMOKE_REPORT",
+    nativePlatform,
+  );
+  const nonce = packagedSmokeControlValue(
+    env,
+    "ORG_WORKBENCH_PACKAGED_SMOKE_NONCE",
+    nativePlatform,
+  );
   if (
     typeof requestedRoot !== "string" ||
     typeof report !== "string" ||
@@ -151,7 +196,7 @@ function packagedSmokeLoadOptions(entryPath, request) {
   };
 }
 
-function createPackagedSmokeLifecycle({ reportRequest, onUnexpected }) {
+function createPackagedSmokeLifecycle({ reportRequest, failureReport = null, onUnexpected }) {
   let intentionalClose = false;
   let failed = false;
   let reportWritten = false;
@@ -162,12 +207,33 @@ function createPackagedSmokeLifecycle({ reportRequest, onUnexpected }) {
     markReportWritten() {
       reportWritten = true;
     },
-    unexpected(reason) {
+    unexpected(stage, reason = stage) {
       if (intentionalClose || failed) return false;
       failed = true;
-      closeSmokeReportReservation(reportRequest);
+      const safeStage = safeError(stage);
+      const safeReason = safeError(reason);
+      let reportError = null;
+      if (!reportWritten && Number.isInteger(reportRequest?.reportFd) && typeof failureReport === "function") {
+        try {
+          writeSmokeReport(reportRequest, {
+            ...failureReport({ stage: safeStage, error: safeReason }),
+            ok: false,
+            nonce: reportRequest.nonce,
+            stage: safeStage,
+            error: safeReason,
+          });
+        } catch (error) {
+          reportError = error;
+          closeSmokeReportReservation(reportRequest);
+        }
+      } else {
+        closeSmokeReportReservation(reportRequest);
+      }
+      const reportSuffix = reportError === null
+        ? ""
+        : `; failure report write failed: ${safeError(reportError)}`;
       onUnexpected(new Error(
-        `packaged smoke lifecycle failed${reportWritten ? " after reporting" : ""}: ${safeError(reason)}`,
+        `packaged smoke lifecycle failed${reportWritten ? " after reporting" : ""}: ${safeReason}${reportSuffix}`,
       ));
       return true;
     },
@@ -175,6 +241,56 @@ function createPackagedSmokeLifecycle({ reportRequest, onUnexpected }) {
       return { failed, intentionalClose, reportWritten };
     },
   };
+}
+
+function startPackagedSmokeLifecycle({
+  browserWindow,
+  reportRequest,
+  failureReport = null,
+  load,
+  run,
+  onUnexpected,
+}) {
+  if (
+    typeof browserWindow?.once !== "function" ||
+    typeof browserWindow?.webContents?.once !== "function" ||
+    typeof load !== "function" ||
+    typeof run !== "function" ||
+    typeof onUnexpected !== "function"
+  ) {
+    throw new Error("invalid packaged smoke lifecycle configuration");
+  }
+  const lifecycle = createPackagedSmokeLifecycle({
+    reportRequest,
+    failureReport,
+    onUnexpected,
+  });
+  browserWindow.webContents.once("did-fail-load", (_event, code, description) => {
+    lifecycle.unexpected("renderer-load", `renderer load failed (${code}): ${description}`);
+  });
+  browserWindow.webContents.once("render-process-gone", (_event, details) => {
+    lifecycle.unexpected(
+      "renderer-process",
+      `renderer process gone: ${details?.reason ?? "unknown"}`,
+    );
+  });
+  browserWindow.once("closed", () => {
+    lifecycle.unexpected("window-closed", "smoke window closed before the harness requested it");
+  });
+  browserWindow.webContents.once("did-finish-load", () => {
+    if (lifecycle.state().failed) return;
+    void Promise.resolve()
+      .then(() => run(lifecycle))
+      .catch((error) => lifecycle.unexpected("smoke-run", error));
+  });
+  try {
+    void Promise.resolve(load()).catch((error) => {
+      lifecycle.unexpected("renderer-load-promise", error);
+    });
+  } catch (error) {
+    lifecycle.unexpected("renderer-load-promise", error);
+  }
+  return lifecycle;
 }
 
 function safeError(error) {
@@ -244,7 +360,10 @@ module.exports = {
   closeSmokeReportReservation,
   createPackagedSmokeLifecycle,
   packagedSmokeLoadOptions,
+  packagedSmokeControlFamilies,
+  packagedSmokeControlValue,
   packagedSmokeRequest,
   runPackagedSmoke,
+  startPackagedSmokeLifecycle,
   writeSmokeReport,
 };

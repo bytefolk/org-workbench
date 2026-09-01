@@ -31,11 +31,18 @@ function controlPlaneMode(env) {
   return (env.ORG_WORKBENCH_CONTROL_PLANE ?? "").toLowerCase() === "wsl" ? "wsl" : "native";
 }
 
+function asciiUppercase(value) {
+  return String(value).replace(/[a-z]/g, (character) =>
+    String.fromCharCode(character.charCodeAt(0) - 32));
+}
+
 function stripPackagedSmokeControls(env) {
   return Object.fromEntries(
-    Object.entries(env).filter(([key]) =>
-      !key.startsWith("ORG_WORKBENCH_PACKAGED_SMOKE_") &&
-      !key.startsWith("ORG_WORKBENCH_PACKAGED_BEHAVIOR_SMOKE_")),
+    Object.entries(env).filter(([key]) => {
+      const canonicalKey = asciiUppercase(key);
+      return !canonicalKey.startsWith("ORG_WORKBENCH_PACKAGED_SMOKE_") &&
+        !canonicalKey.startsWith("ORG_WORKBENCH_PACKAGED_BEHAVIOR_SMOKE_");
+    }),
   );
 }
 

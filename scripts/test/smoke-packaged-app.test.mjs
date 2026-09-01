@@ -171,7 +171,11 @@ test("fast-exit detached leader provenance reaps its orphan group without touchi
     }
   });
 
-  const sentinel = spawn(process.execPath, ["-e", "setInterval(()=>{},1000)"], {
+  const sentinel = spawn(process.execPath, [
+    "-e",
+    "setInterval(()=>{},1000)",
+    stagingRoot,
+  ], {
     detached: true,
     stdio: "ignore",
   });
