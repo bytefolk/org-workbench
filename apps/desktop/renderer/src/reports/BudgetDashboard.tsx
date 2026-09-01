@@ -9,7 +9,7 @@ import { BudgetDetailDrawer } from "./BudgetDetailDrawer";
 /** P0 预算/成本看板：`reports.v1.budgets` 唯一权威读法。
  *
  * 诚实纪律（design spec §4.1 / §0）：
- *   1. 无货币维度：只展示 tokens / iterations。
+ *   1. 无货币维度：只展示 tokens（iterations 不在 UI 出现）。
  *   2. 声明期不伪造百分比：`latestTurn === null` 时消耗条走 declared-only。
  *   3. 单日车道只声明、不推算：`declared.perDay` 直出「未记录 · 上限 …」。
  *   4. 超限即事实：`state === "exceeded"` 永远置顶 + 左 3px 红条 + 汇总 Alert。
@@ -164,8 +164,7 @@ export function BudgetDashboard({
         key: "perDay",
         width: 200,
         render: (_: unknown, row: BudgetRow) => {
-          const cap = row.declared.perDay.tokens ?? row.declared.perDay.iterations;
-          const unit = row.declared.perDay.tokens !== undefined ? "tokens" : "iterations";
+          const cap = row.declared.perDay.tokens;
           return (
             <span className="owb-budget-dash__daily">
               <BudgetBar
@@ -176,7 +175,7 @@ export function BudgetDashboard({
               />
               <span className="owb-budget-dash__daily-cap">
                 {typeof cap === "number"
-                  ? `未记录 · 上限 ${cap.toLocaleString()} ${unit}`
+                  ? `未记录 · 上限 ${cap.toLocaleString()} tokens`
                   : "未声明"}
               </span>
             </span>

@@ -43,9 +43,8 @@ const MODE_LABEL: Record<PositionMode, string> = {
   approval_required: "需审批",
 };
 
-/** 预算徽标：单任务上限的紧凑写法（40k/task）。token 优先（引擎按 token 计费），
- * 双无声明返回 null（不渲染，而不是编造数字）。与 App.tsx perTaskBudgetLabel
- * 同口径，但入参是 org-tree.v1 节点的 budget 声明面。 */
+/** 预算徽标：单任务 token 上限的紧凑写法（40k/task）。UI 只展示 tokens；
+ * 无 token 声明返回 null（不渲染，而不是编造数字）。 */
 export function orgChartBudgetLabel(
   budget: OrgTreeNodeV1["budget"] | null | undefined,
 ): string | null {
@@ -56,7 +55,6 @@ export function orgChartBudgetLabel(
     const compact = k >= 1 ? `${Number.isInteger(k) ? k : k.toFixed(1)}k` : String(perTask.tokens);
     return `${compact}/task`;
   }
-  if (typeof perTask.iterations === "number") return `${perTask.iterations} iter/task`;
   return null;
 }
 

@@ -1115,9 +1115,8 @@ function findNodeById(nodes: OrgTreeNodeV1[], id: string): OrgTreeNodeV1 | null 
   return null;
 }
 
-/** Per-task budget label for the boundary chip (设计稿 `40k/task`). Tokens
- * win over iterations because the engine bills tokens; a declaration with
- * neither cap renders — rather than a fabricated number. */
+/** Per-task budget label for the boundary chip (设计稿 `40k/task`). UI 只展示
+ * tokens；无 token 声明返回 null，不伪造数字。 */
 function perTaskBudgetLabel(position: PositionCardData | null): string | null {
   const perTask = position?.budget?.perTask;
   if (!perTask) return null;
@@ -1126,7 +1125,6 @@ function perTaskBudgetLabel(position: PositionCardData | null): string | null {
     const compact = k >= 1 ? `${Number.isInteger(k) ? k : k.toFixed(1)}k` : String(perTask.tokens);
     return `${compact}/task`;
   }
-  if (typeof perTask.iterations === "number") return `${perTask.iterations} iters/task`;
   return null;
 }
 

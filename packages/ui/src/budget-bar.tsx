@@ -77,8 +77,8 @@ export function BudgetBar({
 }
 
 /** Declared caps with the primary number emphasised (设计稿 .val b):
- * `<b>20,000 tokens</b> · 8 iterations`. Falls back to em dash when the
- * declaration carries no cap at all — never invents a number. */
+ * `<b>20,000 tokens</b>`. Falls back to em dash when the declaration carries
+ * no token cap — never invents a number. */
 function DeclaredCaps({ caps }: { caps: BudgetCaps | null | undefined }) {
   const text = capsText(caps);
   if (text === "—") return <>未声明</>;

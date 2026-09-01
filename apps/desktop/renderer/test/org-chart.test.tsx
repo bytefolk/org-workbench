@@ -51,9 +51,9 @@ describe("P0 组织图可视化（纯展示：节点 + 汇报线 + 空态/加载
     expect(screen.getByText("代码库负责人")).toBeInTheDocument();
     expect(screen.getByText("公开文档与发布说明")).toBeInTheDocument();
     expect(screen.getAllByText("release-engineer").length).toBeGreaterThan(0);
-    // 预算徽标：40000 tokens → 40k/task；iterations 面 → iter/task；双无声明不渲染。
+    // 预算徽标：仅 tokens（40k/task）；无 token 声明的节点不渲染徽标。
     expect(screen.getByText("40k/task")).toBeInTheDocument();
-    expect(screen.getByText("10 iter/task")).toBeInTheDocument();
+    expect(screen.queryByText(/iter\/task/)).not.toBeInTheDocument();
     // mode 徽标：只读 / 需审批；未注入 mode 的节点不渲染徽标。
     expect(screen.getByText("需审批")).toBeInTheDocument();
     expect(screen.getByText("只读")).toBeInTheDocument();
@@ -84,8 +84,8 @@ describe("P0 组织图可视化（纯展示：节点 + 汇报线 + 空态/加载
     // 无 displayModes：不出现 mode 徽标。
     expect(screen.queryByText("只读")).not.toBeInTheDocument();
     expect(screen.queryByText("需审批")).not.toBeInTheDocument();
-    // release-engineer 双无预算声明：无预算徽标元素（3 节点只有 2 个徽标）。
-    expect(container.querySelectorAll(".owb-org-chart__budget")).toHaveLength(2);
+    // release-engineer / docs-writer 无 token 预算声明：仅 repo-owner 一枚预算徽标。
+    expect(container.querySelectorAll(".owb-org-chart__budget")).toHaveLength(1);
   });
 });
 
@@ -96,8 +96,8 @@ describe("orgChartBudgetLabel（预算徽标口径：与 perTaskBudgetLabel 同�
     expect(orgChartBudgetLabel({ perTask: { tokens: 900 }, perDay: {} })).toBe("900/task");
   });
 
-  it("无 token 声明时用 iterations 面", () => {
-    expect(orgChartBudgetLabel({ perTask: { iterations: 10 }, perDay: {} })).toBe("10 iter/task");
+  it("无 token 声明时不渲染 iterations 面", () => {
+    expect(orgChartBudgetLabel({ perTask: { iterations: 10 }, perDay: {} })).toBeNull();
   });
 
   it("双无声明返回 null（不渲染，而不是伪造数字）", () => {

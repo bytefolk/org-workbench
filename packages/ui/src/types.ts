@@ -24,14 +24,12 @@ export interface PositionCardData {
 
 export function primaryCap(caps: BudgetCaps | null | undefined): number | null {
   if (!caps) return null;
-  return caps.tokens ?? caps.iterations ?? null;
+  return caps.tokens ?? null;
 }
 
+/** UI 只展示 tokens；iterations 仍可在数据/引擎层存在，但不进入展示文案。 */
 export function capsText(caps: BudgetCaps | null | undefined): string {
   const tokens = caps?.tokens;
-  const iterations = caps?.iterations;
-  if (tokens !== undefined && iterations !== undefined) return `${tokens.toLocaleString()} tokens · ${iterations} iterations`;
   if (tokens !== undefined) return `${tokens.toLocaleString()} tokens`;
-  if (iterations !== undefined) return `${iterations.toLocaleString()} iterations`;
   return "—";
 }

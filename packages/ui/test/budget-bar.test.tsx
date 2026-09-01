@@ -19,7 +19,9 @@ describe("BudgetBar (D1 spec §4 dual-phase contract)", () => {
     const values = Array.from(document.querySelectorAll(".ui-org-budget__value")).map(
       (node) => node.textContent?.replace(/\s+/g, " ").trim(),
     );
-    expect(values).toContain("40,000 tokens · 12 iterations");
+    expect(values).toContain("40,000 tokens");
+    expect(values).toContain("400,000 tokens");
+    expect(screen.queryByText(/iterations/)).not.toBeInTheDocument();
     expect(screen.queryByText(/%$/)).not.toBeInTheDocument();
   });
 
