@@ -138,7 +138,11 @@ async function behaviorVm(overrides) {
         },
       }),
       workspace: async () => ({ status: 200, body: { open: true } }),
-      createTurn: async () => ({
+      createSession: async () => ({
+        status: 201,
+        body: { sessionId: "12345678-1234-4123-8123-123456789abc" },
+      }),
+      createSessionTurn: async () => ({
         status: 200,
         body: {
           turnId: "turn-fixture",
@@ -146,7 +150,7 @@ async function behaviorVm(overrides) {
           output: "packaged path smoke ok",
         },
       }),
-      turnHistory: async () => ({
+      sessionTurnHistory: async () => ({
         status: 200,
         body: {
           turns: [{
@@ -190,8 +194,9 @@ test("production behavior renderer timeouts write nonce-bound failure reports an
   const fixtures = [
     ["control plane status", { status: never }],
     ["workspace read", { workspace: never }],
-    ["Qoder fixture turn", { createTurn: never }],
-    ["history readback", { turnHistory: never }],
+    ["session create", { createSession: never }],
+    ["Qoder session fixture turn", { createSessionTurn: never }],
+    ["session history readback", { sessionTurnHistory: never }],
   ];
   for (const [stage, overrides] of fixtures) {
     await t.test(stage, async () => {
@@ -228,16 +233,24 @@ test("production behavior renderer timeouts write nonce-bound failure reports an
   }
 });
 
+test("behavior qualification traverses durable session turn history", () => {
+  assert.match(PACKAGED_BEHAVIOR_SMOKE_SCRIPT, /window\.owb\.createSession\(/);
+  assert.match(PACKAGED_BEHAVIOR_SMOKE_SCRIPT, /window\.owb\.createSessionTurn\(/);
+  assert.match(PACKAGED_BEHAVIOR_SMOKE_SCRIPT, /window\.owb\.sessionTurnHistory\(/);
+});
+
 test("behavior qualification is business-facing but separate from static smoke", () => {
   assert.match(PACKAGED_BEHAVIOR_SMOKE_SCRIPT, /window\.owb\.status\(\)/);
-  assert.match(PACKAGED_BEHAVIOR_SMOKE_SCRIPT, /window\.owb\.createTurn/);
-  assert.match(PACKAGED_BEHAVIOR_SMOKE_SCRIPT, /window\.owb\.turnHistory/);
+  assert.match(PACKAGED_BEHAVIOR_SMOKE_SCRIPT, /window\.owb\.createSession/);
+  assert.match(PACKAGED_BEHAVIOR_SMOKE_SCRIPT, /window\.owb\.createSessionTurn/);
+  assert.match(PACKAGED_BEHAVIOR_SMOKE_SCRIPT, /window\.owb\.sessionTurnHistory/);
   assert.match(PACKAGED_BEHAVIOR_SMOKE_SCRIPT, /const withTimeout/);
   for (const stage of [
     "control plane status",
     "workspace read",
-    "Qoder fixture turn",
-    "history readback",
+    "session create",
+    "Qoder session fixture turn",
+    "session history readback",
   ]) {
     assert.match(PACKAGED_BEHAVIOR_SMOKE_SCRIPT, new RegExp(stage));
   }

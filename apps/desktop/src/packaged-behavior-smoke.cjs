@@ -7,7 +7,8 @@ const {
 
 // #111 behavior qualification is intentionally separate from Lane A static smoke.
 // It exercises renderer/preload, recovered PATH, bundled Qoder/MCP, a real fixture
-// turn, and durable history readback without turning those claims into release proof.
+// session turn, and durable session-history readback without turning those
+// claims into release proof.
 const PACKAGED_BEHAVIOR_SMOKE_SCRIPT = String.raw`(async () => {
   const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
   const withTimeout = async (stage, operation, timeoutMs = 6000) => {
@@ -29,8 +30,10 @@ const PACKAGED_BEHAVIOR_SMOKE_SCRIPT = String.raw`(async () => {
   }
   const rendererMounted = document.querySelector("#root")?.childElementCount > 0;
   const preloadBridge = typeof window.owb?.status === "function" &&
-    typeof window.owb?.createTurn === "function" &&
-    typeof window.owb?.turnHistory === "function";
+    typeof window.owb?.workspace === "function" &&
+    typeof window.owb?.createSession === "function" &&
+    typeof window.owb?.createSessionTurn === "function" &&
+    typeof window.owb?.sessionTurnHistory === "function";
   if (!rendererMounted || !preloadBridge) throw new Error("renderer or preload bridge did not become ready");
 
   localStorage.setItem("owb-packaged-smoke", "ok");
@@ -47,10 +50,18 @@ const PACKAGED_BEHAVIOR_SMOKE_SCRIPT = String.raw`(async () => {
     throw new Error("packaged workspace did not open");
   }
 
+  const session = await withTimeout(
+    "session create",
+    window.owb.createSession({ positionId: "repo-owner" }),
+  );
+  if (session?.status !== 201 || typeof session?.body?.sessionId !== "string") {
+    throw new Error("packaged durable session was not created");
+  }
+
   const created = await withTimeout(
-    "Qoder fixture turn",
-    window.owb.createTurn({
-      positionId: "repo-owner",
+    "Qoder session fixture turn",
+    window.owb.createSessionTurn({
+      sessionId: session.body.sessionId,
       input: "Verify packaged PATH propagation.",
       engine: "qoder",
     }),
@@ -64,15 +75,15 @@ const PACKAGED_BEHAVIOR_SMOKE_SCRIPT = String.raw`(async () => {
     throw new Error("packaged Qoder/MCP PATH turn did not complete");
   }
   const history = await withTimeout(
-    "history readback",
-    window.owb.turnHistory("repo-owner"),
+    "session history readback",
+    window.owb.sessionTurnHistory(session.body.sessionId),
   );
   const persisted = history?.status === 200 && history?.body?.turns?.some(
     (turn) => turn?.turnId === created.body.turnId &&
       turn?.status === "completed" &&
       turn?.output === "packaged path smoke ok",
   );
-  if (!persisted) throw new Error("packaged turn did not survive history readback");
+  if (!persisted) throw new Error("packaged turn did not survive session history readback");
 
   return {
     rendererMounted,
@@ -84,6 +95,7 @@ const PACKAGED_BEHAVIOR_SMOKE_SCRIPT = String.raw`(async () => {
     workspaceOpen: true,
     turnCompleted: true,
     historyReadback: true,
+    sessionHistoryReadback: true,
   };
 })()`;
 

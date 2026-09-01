@@ -57,6 +57,28 @@ test("resource verifier rejects missing, extra, forbidden, and byte-tampered fil
   assert.throws(() => fixture.validate(), /runtime bytes differ/);
 });
 
+test("production verifier rejects a package missing the stable-read runtime module", (t) => {
+  const fixture = makeResourceFixture(t);
+  const stableReadRelative = "apps/server/dist/src/stable-read.js";
+  const packagedStableRead = path.join(fixture.resources, stableReadRelative);
+  fs.mkdirSync(path.dirname(packagedStableRead), { recursive: true });
+  fs.writeFileSync(packagedStableRead, "expected runtime\n");
+  fixture.manifest.set(stableReadRelative, {
+    kind: "byte-exact",
+    source: fixture.expected,
+  });
+
+  assert.deepEqual(
+    fixture.validate().packagedFiles,
+    [stableReadRelative, "runtime.js"].sort(),
+  );
+  fs.rmSync(packagedStableRead);
+  assert.throws(
+    () => fixture.validate(),
+    /packaged resources differ from the explicit runtime allowlist/,
+  );
+});
+
 test("resource verifier rejects linked roots, linked parents, and file symlinks", (t) => {
   if (process.platform === "win32") {
     t.skip("creating test symlinks/junctions requires Windows developer-mode or elevation; native tree verification still rejects them");

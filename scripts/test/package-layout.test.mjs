@@ -84,6 +84,7 @@ test("runtime manifest is an explicit allowlist for every packaged consumer", ()
     "apps/server/package.json",
     "apps/server/dist/src/index.js",
     "apps/server/dist/src/engine/process-environment.js",
+    "apps/server/dist/src/stable-read.js",
     "apps/server/bin/qoder-engine.mjs",
     "apps/server/src/qoder-binary.js",
     "node_modules/@org-workbench/shared/package.json",
@@ -115,6 +116,11 @@ test("runtime manifest is an explicit allowlist for every packaged consumer", ()
     RUNTIME_FILE_SETS.flatMap(({ filter }) => filter).filter((entry) => entry.includes("*")),
     ["dist/renderer/**/*"],
     "only the clean generated renderer directory may use a packaging glob",
+  );
+  assert.equal(
+    SERVER_RUNTIME_FILES.includes("dist/src/stable-read.js"),
+    true,
+    "stable bounded reads used by session and turn stores must be packaged explicitly",
   );
 
   const compiledServer = SERVER_RUNTIME_FILES

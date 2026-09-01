@@ -435,6 +435,7 @@ export async function smokePackagedApp(platform, candidate, options = {}) {
         "workspaceOpen",
         "turnCompleted",
         "historyReadback",
+        "sessionHistoryReadback",
       ]) {
         assert.equal(smoke[key], true, `behavior smoke did not prove ${key}`);
       }
@@ -497,6 +498,7 @@ export async function smokePackagedApp(platform, candidate, options = {}) {
         qoderReady: true,
         turnCompleted: true,
         historyReadback: true,
+        sessionHistoryReadback: true,
       };
   } catch (error) {
     primaryError = error;
