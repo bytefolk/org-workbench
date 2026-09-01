@@ -1,5 +1,5 @@
-import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Alert, Badge, Button as AntButton, ConfigProvider, theme } from "antd";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { Alert, Badge, Button as AntButton, ConfigProvider, Splitter, theme } from "antd";
 import zhCN from "antd/locale/zh_CN";
 import {
   AppShell,
@@ -54,6 +54,14 @@ import { GroupsPanel } from "./groups/GroupsPanel";
 import { DocsModule } from "./docs/DocsModule";
 import { ReportsCenter } from "./reports/ReportsCenter";
 import { ApprovalQueue, type ApprovalQueueItem } from "./approvals";
+
+const SIDEBAR_WIDTH_DEFAULT = 300;
+const SIDEBAR_WIDTH_MIN = 200;
+const SIDEBAR_WIDTH_MAX = 480;
+/** ≤980 时收窄侧栏，给主区分栏留出可用宽度（旧 @media 252 语义）。 */
+const SIDEBAR_WIDTH_NARROW = 252;
+/** 组织下半区左右分栏：按视口切 stacked；阈值需覆盖 rail+侧栏+padding 后的主区宽。 */
+const WORKSPACE_STACK_MAX_WIDTH = 1100;
 
 interface PositionCardState {
   loading: boolean;
@@ -125,6 +133,32 @@ export function App() {
   const [groupDraftSeed, setGroupDraftSeed] = useState<{ members: string[]; nonce: number } | null>(null);
   /** 亮/暗跟随 <html data-theme>，antd cssinjs 与 --ui-* skin 同步切换。 */
   const themeMode = useThemeMode();
+  /** 组织树侧栏宽度（拖拽写入；窄屏自动收至 SIDEBAR_WIDTH_NARROW）。 */
+  const [sidebarWidth, setSidebarWidth] = useState(SIDEBAR_WIDTH_DEFAULT);
+  const preferredSidebarWidth = useRef(SIDEBAR_WIDTH_DEFAULT);
+
+  const onSidebarWidthChange = useCallback((next: number) => {
+    preferredSidebarWidth.current = next;
+    setSidebarWidth(next);
+  }, []);
+
+  const [sidebarMaxWidth, setSidebarMaxWidth] = useState(SIDEBAR_WIDTH_MAX);
+
+  useEffect(() => {
+    const media = window.matchMedia("(max-width: 980px)");
+    const sync = () => {
+      if (media.matches) {
+        setSidebarMaxWidth(SIDEBAR_WIDTH_NARROW);
+        setSidebarWidth(Math.min(preferredSidebarWidth.current, SIDEBAR_WIDTH_NARROW));
+      } else {
+        setSidebarMaxWidth(SIDEBAR_WIDTH_MAX);
+        setSidebarWidth(preferredSidebarWidth.current);
+      }
+    };
+    sync();
+    media.addEventListener("change", sync);
+    return () => media.removeEventListener("change", sync);
+  }, []);
 
   useEffect(() => {
     selectedIdRef.current = selectedId;
@@ -808,10 +842,10 @@ export function App() {
         </span>
       </header>
 
-    {/* 壳层尺寸（导轨 54 / 侧栏 300 / topbar 48）定在 app.css 的
-        `.owb-app .ui-app-shell` 里，不走内联 style——内联优先级最高，会把
-        窗口缩放的 @media 断点全部盖掉。 */}
+    {/* 导轨/顶栏高度仍由 app.css 的 .owb-app .ui-app-shell 变量提供；
+        侧栏宽度由 sidebarWidth 写入 --ui-sidebar-width；≤980 时收窄到 252。 */}
     <AppShell
+      style={{ ["--ui-sidebar-width" as string]: `${sidebarWidth}px` }}
       moduleRail={
         <ModuleRail
           label="模块"
@@ -844,41 +878,47 @@ export function App() {
         />
       }
       sidebar={
-        <Sidebar
-          label="组织目录树"
-          header={
-            <>
-              <div className="owb-side-head">
-                <span className="owb-side-head__label">组织目录树</span>
-                {workspaceInfo?.open === true ? (
-                  <>
-                    <AntButton size="small" disabled={orgBusy} onClick={() => void undoLastAdjustment()} title="撤销最近一次拖拽调整（⌘Z）">撤销</AntButton>
-                    {/* ＋ 走装饰性图标而不是文案前缀，可及名保持「创建员工」。 */}
-                    <AntButton size="small" type="primary" disabled={orgBusy} icon={<Plus aria-hidden="true" size={12} />} onClick={() => setTreeHireParent(selectedId ?? snapshot?.owner ?? null)}>创建员工</AntButton>
-                  </>
-                ) : null}
-              </div>
-              {/* 工作区条（设计稿 .workspace-strip）：名称 + open 状态 + 岗位数 */}
-              {workspaceInfo?.open === true ? (
-                <div className="owb-workspace-strip">
-                  <span className="owb-workspace-strip__name">{workspaceInfo.business ?? "工作区"}</span>
-                  <span className="owb-workspace-strip__meta">
-                    <span className="owb-workspace-strip__open">●</span>
-                    open
-                    {snapshot ? ` · ${snapshot.positionCount} 岗位` : null}
-                  </span>
+        <>
+          <SidebarWidthHandle
+            width={sidebarWidth}
+            maxWidth={sidebarMaxWidth}
+            onWidthChange={onSidebarWidthChange}
+          />
+          <Sidebar
+            label="组织目录树"
+            header={
+              <>
+                <div className="owb-side-head">
+                  <span className="owb-side-head__label">组织目录树</span>
+                  {workspaceInfo?.open === true ? (
+                    <>
+                      <AntButton size="small" disabled={orgBusy} onClick={() => void undoLastAdjustment()} title="撤销最近一次拖拽调整（⌘Z）">撤销</AntButton>
+                      {/* ＋ 走装饰性图标而不是文案前缀，可及名保持「创建员工」。 */}
+                      <AntButton size="small" type="primary" disabled={orgBusy} icon={<Plus aria-hidden="true" size={12} />} onClick={() => setTreeHireParent(selectedId ?? snapshot?.owner ?? null)}>创建员工</AntButton>
+                    </>
+                  ) : null}
                 </div>
-              ) : null}
-            </>
-          }
-          footer={
-            workspaceInfo?.open === true ? <BackupTray backups={backups} busy={orgBusy} onRestore={restorePosition} /> : (
-              <AntButton type="primary" block onClick={() => void openWorkspace()}>
-                打开工作区…
-              </AntButton>
-            )
-          }
-        >
+                {/* 工作区条（设计稿 .workspace-strip）：名称 + open 状态 + 岗位数 */}
+                {workspaceInfo?.open === true ? (
+                  <div className="owb-workspace-strip">
+                    <span className="owb-workspace-strip__name">{workspaceInfo.business ?? "工作区"}</span>
+                    <span className="owb-workspace-strip__meta">
+                      <span className="owb-workspace-strip__open">●</span>
+                      open
+                      {snapshot ? ` · ${snapshot.positionCount} 岗位` : null}
+                    </span>
+                  </div>
+                ) : null}
+              </>
+            }
+            footer={
+              workspaceInfo?.open === true ? <BackupTray backups={backups} busy={orgBusy} onRestore={restorePosition} /> : (
+                <AntButton type="primary" block onClick={() => void openWorkspace()}>
+                  打开工作区…
+                </AntButton>
+              )
+            }
+          >
           {workspaceInfo?.open === true ? (
             treeLoading ? (
               <TreeSkeleton />
@@ -926,6 +966,7 @@ export function App() {
             />
           ) : null}
         </Sidebar>
+        </>
       }
       topbar={
         <Topbar
@@ -1027,60 +1068,191 @@ export function App() {
             selectedPositionId={selectedId}
           />
         ) : <div className="owb-org-module">
-          {/* P0 组织图：应用态汇报树节点图（纯展示，数据与侧栏树同源）。 */}
-          <OrgChart
-            snapshot={snapshot}
-            loading={treeLoading}
-            displayNames={positionNames}
-            displayTitles={positionTitles}
-            displayModes={positionModes}
-            avatarColors={positionColors}
-            selectedId={selectedId}
-            onSelect={selectPosition}
-          />
-          <div className="owb-workspace-grid">
-          <div className="owb-position-column">
-            <PositionCard
-              position={card.data}
-              loading={card.loading}
-              notFound={card.notFound}
-              consumption={selectedBudgetRatio}
-              running={selectedId !== null && runningPositionIds.has(selectedId)}
-              onRefresh={() => void refresh()}
-            />
-            {selectedPosition && selectedId && selectedId !== snapshot?.owner ? <div className="owb-position-actions"><DismissPositionDialog positionName={selectedPosition.name} positionId={selectedId} descendantCount={selectedNode ? countDescendants(selectedNode) : 0} busy={orgBusy} onDismiss={() => dismissPosition(selectedId)} /></div> : null}
-          </div>
-          <TurnPanel
-            workspaceOpen={workspaceInfo?.open === true}
-            positions={positions}
-            selectedPositionId={selectedId}
-            engine={turnEngine}
-            engineAvailability={engineAvailability}
-            turns={displayTurns}
-            busy={turnBusy}
-            sessions={sessions}
-            selectedSessionId={selectedSessionId}
-            sessionBusy={sessionBusy}
-            onSelectPosition={selectPosition}
-            onSelectEngine={setTurnEngine}
-            onCreateTurn={createTurn}
-            onCancelTurn={cancelTurn}
-            onVerdictTurn={verdictTurn}
-            decidedApprovalIds={decidedApprovals}
-            sseConnected={sseState === "connected"}
-            selectedMode={card.data?.mode ?? null}
-            selectedBudgetLabel={perTaskBudgetLabel(card.data)}
-            cancelling={turnCancelling}
-            onSelectSession={selectSession}
-            onCreateSession={createSession}
-            onRotateSession={rotateSession}
-          />
-          </div>
+          <Splitter orientation="vertical" className="owb-org-module__split">
+            <Splitter.Panel defaultSize={220} min={100} max="42%" className="owb-org-module__pane">
+              <OrgChart
+                snapshot={snapshot}
+                loading={treeLoading}
+                displayNames={positionNames}
+                displayTitles={positionTitles}
+                displayModes={positionModes}
+                avatarColors={positionColors}
+                selectedId={selectedId}
+                onSelect={selectPosition}
+              />
+            </Splitter.Panel>
+            <Splitter.Panel min={240} className="owb-org-module__pane">
+              <WorkspaceSplit
+                positionColumn={
+                  <div className="owb-position-column">
+                    <PositionCard
+                      position={card.data}
+                      loading={card.loading}
+                      notFound={card.notFound}
+                      consumption={selectedBudgetRatio}
+                      running={selectedId !== null && runningPositionIds.has(selectedId)}
+                      onRefresh={() => void refresh()}
+                    />
+                    {selectedPosition && selectedId && selectedId !== snapshot?.owner ? (
+                      <div className="owb-position-actions">
+                        <DismissPositionDialog
+                          positionName={selectedPosition.name}
+                          positionId={selectedId}
+                          descendantCount={selectedNode ? countDescendants(selectedNode) : 0}
+                          busy={orgBusy}
+                          onDismiss={() => dismissPosition(selectedId)}
+                        />
+                      </div>
+                    ) : null}
+                  </div>
+                }
+                turnPanel={
+                  <TurnPanel
+                    workspaceOpen={workspaceInfo?.open === true}
+                    positions={positions}
+                    selectedPositionId={selectedId}
+                    engine={turnEngine}
+                    engineAvailability={engineAvailability}
+                    turns={displayTurns}
+                    busy={turnBusy}
+                    sessions={sessions}
+                    selectedSessionId={selectedSessionId}
+                    sessionBusy={sessionBusy}
+                    onSelectPosition={selectPosition}
+                    onSelectEngine={setTurnEngine}
+                    onCreateTurn={createTurn}
+                    onCancelTurn={cancelTurn}
+                    onVerdictTurn={verdictTurn}
+                    decidedApprovalIds={decidedApprovals}
+                    sseConnected={sseState === "connected"}
+                    selectedMode={card.data?.mode ?? null}
+                    selectedBudgetLabel={perTaskBudgetLabel(card.data)}
+                    cancelling={turnCancelling}
+                    onSelectSession={selectSession}
+                    onCreateSession={createSession}
+                    onRotateSession={rotateSession}
+                  />
+                }
+              />
+            </Splitter.Panel>
+          </Splitter>
         </div>}
       </div>
     </AppShell>
     </div>
     </ConfigProvider>
+  );
+}
+
+function SidebarWidthHandle({
+  width,
+  maxWidth = SIDEBAR_WIDTH_MAX,
+  onWidthChange,
+}: {
+  width: number;
+  maxWidth?: number;
+  onWidthChange: (width: number) => void;
+}) {
+  const drag = useRef<{ startX: number; startWidth: number } | null>(null);
+  const [dragging, setDragging] = useState(false);
+  const maxWidthRef = useRef(maxWidth);
+  maxWidthRef.current = maxWidth;
+
+  useEffect(() => {
+    if (!dragging) return;
+    document.body.classList.add("owb-sidebar-resizing");
+    const onMove = (event: PointerEvent) => {
+      const state = drag.current;
+      if (!state) return;
+      const next = Math.min(
+        maxWidthRef.current,
+        Math.max(SIDEBAR_WIDTH_MIN, state.startWidth + (event.clientX - state.startX)),
+      );
+      onWidthChange(next);
+    };
+    const onUp = () => {
+      drag.current = null;
+      setDragging(false);
+    };
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+    window.addEventListener("pointercancel", onUp);
+    return () => {
+      document.body.classList.remove("owb-sidebar-resizing");
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+      window.removeEventListener("pointercancel", onUp);
+    };
+  }, [dragging, onWidthChange]);
+
+  return (
+    <div
+      className={`owb-sidebar-resizer${dragging ? " is-dragging" : ""}`}
+      role="separator"
+      tabIndex={0}
+      aria-orientation="vertical"
+      aria-valuenow={width}
+      aria-valuemin={SIDEBAR_WIDTH_MIN}
+      aria-valuemax={maxWidth}
+      aria-label="调整组织树宽度"
+      onKeyDown={(event) => {
+        const step = event.shiftKey ? 24 : 8;
+        if (event.key === "ArrowLeft") {
+          event.preventDefault();
+          onWidthChange(Math.max(SIDEBAR_WIDTH_MIN, width - step));
+        } else if (event.key === "ArrowRight") {
+          event.preventDefault();
+          onWidthChange(Math.min(maxWidth, width + step));
+        }
+      }}
+      onPointerDown={(event) => {
+        event.preventDefault();
+        drag.current = { startX: event.clientX, startWidth: width };
+        setDragging(true);
+      }}
+    />
+  );
+}
+
+function WorkspaceSplit({
+  positionColumn,
+  turnPanel,
+}: {
+  positionColumn: ReactNode;
+  turnPanel: ReactNode;
+}) {
+  const [stacked, setStacked] = useState(() =>
+    typeof window !== "undefined"
+      ? window.matchMedia(`(max-width: ${WORKSPACE_STACK_MAX_WIDTH}px)`).matches
+      : false,
+  );
+
+  useEffect(() => {
+    const media = window.matchMedia(`(max-width: ${WORKSPACE_STACK_MAX_WIDTH}px)`);
+    const sync = () => setStacked(media.matches);
+    sync();
+    media.addEventListener("change", sync);
+    return () => media.removeEventListener("change", sync);
+  }, []);
+
+  if (stacked) {
+    return (
+      <div className="owb-workspace-grid is-stacked">
+        {positionColumn}
+        {turnPanel}
+      </div>
+    );
+  }
+
+  return (
+    <Splitter className="owb-workspace-grid">
+      <Splitter.Panel defaultSize="45%" min="200px" className="owb-workspace-grid__pane">
+        {positionColumn}
+      </Splitter.Panel>
+      <Splitter.Panel min="280px" className="owb-workspace-grid__pane">
+        {turnPanel}
+      </Splitter.Panel>
+    </Splitter>
   );
 }
 

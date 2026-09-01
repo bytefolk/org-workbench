@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
-import { Button as AntButton, Input, Select as AntSelect } from "antd";
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from "react";
+import { Button as AntButton, Input, Select as AntSelect, Splitter } from "antd";
 import { ArrowUp, Plus, UserRound, UserRoundPlus, UsersRound } from "lucide-react";
 import { PositionAvatar } from "../PositionAvatar";
 import { TypingIndicator } from "../turns/TurnThread";
@@ -318,82 +318,84 @@ export function GroupsPanel({
   }
 
   return (
-    <section className="owb-groups" aria-label="群聊">
-      <div className="owb-groups__list">
-        <header className="owb-groups__list-header">
-          <h2><UsersRound aria-hidden="true" size={12} />群聊</h2>
-        </header>
-        {groupsError ? <p className="owb-groups__error" role="alert">{groupsError}</p> : null}
-        <ul className="owb-groups__items">
-          {groups.map((group) => (
-            <li key={group.conversationRef}>
-              <button
-                type="button"
-                className={group.conversationRef === selectedRef ? "is-active" : undefined}
-                onClick={() => setSelectedRef(group.conversationRef)}
-              >
-                <span className="owb-groups__item-name">
-                  <span className="owb-groups__avatar-stack" aria-hidden="true">
-                    {group.members.slice(0, 3).map((memberId) => (
-                      <PositionAvatar
-                        key={memberId}
-                        colors={positionColors ?? {}}
-                        id={memberId}
-                        name={positionNames[memberId] ?? memberId}
-                        className="owb-groups__avatar owb-groups__avatar--xs"
-                      />
-                    ))}
+    <GroupsSplit
+      list={
+        <div className="owb-groups__list">
+          <header className="owb-groups__list-header">
+            <h2><UsersRound aria-hidden="true" size={12} />群聊</h2>
+          </header>
+          {groupsError ? <p className="owb-groups__error" role="alert">{groupsError}</p> : null}
+          <ul className="owb-groups__items">
+            {groups.map((group) => (
+              <li key={group.conversationRef}>
+                <button
+                  type="button"
+                  className={group.conversationRef === selectedRef ? "is-active" : undefined}
+                  onClick={() => setSelectedRef(group.conversationRef)}
+                >
+                  <span className="owb-groups__item-name">
+                    <span className="owb-groups__avatar-stack" aria-hidden="true">
+                      {group.members.slice(0, 3).map((memberId) => (
+                        <PositionAvatar
+                          key={memberId}
+                          colors={positionColors ?? {}}
+                          id={memberId}
+                          name={positionNames[memberId] ?? memberId}
+                          className="owb-groups__avatar owb-groups__avatar--xs"
+                        />
+                      ))}
+                    </span>
+                    {groupLabel(group, positionNames)}
                   </span>
-                  {groupLabel(group, positionNames)}
-                </span>
-                <span className="owb-groups__item-meta">
-                  {group.members.length} 人 · {timeShort(group.updatedAt)}
-                </span>
-              </button>
-            </li>
-          ))}
-        </ul>
-        <details
-          className="owb-groups__create"
-          open={createOpen}
-          onToggle={(event) => setCreateOpen(event.currentTarget.open)}
-        >
-          <summary><Plus aria-hidden="true" size={13} />新建群聊（≥2 个岗位）</summary>
-          <div className="owb-groups__create-body">
-            {positions.map((position) => (
-              <label key={position.id} className="owb-groups__draft-member">
-                <input
-                  type="checkbox"
-                  checked={draftMembers.has(position.id)}
-                  disabled={creating}
-                  onChange={(event) => {
-                    setDraftMembers((current) => {
-                      const next = new Set(current);
-                      if (event.target.checked) next.add(position.id);
-                      else next.delete(position.id);
-                      return next;
-                    });
-                  }}
-                />
-                {position.name}
-              </label>
+                  <span className="owb-groups__item-meta">
+                    {group.members.length} 人 · {timeShort(group.updatedAt)}
+                  </span>
+                </button>
+              </li>
             ))}
-            <AntButton
-              size="small"
-              type="primary"
-              disabled={draftMembers.size < 2 || creating || positions.length < 2}
-              onClick={() => void createGroup()}
-            >
-              创建群聊
-            </AntButton>
-          </div>
-        </details>
-      </div>
-
-      <div className="owb-groups__panel">
-        {selectedGroup === null ? (
-          <p className="owb-panel__notice">选择或新建一个群聊；@提及决定谁被显式路由。</p>
-        ) : (
+          </ul>
+          <details
+            className="owb-groups__create"
+            open={createOpen}
+            onToggle={(event) => setCreateOpen(event.currentTarget.open)}
+          >
+            <summary><Plus aria-hidden="true" size={13} />新建群聊（≥2 个岗位）</summary>
+            <div className="owb-groups__create-body">
+              {positions.map((position) => (
+                <label key={position.id} className="owb-groups__draft-member">
+                  <input
+                    type="checkbox"
+                    checked={draftMembers.has(position.id)}
+                    disabled={creating}
+                    onChange={(event) => {
+                      setDraftMembers((current) => {
+                        const next = new Set(current);
+                        if (event.target.checked) next.add(position.id);
+                        else next.delete(position.id);
+                        return next;
+                      });
+                    }}
+                  />
+                  {position.name}
+                </label>
+              ))}
+              <AntButton
+                size="small"
+                type="primary"
+                disabled={draftMembers.size < 2 || creating || positions.length < 2}
+                onClick={() => void createGroup()}
+              >
+                创建群聊
+              </AntButton>
+            </div>
+          </details>
+        </div>
+      }
+      panel={
+        <div className="owb-groups__panel">
+          {selectedGroup === null ? (
+            <p className="owb-panel__notice">选择或新建一个群聊；@提及决定谁被显式路由。</p>
+          ) : (
           <>
             <header className="owb-groups__panel-header">
               <div className="owb-groups__avatar-stack" aria-label={`群成员 ${selectedGroup.members.length} 人`}>
@@ -641,9 +643,52 @@ export function GroupsPanel({
                   : engineAvailability[engine].reason ?? `${engineLabel(engine)} 尚未就绪`}
               </p>
             </form>
-          </>
-        )}
-      </div>
+            </>
+          )}
+        </div>
+      }
+    />
+  );
+}
+
+function GroupsSplit({
+  list,
+  panel,
+}: {
+  list: ReactNode;
+  panel: ReactNode;
+}) {
+  const [stacked, setStacked] = useState(() =>
+    typeof window !== "undefined" ? window.matchMedia("(max-width: 680px)").matches : false,
+  );
+
+  useEffect(() => {
+    const media = window.matchMedia("(max-width: 680px)");
+    const sync = () => setStacked(media.matches);
+    sync();
+    media.addEventListener("change", sync);
+    return () => media.removeEventListener("change", sync);
+  }, []);
+
+  if (stacked) {
+    return (
+      <section className="owb-groups is-stacked" aria-label="群聊">
+        {list}
+        {panel}
+      </section>
+    );
+  }
+
+  return (
+    <section className="owb-groups" aria-label="群聊">
+      <Splitter className="owb-groups__split">
+        <Splitter.Panel defaultSize={240} min={120} className="owb-groups__pane">
+          {list}
+        </Splitter.Panel>
+        <Splitter.Panel min={200} className="owb-groups__pane">
+          {panel}
+        </Splitter.Panel>
+      </Splitter>
     </section>
   );
 }

@@ -269,25 +269,30 @@
 .owb-backups__item strong { color: var(--ui-foreground); font-size: 12px; }
 .owb-backups__item small { color: var(--ui-foreground-muted); font-size: 12px; }
 
-/* D4 evidence room — dense, local-first operations surface. */
+/* D4 evidence room — dense, local-first operations surface.
+ * 主区 flex:1 会把本节拉满视口高度；用列 flex + 仅 stream 吃剩余空间，
+ * 避免 hero / tabs 被拉伸出大块空白，也避免缩小窗口时裁切标题。 */
 .owb-reports {
-  display: grid;
+  display: flex;
+  flex-direction: column;
   gap: var(--ui-space-4, 16px);
   min-height: 0;
+  overflow: auto;
 }
 
 .owb-reports__hero {
   position: relative;
   display: flex;
+  flex: 0 0 auto;
   align-items: flex-start;
   justify-content: space-between;
-  overflow: hidden;
+  gap: 16px;
   border: 1px solid var(--ui-border-strong);
   border-radius: var(--ui-radius-lg, 14px);
   background:
     repeating-linear-gradient(90deg, transparent 0 39px, var(--ui-border) 40px),
     var(--ui-surface-inset);
-  padding: 20px 22px;
+  padding: 14px 18px;
 }
 
 .owb-reports__hero span {
@@ -298,12 +303,26 @@
   letter-spacing: .14em;
 }
 
-.owb-reports__hero h1 { margin: 4px 0; color: var(--ui-foreground); font-size: 24px; }
-.owb-reports__hero p { margin: 0; color: var(--ui-foreground-muted); font-size: 12px; }
-.owb-reports__hero > svg { color: var(--ui-primary); }
+.owb-reports__hero h1 {
+  margin: 4px 0;
+  color: var(--ui-foreground);
+  font-size: 20px;
+  line-height: 1.25;
+}
+
+.owb-reports__hero p {
+  margin: 0;
+  max-width: 62ch;
+  color: var(--ui-foreground-muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.owb-reports__hero > svg { flex: none; color: var(--ui-primary); }
 
 .owb-budget-deck {
   display: grid;
+  flex: 0 0 auto;
   grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
   gap: var(--ui-space-3, 12px);
 }
@@ -327,6 +346,8 @@
 
 .owb-report-tabs {
   display: flex;
+  flex: 0 0 auto;
+  flex-wrap: wrap;
   gap: 2px;
   border-bottom: 1px solid var(--ui-border);
 }
@@ -347,6 +368,11 @@
 .owb-report-tabs button[aria-pressed="true"] { border-bottom-color: var(--ui-primary); color: var(--ui-foreground); }
 .owb-report-tabs button span { border-radius: 999px; background: var(--ui-surface-inset); padding: 0 6px; font-size: 11px; }
 
+.owb-report-stream {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
 .owb-report-stream ol { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; }
 .owb-report-card { display: grid; grid-template-columns: 20px minmax(0, 1fr); gap: 10px; border: 1px solid var(--ui-border); border-radius: var(--ui-radius-md, 10px); background: var(--ui-surface); padding: 12px; }
 .owb-report-card > svg { color: var(--ui-primary); }
@@ -359,7 +385,14 @@
 .owb-report-card code { display: block; overflow-wrap: anywhere; color: var(--ui-foreground); font-size: 11px; white-space: pre-wrap; word-break: break-all; }
 .owb-report-chain { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 7px; }
 .owb-report-chain span { border-left: 1px solid var(--ui-warning); border-radius: 4px; background: var(--ui-warning-soft); color: var(--ui-foreground); padding: 3px 6px; font-size: 11px; }
-.owb-report-empty { border: 1px dashed var(--ui-border); border-radius: var(--ui-radius-md, 10px); color: var(--ui-foreground-muted); padding: 32px; text-align: center; }
+.owb-report-empty {
+  margin: 0;
+  border: 1px dashed var(--ui-border);
+  border-radius: var(--ui-radius-md, 10px);
+  color: var(--ui-foreground-muted);
+  padding: 20px 16px;
+  text-align: center;
+}
 
 /* ---- ② 预算/成本看板 (BudgetDashboard / BudgetDetailDrawer) ---- */
 .owb-budget-dash { display: grid; gap: 12px; }
@@ -538,7 +571,6 @@
 
 
 @media (max-width: 1080px) {
-  .owb-workspace-grid { grid-template-columns: minmax(240px, .65fr) minmax(380px, 1.35fr); }
   .owb-form-grid { grid-template-columns: 1fr; }
   .owb-form-grid__wide { grid-column: auto; }
 }
@@ -575,17 +607,10 @@
   font-size: var(--ui-text-sm, 13px);
 }
 
+/* 下半工作区容器：宽屏由 Splitter 接管列宽；窄屏见 .is-stacked。 */
 .owb-workspace-grid {
   min-height: 0;
-  display: grid;
-  grid-template-columns: minmax(280px, 0.72fr) minmax(420px, 1.28fr);
-  gap: var(--ui-space-3, 12px);
-  align-items: start;
-}
-
-.owb-workspace-grid > .owb-turn-panel {
-  height: calc(100vh - 116px);
-  min-height: 520px;
+  height: 100%;
 }
 
 /* D3 position conversation — a compact, evidence-first operations console.
@@ -593,8 +618,8 @@
 
 .owb-turn-panel {
   min-height: 0;
-  display: grid;
-  grid-template-rows: auto auto auto auto minmax(220px, 1fr) auto;
+  display: flex;
+  flex-direction: column;
   gap: var(--ui-space-3, 12px);
   border: 1px solid var(--ui-border);
   border-radius: var(--ui-radius-lg, 14px);
@@ -1337,14 +1362,6 @@
 }
 
 @media (max-width: 760px) {
-  .owb-workspace-grid {
-    grid-template-columns: 1fr;
-  }
-
-  .owb-workspace-grid > .owb-turn-panel {
-    height: auto;
-  }
-
   .owb-turn-panel__controls {
     grid-template-columns: 1fr;
   }
@@ -1361,11 +1378,56 @@
  * @路由 composer 四段式。 */
 
 .owb-groups {
-  display: grid;
-  grid-template-columns: 260px minmax(0, 1fr);
-  gap: 14px;
+  display: flex;
+  flex-direction: column;
   flex: 1;
   min-height: 0;
+  gap: 0;
+}
+
+.owb-groups.is-stacked {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 14px;
+}
+
+.owb-groups__split.ant-splitter {
+  flex: 1;
+  width: 100%;
+  min-height: 0;
+  height: 100%;
+  border: none;
+  background: transparent;
+  gap: 0;
+}
+
+.owb-groups__split.ant-splitter > .ant-splitter-bar {
+  flex: none;
+  width: 4px;
+}
+
+.owb-groups__pane {
+  display: flex !important;
+  flex-direction: column;
+  min-width: 0 !important;
+  min-height: 0 !important;
+  overflow: hidden;
+}
+
+.owb-groups__pane > .owb-groups__list,
+.owb-groups__pane > .owb-groups__panel {
+  flex: 1;
+  min-height: 0;
+  height: 100%;
+}
+
+.owb-groups__pane > .owb-groups__list {
+  overflow: auto;
+}
+
+.owb-groups__pane > .owb-groups__panel {
+  /* 保持 panel 自身 overflow:hidden，让 roster/timeline 内滚，避免双层滚动条 */
+  overflow: hidden;
 }
 
 /* ---------- 左列：会话列表（设计稿 .g-list） ---------- */
@@ -1971,8 +2033,8 @@
 /* design-system 的 .ui-app-shell/.ui-module-rail/.ui-sidebar 默认吃满 100vh；
    这里降级为吃满父格，给标题栏让出 40px。 */
 .owb-app .ui-app-shell {
-  /* 设计稿 .a-body: 54px 导轨 / 300px 侧栏 / 48px topbar。定在这里而不是
-     内联 style，@media 断点才能覆盖（内联优先级最高）。 */
+  /* 导轨/顶栏：设计稿 54 / 48。侧栏默认 300，运行时可被 App 内联
+     --ui-sidebar-width 覆盖（SidebarWidthHandle 拖拽）。 */
   --ui-rail-width: 54px;
   --ui-sidebar-width: 300px;
   --ui-topbar-height: 48px;
@@ -1983,6 +2045,35 @@
 .owb-app .ui-module-rail,
 .owb-app .ui-sidebar {
   height: 100%;
+}
+
+.owb-app .ui-app-shell__sidebar {
+  position: relative;
+}
+
+/* 组织树右缘拖拽条 */
+.owb-sidebar-resizer {
+  position: absolute;
+  top: 0;
+  right: -3px;
+  z-index: 40;
+  width: 6px;
+  height: 100%;
+  cursor: col-resize;
+  touch-action: none;
+  user-select: none;
+}
+
+.owb-sidebar-resizer:hover,
+.owb-sidebar-resizer.is-dragging,
+.owb-sidebar-resizer:focus-visible {
+  background: color-mix(in srgb, var(--ui-primary) 40%, transparent);
+  outline: none;
+}
+
+body.owb-sidebar-resizing {
+  cursor: col-resize;
+  user-select: none;
 }
 
 .owb-wintitle {
@@ -2386,27 +2477,11 @@
   font-weight: 600;
 }
 
-/* ---------- 主区：14px padding + 两栏 .92fr/1.14fr ---------- */
+/* ---------- 主区：14px padding ---------- */
 
 .owb-main {
   gap: var(--ui-space-3, 12px);
   padding: 14px;
-}
-
-.owb-workspace-grid {
-  height: 100%;
-  grid-template-columns: minmax(300px, 0.92fr) minmax(360px, 1.14fr);
-  gap: 14px;
-  align-items: stretch;
-}
-
-.owb-workspace-grid > * {
-  min-height: 0;
-}
-
-.owb-workspace-grid > .owb-turn-panel {
-  height: auto;
-  min-height: 0;
 }
 
 /* 不跟对话面板拉伸到同一高度——岗位卡内容（简介/预算声明/权限摘要/Context
@@ -2416,7 +2491,15 @@
 .owb-position-column {
   min-height: 0;
   align-self: start;
+  align-items: start;
+  justify-items: stretch;
   grid-template-rows: auto auto;
+}
+
+.owb-position-column > .ui-org-position-card {
+  width: 100%;
+  height: auto;
+  align-self: start;
 }
 
 /* ---------- 通用面板（取代 antd Card 作为内容卡壳层） ---------- */
@@ -3055,18 +3138,22 @@
  * 组织页必须在窄窗不挤、宽窗不空。放在文件末尾，覆盖前面各 @media 的旧口径。
  * -------------------------------------------------------------------------*/
 
-/* 宽窗：内容区给一个可读上限并居中，避免超宽屏下两栏被拉成大片空白。 */
-.owb-main > .owb-workspace-grid,
-.owb-main > .owb-reports,
-.owb-main > .owb-groups {
+/* 宽窗：上报保留可读上限；组织页/群聊铺满主区，避免左右留白。 */
+.owb-main > .owb-reports {
   width: 100%;
   max-width: 1680px;
   margin-inline: auto;
 }
 
+.owb-main > .owb-org-module,
+.owb-main > .owb-groups {
+  width: 100%;
+  max-width: none;
+  margin-inline: 0;
+}
+
 /* 竖向填充链：.ui-app-shell__main 是 grid 的 1fr 行（高度确定），但 .owb-main
-   自身没有高度，于是 .owb-workspace-grid 的 height:100% 落空、两栏只有内容
-   高度，窗口下半部整片空着（"组织页很空"的根因）。逐级 flex:1 打通。 */
+   自身没有高度，于是组织页高度落空、下半区只有内容高度。逐级 flex:1 打通。 */
 .owb-app .ui-app-shell__main {
   display: flex;
   flex-direction: column;
@@ -3078,44 +3165,24 @@
   min-height: 0;
 }
 
-.owb-main > .owb-workspace-grid,
+.owb-main > .owb-org-module,
+.owb-main > .owb-reports,
 .owb-main > .owb-groups,
 .owb-main > .owb-docs-module {
   flex: 1;
   min-height: 0;
 }
 
-.owb-workspace-grid {
-  align-items: stretch;
-}
-
-.owb-position-column {
-  gap: var(--ui-space-2, 8px);
-}
-
 .owb-position-column > .ui-org-position-card {
+  width: 100%;
+  height: auto;
   min-height: 0;
+  align-self: start;
 }
 
 @media (max-width: 980px) {
   .owb-app .ui-app-shell {
     --ui-rail-width: 48px;
-    --ui-sidebar-width: 252px;
-  }
-
-  .owb-workspace-grid {
-    grid-template-columns: 1fr;
-  }
-
-  /* 单栏堆叠时给两栏各自可用的最小高度；选择器特异性必须对齐前面的
-     `.owb-workspace-grid > .owb-turn-panel { min-height: 0 }`，否则被压掉。 */
-  .owb-workspace-grid > .owb-position-column,
-  .owb-workspace-grid > .owb-turn-panel {
-    min-height: 380px;
-  }
-
-  .owb-groups {
-    grid-template-columns: 220px minmax(0, 1fr);
   }
 
   /* 单栏堆叠：花名册退成横向名条，消息流保住剩余高度。 */
@@ -3138,12 +3205,12 @@
     display: none;
   }
 
-  .owb-main {
-    padding: 10px;
+  .owb-sidebar-resizer {
+    display: none;
   }
 
-  .owb-groups {
-    grid-template-columns: minmax(0, 1fr);
+  .owb-main {
+    padding: 10px;
   }
 
   .owb-groups__panel-sub {
@@ -3157,8 +3224,10 @@
 
 /* 竖向压缩（窗口被压扁）：面板不再抢固定最小高度，交给滚动。 */
 @media (max-height: 720px) {
-  .owb-workspace-grid > .owb-position-column,
-  .owb-workspace-grid > .owb-turn-panel {
+  .owb-workspace-grid.is-stacked > .owb-position-column,
+  .owb-workspace-grid.is-stacked > .owb-turn-panel,
+  .owb-workspace-grid__pane > .owb-position-column,
+  .owb-workspace-grid__pane > .owb-turn-panel {
     min-height: 0;
   }
 
@@ -3217,23 +3286,113 @@
  * 走线色取 --ui-border-strong（两主题都有定义）；卡面沿用暖纸色阶与
  * 6/10 圆角、120ms ease-out 动效纪律（与 DS-73-001 同口径）。 */
 
-/* 组织页主区包壳：组织图在上（收缩），原工作区网格在下（占满剩余高）。 */
+/* 组织页主区包壳：垂直 Splitter（组织图 ↔ 下半工作区）。 */
 .owb-org-module {
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 0;
   height: 100%;
   min-height: 0;
 }
 
-.owb-org-module > .owb-org-chart {
-  flex: none;
+.owb-org-module__split.ant-splitter {
+  flex: 1;
+  width: 100%;
+  min-height: 0;
+  height: 100%;
+  border: none;
+  background: transparent;
+  gap: 0;
 }
 
-.owb-org-module > .owb-workspace-grid {
-  height: auto;
+.owb-org-module__split.ant-splitter > .ant-splitter-bar {
+  flex: none;
+  height: 4px;
+}
+
+.owb-org-module__pane {
+  display: flex !important;
+  flex-direction: column;
+  min-width: 0 !important;
+  min-height: 0 !important;
+  overflow: hidden;
+}
+
+.owb-org-module__pane > .owb-org-chart {
   flex: 1;
   min-height: 0;
+  height: 100%;
+}
+
+.owb-org-module__pane > .owb-org-chart .owb-org-chart__body {
+  flex: 1;
+  min-height: 0;
+}
+
+.owb-org-module__pane > .owb-workspace-grid {
+  flex: 1;
+  min-height: 0;
+  height: 100%;
+}
+
+/* Splitter：吃满下半区高度，去掉旧 grid 的 14px gap，分隔条收窄。 */
+.owb-workspace-grid.ant-splitter {
+  display: flex;
+  width: 100%;
+  min-height: 0;
+  border: none;
+  background: transparent;
+  gap: 0;
+}
+
+.owb-workspace-grid.ant-splitter > .ant-splitter-bar {
+  flex: none;
+  width: 4px;
+}
+
+.owb-workspace-grid__pane {
+  display: flex !important;
+  flex-direction: column;
+  min-width: 0 !important;
+  min-height: 0 !important;
+  overflow: hidden;
+}
+
+/* #99：岗位列按内容高度，不跟对话栏硬拉齐；对话栏吃满剩余高度。 */
+.owb-workspace-grid__pane > .owb-position-column {
+  flex: 0 0 auto;
+  align-self: stretch;
+  width: 100%;
+  height: auto;
+  max-height: 100%;
+  min-height: 0;
+  overflow: auto;
+}
+
+.owb-workspace-grid__pane > .owb-turn-panel {
+  flex: 1 1 auto;
+  min-height: 0;
+  height: 100%;
+  overflow: hidden;
+}
+
+.owb-workspace-grid.is-stacked {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 14px;
+  align-items: start;
+  min-height: 0;
+  height: 100%;
+  overflow: auto;
+}
+
+.owb-workspace-grid.is-stacked > .owb-position-column {
+  min-height: 0;
+  height: auto;
+}
+
+.owb-workspace-grid.is-stacked > .owb-turn-panel {
+  min-height: 280px;
 }
 
 .owb-org-chart__head {
@@ -3288,11 +3447,10 @@
   font-weight: 700;
 }
 
-/* 不设固定高度上限——组织图按实际深度自然撑开，深层组织不再被硬顶掉根节点；
- * 选中岗位变化时会自动滚动定位（见 OrgChart.tsx 的 scrollIntoView 效果）。
- * 想省空间就用头部折叠按钮，而不是靠系统偷偷裁掉内容。 */
+/* 组织图在竖直 Splitter 上格内滚动；折叠时整段 body 隐藏（#98/#99）。
+ * 不设固定高度上限——深层组织靠面板内滚动，选中变化时 scrollIntoView。 */
 .owb-org-chart__body {
-  overflow: visible;
+  overflow: auto;
   padding: 4px 14px 14px;
 }
 
