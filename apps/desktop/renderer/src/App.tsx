@@ -953,18 +953,41 @@ export function App() {
     >
       <div className="owb-main">
         {sseState === "connecting" ? (
-          <Alert type="info" showIcon role="status" title="事件流重连中…" />
+          <Alert type="info" showIcon closable role="status" title="事件流重连中…" />
         ) : null}
         {health && !engineOk ? (
-          <Alert type="warning" showIcon role="status" title={health.engine?.nextStep ?? "引擎不可用"} />
+          <Alert type="warning" showIcon closable role="status" title={health.engine?.nextStep ?? "引擎不可用"} />
         ) : null}
         {turnError ? (
-          <Alert type="warning" showIcon role="alert" title={turnError} />
+          <Alert
+            type="warning"
+            showIcon
+            closable
+            onClose={() => setTurnError(null)}
+            role="alert"
+            title={turnError}
+          />
         ) : null}
         {orgFeedback ? (
-          <Alert type={orgFeedback.tone === "warn" ? "warning" : "info"} showIcon role={orgFeedback.tone === "warn" ? "alert" : "status"} title={orgFeedback.text} />
+          <Alert
+            type={orgFeedback.tone === "warn" ? "warning" : "info"}
+            showIcon
+            closable
+            onClose={() => setOrgFeedback(null)}
+            role={orgFeedback.tone === "warn" ? "alert" : "status"}
+            title={orgFeedback.text}
+          />
         ) : null}
-        {reportsError ? <Alert type="warning" showIcon role="alert" title={reportsError} /> : null}
+        {reportsError ? (
+          <Alert
+            type="warning"
+            showIcon
+            closable
+            onClose={() => setReportsError(null)}
+            role="alert"
+            title={reportsError}
+          />
+        ) : null}
         {activeModule === "reports" ? (
           <ReportsCenter
             reports={reports}
