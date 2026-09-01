@@ -1,5 +1,5 @@
 {
-  "$schema": "https://raw.githubusercontent.com/fullstack-ai-infra/digital-employee/main/configs/workspace-org.schema.json",
+  "$schema": "https://raw.githubusercontent.com/bytefolk/digital-employee/main/configs/workspace-org.schema.json",
   "schemaVersion": "workspace-org.v1",
   "business": "oss-maintainer",
   "description": "Open-source maintainer organization: a repo-owner lead with issue research, release engineering, and community operations positions.",

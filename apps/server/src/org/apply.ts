@@ -528,7 +528,7 @@ export interface SkeletonPosition {
  */
 export function buildPositionSkeletonFiles(role: SkeletonPosition): Map<string, string> {
   const employee: Record<string, unknown> = {
-    $schema: "https://raw.githubusercontent.com/fullstack-ai-infra/digital-employee/main/configs/employee-package.schema.json",
+    $schema: "https://raw.githubusercontent.com/bytefolk/digital-employee/main/configs/employee-package.schema.json",
     schemaVersion: "employee-package.v1alpha1",
     name: role.id,
     version: "0.1.0",

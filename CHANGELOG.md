@@ -41,6 +41,7 @@
 
 ### Changed
 
+- GitHub repository and raw-content coordinates now target the `bytefolk` organization while the published `@fullstack-ai-infra/*` npm scope and desktop application ID remain unchanged.
 - `DigitalEmployeeCliDriver` 调用翻转为 `digital-employee org apply <workspace> --json`；成功后控制面从 `.digital-employee/org.json` 重载应用态，`org.updated.updatedAt` 与引擎时间戳对齐。
 - oss-maintainer 示例改为目录表达汇报线的嵌套布局，并为每个岗位增加 `budget.json`。
 - 桌面壳 IPC 白名单新增渲染层所需通道（preload）。
