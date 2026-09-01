@@ -98,6 +98,7 @@ export async function startTestServer(
       port: 0,
       token: TEST_TOKEN,
       cliCommand: "digital-employee",
+      bundledElectronEngine: false,
       contextCliCommand: "context",
       serverVersion: "0.0.0-test",
     },

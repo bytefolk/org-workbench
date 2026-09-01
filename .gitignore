@@ -3,6 +3,7 @@ dist/
 *.tsbuildinfo
 .DS_Store
 *.log
+/release/
 
 # Runtime state inside an opened workspace (never committed)
 .digital-employee/staging/

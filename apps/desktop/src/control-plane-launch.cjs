@@ -1,6 +1,16 @@
 const { spawn } = require("node:child_process");
 const path = require("node:path");
 
+function engineRuntimeEnvironment(env, bundledEngineCommand) {
+  const operatorEngineCommand = env.ORG_WORKBENCH_DIGITAL_EMPLOYEE_CLI;
+  return {
+    ORG_WORKBENCH_DIGITAL_EMPLOYEE_CLI:
+      operatorEngineCommand ?? bundledEngineCommand,
+    ORG_WORKBENCH_INTERNAL_BUNDLED_ELECTRON_ENGINE:
+      operatorEngineCommand === undefined ? "1" : "0",
+  };
+}
+
 /** Convert a Windows path (C:\x\y) to a WSL path (/mnt/c/x/y). */
 function winToWslPath(p) {
   const m = /^([A-Za-z]):[\\/](.*)$/.exec(p);
@@ -44,4 +54,9 @@ function createControlPlaneChild({ serverEntry, env }) {
   });
 }
 
-module.exports = { winToWslPath, controlPlaneMode, createControlPlaneChild };
+module.exports = {
+  controlPlaneMode,
+  createControlPlaneChild,
+  engineRuntimeEnvironment,
+  winToWslPath,
+};

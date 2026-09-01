@@ -3,6 +3,7 @@ import type { ServerResponse } from "node:http";
 import type { HealthResponse } from "@org-workbench/shared";
 import type { ControlPlaneContext } from "../context.js";
 import { probeEngine } from "../engine/probe.js";
+import { runtimeExecutableEnvironment } from "../engine/process-environment.js";
 import { sendJson } from "../http.js";
 import { resolveQoderExecutable } from "../qoder-binary.js";
 
@@ -80,6 +81,10 @@ export function probeQoderLocalBinary(
   try {
     probe = spawnSync(command, ["--version"], {
       encoding: "utf8",
+      // The version probe is a true Qoder descendant. It needs only process
+      // startup paths/locales, never Electron mode, boot state, provider
+      // credentials, internal markers or arbitrary server environment.
+      env: runtimeExecutableEnvironment(env),
       timeout: timeoutMs,
       maxBuffer: 64 * 1024,
       // SIGTERM is catchable and makes spawnSync wait past its timeout. The
@@ -119,7 +124,14 @@ export function probeClaudeLocalBinary(env: NodeJS.ProcessEnv, timeoutMs = 3000)
   const command = (env.DIGITAL_EMPLOYEE_CLAUDE_COMMAND ?? "").trim() || "claude";
   let probe: ReturnType<typeof spawnSync>;
   try {
-    probe = spawnSync(command, ["--version"], { encoding: "utf8", timeout: timeoutMs, shell: false, windowsHide: true });
+    probe = spawnSync(command, ["--version"], {
+      encoding: "utf8",
+      env: runtimeExecutableEnvironment(env),
+      killSignal: "SIGKILL",
+      timeout: timeoutMs,
+      shell: false,
+      windowsHide: true,
+    });
   } catch {
     return { installed: false, version: null, supported: false };
   }
@@ -209,7 +221,9 @@ export function hostHealth({
 }
 
 export async function handleHealth(ctx: ControlPlaneContext, res: ServerResponse): Promise<void> {
-  const probe = await probeEngine(ctx.config.cliCommand);
+  const probe = await probeEngine(ctx.config.cliCommand, 5000, {
+    bundledElectronEngine: ctx.config.bundledElectronEngine,
+  });
   const claudeLocal = probeClaudeLocalBinary(process.env);
   const qoderLocal = isBundledQoderEngine(probe.version)
     ? probeQoderLocalBinary(process.env)

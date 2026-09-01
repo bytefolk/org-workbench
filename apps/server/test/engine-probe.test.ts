@@ -3,6 +3,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
+import { resolveServerConfig } from "../src/config.js";
 import { probeEngine, splitCommand } from "../src/engine/probe.js";
 
 // #78 REQ-001 — splitCommand must survive absolute paths containing spaces
@@ -44,6 +45,20 @@ test("splitCommand collapses runs of whitespace and empty commands stay stable",
   assert.deepEqual(empty.prefix, []);
 });
 
+test("server config freezes the bundled boundary only for both exact internal signals", () => {
+  assert.equal(resolveServerConfig({
+    ELECTRON_RUN_AS_NODE: "1",
+    ORG_WORKBENCH_INTERNAL_BUNDLED_ELECTRON_ENGINE: "1",
+  }, []).bundledElectronEngine, true);
+  for (const env of [
+    { ELECTRON_RUN_AS_NODE: "true", ORG_WORKBENCH_INTERNAL_BUNDLED_ELECTRON_ENGINE: "1" },
+    { ELECTRON_RUN_AS_NODE: "1", ORG_WORKBENCH_INTERNAL_BUNDLED_ELECTRON_ENGINE: "0" },
+    { ELECTRON_RUN_AS_NODE: "1" },
+  ]) {
+    assert.equal(resolveServerConfig(env, []).bundledElectronEngine, false);
+  }
+});
+
 // #78 REQ-002 — probeEngine's nextStep must distinguish the three failure
 // modes an operator sees (OS refused to launch, spawned but broken, timed out)
 // so a "not reachable" message no longer collapses "the file does not exist"
@@ -79,5 +94,74 @@ test("probeEngine reports the spawn-then-broken case distinctly from ENOENT", as
     );
   } finally {
     await fs.rm(root, { recursive: true, force: true });
+  }
+});
+
+test("health engine probe isolates operator commands and marks only the bundled Electron adapter", async (t) => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "engine-probe-env-"));
+  const fixture = path.join(root, "probe-env.mjs");
+  const log = path.join(root, "probe-env.jsonl");
+  t.after(() => fs.rm(root, { recursive: true, force: true }));
+  await fs.writeFile(
+    fixture,
+    `import fs from "node:fs";
+const argv = process.argv.slice(2);
+const log = argv.shift();
+fs.appendFileSync(log, JSON.stringify({ argv, environment: process.env }) + "\\n");
+if (argv[0] === "--version") process.exit(3);
+process.stdout.write("digital-employee 1.2.3\\n");
+`,
+    "utf8",
+  );
+  const sourceEnvironment: NodeJS.ProcessEnv = {
+    ...process.env,
+    ELECTRON_RUN_AS_NODE: "1",
+    ORG_WORKBENCH_BOOT_TOKEN: "server-only-secret",
+    ORG_WORKBENCH_INTERNAL_BUNDLED_ELECTRON_ENGINE: "1",
+    OWB_OPERATOR_SETTING: "must-not-cross",
+    QODER_PERSONAL_ACCESS_TOKEN: "provider-secret",
+    CONTEXT_RUNTIME_TOKEN: "context-secret",
+    ARBITRARY_SECRET: "arbitrary-secret",
+  };
+  const command = `${process.execPath} ${fixture} ${log}`;
+
+  const readRecords = async (): Promise<Array<{ argv: string[]; environment: Record<string, string> }>> =>
+    (await fs.readFile(log, "utf8"))
+      .trim()
+      .split("\n")
+      .map((line) => JSON.parse(line) as { argv: string[]; environment: Record<string, string> });
+
+  const operator = await probeEngine(command, 30_000, { sourceEnvironment });
+  assert.deepEqual(operator, { available: true, version: "1.2.3" });
+  let records = await readRecords();
+  assert.equal(records.length, 2, "version and help probes use the isolated environment");
+  for (const record of records) {
+    assert.equal("ELECTRON_RUN_AS_NODE" in record.environment, false);
+    assert.equal("ORG_WORKBENCH_INTERNAL_BUNDLED_ELECTRON_ENGINE" in record.environment, false);
+    assert.equal("ORG_WORKBENCH_BOOT_TOKEN" in record.environment, false);
+    assert.equal("OWB_OPERATOR_SETTING" in record.environment, false);
+    assert.equal("QODER_PERSONAL_ACCESS_TOKEN" in record.environment, false);
+    assert.equal("CONTEXT_RUNTIME_TOKEN" in record.environment, false);
+    assert.equal("ARBITRARY_SECRET" in record.environment, false);
+    assert.equal(record.environment.HOME, sourceEnvironment.HOME);
+  }
+
+  await fs.writeFile(log, "", "utf8");
+  const bundled = await probeEngine(command, 30_000, {
+    bundledElectronEngine: true,
+    sourceEnvironment,
+  });
+  assert.deepEqual(bundled, { available: true, version: "1.2.3" });
+  records = await readRecords();
+  assert.equal(records.length, 2);
+  for (const record of records) {
+    assert.equal(record.environment.ELECTRON_RUN_AS_NODE, "1");
+    assert.equal("ORG_WORKBENCH_INTERNAL_BUNDLED_ELECTRON_ENGINE" in record.environment, false);
+    assert.equal("ORG_WORKBENCH_BOOT_TOKEN" in record.environment, false);
+    assert.equal("OWB_OPERATOR_SETTING" in record.environment, false);
+    assert.equal("QODER_PERSONAL_ACCESS_TOKEN" in record.environment, false);
+    assert.equal("CONTEXT_RUNTIME_TOKEN" in record.environment, false);
+    assert.equal("ARBITRARY_SECRET" in record.environment, false);
+    assert.equal(record.environment.HOME, sourceEnvironment.HOME);
   }
 });

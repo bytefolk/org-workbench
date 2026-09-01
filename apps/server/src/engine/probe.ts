@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import { engineCliEnvironment } from "./process-environment.js";
 
 export interface EngineProbe {
   available: boolean;
@@ -81,7 +82,12 @@ interface RunOutcome {
   timedOut?: boolean;
 }
 
-function runOnce(bin: string, args: string[], timeoutMs: number): Promise<RunOutcome> {
+function runOnce(
+  bin: string,
+  args: string[],
+  timeoutMs: number,
+  environment: NodeJS.ProcessEnv,
+): Promise<RunOutcome> {
   return new Promise((resolve) => {
     let settled = false;
     const finish = (value: RunOutcome): void => {
@@ -92,7 +98,10 @@ function runOnce(bin: string, args: string[], timeoutMs: number): Promise<RunOut
     };
     let child: ReturnType<typeof spawn>;
     try {
-      child = spawn(bin, args, { stdio: ["ignore", "pipe", "pipe"] });
+      child = spawn(bin, args, {
+        env: environment,
+        stdio: ["ignore", "pipe", "pipe"],
+      });
     } catch (error) {
       finish({ code: null, out: "", launchError: error as NodeJS.ErrnoException });
       return;
@@ -123,16 +132,29 @@ function runOnce(bin: string, args: string[], timeoutMs: number): Promise<RunOut
  * `--help` instead, so fall back to it and extract a semver when present.
  * Version stays optional — availability is the contracted signal.
  */
-export async function probeEngine(command: string, timeoutMs = 5000): Promise<EngineProbe> {
-  const { bin, prefix } = splitCommand(command);
+export interface EngineProbeOptions {
+  bundledElectronEngine?: boolean;
+  sourceEnvironment?: NodeJS.ProcessEnv;
+}
 
-  const versionRun = await runOnce(bin, [...prefix, "--version"], timeoutMs);
+export async function probeEngine(
+  command: string,
+  timeoutMs = 5000,
+  options: EngineProbeOptions = {},
+): Promise<EngineProbe> {
+  const { bin, prefix } = splitCommand(command);
+  const environment = engineCliEnvironment(
+    options.sourceEnvironment ?? process.env,
+    options.bundledElectronEngine === true,
+  );
+
+  const versionRun = await runOnce(bin, [...prefix, "--version"], timeoutMs, environment);
   if (versionRun.code === 0 && versionRun.out.trim().length > 0) {
     const lines = versionRun.out.trim().split("\n");
     return { available: true, version: lines[lines.length - 1] };
   }
 
-  const helpRun = await runOnce(bin, [...prefix, "--help"], timeoutMs);
+  const helpRun = await runOnce(bin, [...prefix, "--help"], timeoutMs, environment);
   if (helpRun.code === 0) {
     const semver = /\d+\.\d+\.\d+/.exec(helpRun.out) ?? /\d+\.\d+\.\d+/.exec(versionRun.out);
     return semver ? { available: true, version: semver[0] } : { available: true };

@@ -12,7 +12,7 @@ Requirement decision: Issue #104 R2
 - Node `24.13.0`
 - Qoder CLI `1.1.31`
 - bundled engine `qoder-engine 0.1.0`
-- normal inherited user PATH; packaged Finder login-PATH restoration is the follow-up consumer #106, not a #104 completion dependency
+- normal inherited user PATH; packaged Finder login-PATH restoration is consumed by the #110 macOS arm64 foundation partial, not a #104 completion dependency
 
 No account state, credential store, environment value, absolute user path, boot token, raw private prompt, or model response was printed or persisted as evidence. The live prompt and expected response used only the fixed public probe tokens shown below.
 
