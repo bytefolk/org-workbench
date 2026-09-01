@@ -533,6 +533,12 @@ describe("App runtime bridge", () => {
     expect(screen.getByText("sha256:evidence")).toBeInTheDocument();
     expect(screen.queryByText("sensitive raw input")).not.toBeInTheDocument();
     expect(screen.queryByText("sensitive raw output")).not.toBeInTheDocument();
+    // #112: a durable session record is opaque to the renderer; once the
+    // sanitized evidence reaches reports.v1 it must also populate the derived timeline.
+    fireEvent.click(screen.getByRole("button", { name: /时间线/ }));
+    expect(screen.getByLabelText("Turn / 审计时间线")).toBeInTheDocument();
+    expect(screen.getByText("共 3 条")).toBeInTheDocument();
+    expect(screen.getByText("turn-1")).toBeInTheDocument();
   });
 });
 

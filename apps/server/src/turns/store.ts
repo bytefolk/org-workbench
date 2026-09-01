@@ -8,12 +8,23 @@ import {
   errorCodes,
   isPositionId,
 } from "@org-workbench/shared";
-import type { TurnEngine, TurnHistory, TurnRecord } from "@org-workbench/shared";
+import type { TurnEngine, TurnHistory, TurnRecord, WorkbenchSession } from "@org-workbench/shared";
 import type { EngineEvent, TurnTerminalReason } from "@org-workbench/shared";
-import { assertSessionId } from "../sessions/store.js";
+import { assertSessionId, readAuthoritativeSessionIndex } from "../sessions/store.js";
+import { StableReadError, readStableBoundedFile } from "../stable-read.js";
 
 const STATE_ROOT = path.join(".digital-employee", "workbench", "conversations");
+const SESSION_CONVERSATIONS_ROOT = path.join(
+  ".digital-employee",
+  "workbench",
+  "sessions",
+  "conversations",
+);
 const MAX_TURNS_PER_POSITION = 256;
+const MAX_REPORT_CONVERSATIONS = 1024;
+const MAX_REPORT_RECORDS = MAX_REPORT_CONVERSATIONS * MAX_TURNS_PER_POSITION;
+const MAX_TURN_TEMP_FILES = MAX_TURNS_PER_POSITION;
+const MAX_TURN_DIRECTORY_ENTRIES = MAX_TURNS_PER_POSITION + MAX_TURN_TEMP_FILES;
 const MAX_TURN_ID_LENGTH = 256;
 // A one-megachar engine result is represented in model.delta, the terminal,
 // and the record's output field. Keep that upstream boundary persistable
@@ -78,6 +89,23 @@ function isBoundedTurnId(value: unknown): value is string {
     value.trim().length > 0 &&
     value.length <= MAX_TURN_ID_LENGTH
   );
+}
+
+function isAtomicTurnTemporaryName(name: string): boolean {
+  if (!name.startsWith(".") || !name.endsWith(".tmp")) return false;
+  const stem = name.slice(1, -4);
+  if (stem.length <= 37 || stem.at(-37) !== ".") return false;
+  const nonce = stem.slice(-36);
+  try {
+    assertSessionId(nonce);
+  } catch {
+    return false;
+  }
+  const target = stem.slice(0, -37);
+  if (!target.endsWith(".json")) return false;
+  const turnId = target.slice(0, -5);
+  return isBoundedTurnId(turnId) && !turnId.includes("/") &&
+    !turnId.includes("\\") && !turnId.includes("\0");
 }
 
 function turnRecordFile(workspace: string, positionId: string, turnId: unknown): string {
@@ -215,12 +243,30 @@ function sessionTurnRecordFile(workspace: string, sessionId: string, turnId: unk
   return file;
 }
 
-async function readJson(file: string, maxBytes: number): Promise<unknown> {
-  const stat = await fs.lstat(file);
-  if (!stat.isFile() || stat.isSymbolicLink() || stat.size > maxBytes) {
-    throw storageError("local state record is not a bounded regular file");
+interface BoundedJsonRead {
+  value: unknown;
+  bytes: number;
+}
+
+async function readBoundedStateFile(file: string, maxBytes: number) {
+  try {
+    return await readStableBoundedFile(file, maxBytes);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") throw error;
+    if (error instanceof StableReadError) {
+      throw storageError("local state record is not a stable bounded regular file");
+    }
+    throw storageError("local state record is unreadable");
   }
-  return JSON.parse(await fs.readFile(file, "utf8")) as unknown;
+}
+
+async function readJson(file: string, maxBytes: number): Promise<BoundedJsonRead> {
+  const stable = await readBoundedStateFile(file, maxBytes);
+  try {
+    return { value: JSON.parse(stable.buffer.toString("utf8")) as unknown, bytes: stable.bytes };
+  } catch {
+    throw storageError("local state record is not valid JSON");
+  }
 }
 
 async function preparePositionDirectories(workspace: string, positionId: string): Promise<void> {
@@ -444,6 +490,18 @@ function compareRfc3339Instants(left: string, right: string): number {
   const leftInstant = parseRfc3339Instant(left)!;
   const rightInstant = parseRfc3339Instant(right)!;
   return leftInstant < rightInstant ? -1 : leftInstant > rightInstant ? 1 : 0;
+}
+
+function compareCodeUnitOrdinal(left: string, right: string): number {
+  return left < right ? -1 : left > right ? 1 : 0;
+}
+
+export function compareReportRecords(left: TurnRecord, right: TurnRecord): number {
+  const updated = compareRfc3339Instants(right.updatedAt, left.updatedAt);
+  if (updated !== 0) return updated;
+  const turn = compareCodeUnitOrdinal(right.turnId, left.turnId);
+  if (turn !== 0) return turn;
+  return compareCodeUnitOrdinal(right.conversationId, left.conversationId);
 }
 
 function isBoundedCodePoints(value: string, limit: number): boolean {
@@ -814,12 +872,12 @@ export class TurnStore {
       let raw: unknown;
       try {
         const file = path.join(turnsDir, name);
-        const stat = await fs.lstat(file);
-        historyBytes += stat.size;
+        const read = await readJson(file, MAX_TURN_RECORD_BYTES);
+        historyBytes += read.bytes;
         if (historyBytes > MAX_HISTORY_BYTES) {
           throw storageError("local turn history exceeds the bounded total size");
         }
-        raw = await readJson(file, MAX_TURN_RECORD_BYTES);
+        raw = read.value;
       } catch {
         throw storageError("local turn history contains an unreadable record");
       }
@@ -853,7 +911,7 @@ export class TurnStore {
     }
     turns.sort((left, right) =>
       compareRfc3339Instants(left.createdAt, right.createdAt) === 0
-        ? left.turnId.localeCompare(right.turnId, "en")
+        ? compareCodeUnitOrdinal(left.turnId, right.turnId)
         : compareRfc3339Instants(left.createdAt, right.createdAt),
     );
     return {
@@ -890,12 +948,12 @@ export class TurnStore {
       let raw: unknown;
       try {
         const file = path.join(turnsDir, name);
-        const stat = await fs.lstat(file);
-        historyBytes += stat.size;
+        const read = await readJson(file, MAX_TURN_RECORD_BYTES);
+        historyBytes += read.bytes;
         if (historyBytes > MAX_HISTORY_BYTES) {
           throw storageError("local session turn history exceeds the bounded total size");
         }
-        raw = await readJson(file, MAX_TURN_RECORD_BYTES);
+        raw = read.value;
       } catch {
         throw storageError("local session turn history contains an unreadable record");
       }
@@ -929,7 +987,7 @@ export class TurnStore {
     }
     turns.sort((left, right) =>
       compareRfc3339Instants(left.createdAt, right.createdAt) === 0
-        ? left.turnId.localeCompare(right.turnId, "en")
+        ? compareCodeUnitOrdinal(left.turnId, right.turnId)
         : compareRfc3339Instants(left.createdAt, right.createdAt),
     );
     return {
@@ -943,66 +1001,141 @@ export class TurnStore {
   /** Read existing turn facts for D4 without creating conversations or
    * recovering state. Any malformed/symlinked source rejects the whole view. */
   async reportRecords(workspace: string): Promise<TurnRecord[]> {
-    const root = path.join(workspace, STATE_ROOT);
-    let positionEntries;
-    try {
-      await assertRealDirectoryChain(workspace, STATE_ROOT.split(path.sep));
-      positionEntries = await fs.readdir(root, { withFileTypes: true });
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code === "ENOENT") return [];
-      throw storageError("local reports turn root is unreadable");
-    }
-    if (positionEntries.length > 1024) {
-      throw storageError("local reports position count exceeds its bound");
-    }
     const records: TurnRecord[] = [];
+    const recordIdentities = new Set<string>();
     let totalBytes = 0;
-    for (const entry of positionEntries) {
-      if (!entry.isDirectory() || entry.isSymbolicLink() || !isPositionId(entry.name)) {
-        throw storageError("local reports turn root contains an unsafe position");
+    const chargeStableBytes = (bytes: number): void => {
+      totalBytes += bytes;
+      if (totalBytes > MAX_HISTORY_BYTES) {
+        throw storageError("local reports turn data exceeds its bounded total size");
       }
-      const positionId = entry.name;
-      const dir = conversationDir(workspace, positionId);
-      await assertRealDirectory(dir, "local reports position path is unsafe");
-      const metadata = await readJson(path.join(dir, "conversation.json"), MAX_METADATA_BYTES);
-      if (!isConversationMetadata(metadata) || metadata.positionId !== positionId) {
-        throw storageError("local reports conversation metadata is invalid");
+    };
+    let conversationCount = 0;
+    let recordCount = 0;
+    let authoritativeSessions: ReadonlyMap<string, WorkbenchSession> | undefined;
+    const sources = [
+      { kind: "position" as const, root: STATE_ROOT },
+      { kind: "session" as const, root: SESSION_CONVERSATIONS_ROOT },
+    ];
+
+    for (const source of sources) {
+      const root = path.join(workspace, source.root);
+      let conversationEntries;
+      try {
+        await assertRealDirectoryChain(workspace, source.root.split(path.sep));
+        conversationEntries = await fs.readdir(root, { withFileTypes: true });
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code === "ENOENT") continue;
+        throw storageError("local reports turn root is unreadable");
       }
-      const turnsDir = path.join(dir, "turns");
-      await assertRealDirectory(turnsDir, "local reports turn directory is unsafe");
-      const turnEntries = await fs.readdir(turnsDir, { withFileTypes: true });
-      const jsonEntries = turnEntries.filter((turnEntry) => turnEntry.name.endsWith(".json"));
-      if (jsonEntries.length > MAX_TURNS_PER_POSITION) {
-        throw storageError("local reports turn count exceeds its bound");
+      conversationCount += conversationEntries.length;
+      if (conversationCount > MAX_REPORT_CONVERSATIONS) {
+        throw storageError("local reports conversation count exceeds its bound");
       }
-      for (const turnEntry of turnEntries) {
-        if (turnEntry.name.startsWith(".") && turnEntry.name.endsWith(".tmp")) continue;
-        if (!turnEntry.isFile() || turnEntry.isSymbolicLink() || !turnEntry.name.endsWith(".json")) {
-          throw storageError("local reports turn directory contains an unsafe record");
+      if (source.kind === "session" && conversationEntries.length > 0) {
+        authoritativeSessions = (await readAuthoritativeSessionIndex(workspace)).sessions;
+      }
+
+      for (const entry of conversationEntries) {
+        if (!entry.isDirectory() || entry.isSymbolicLink()) {
+          throw storageError("local reports turn root contains an unsafe conversation");
         }
-        const file = path.join(turnsDir, turnEntry.name);
-        const stat = await fs.lstat(file);
-        totalBytes += stat.size;
-        if (totalBytes > MAX_HISTORY_BYTES) {
-          throw storageError("local reports turn data exceeds its bounded total size");
+        let dir: string;
+        let authoritativeSession: WorkbenchSession | undefined;
+        if (source.kind === "position") {
+          if (!isPositionId(entry.name)) {
+            throw storageError("local reports turn root contains an unsafe position");
+          }
+          dir = conversationDir(workspace, entry.name);
+        } else {
+          try {
+            assertSessionId(entry.name);
+          } catch {
+            throw storageError("local reports turn root contains an unsafe session");
+          }
+          authoritativeSession = authoritativeSessions?.get(entry.name);
+          if (authoritativeSession === undefined) {
+            throw storageError("local reports session conversation is orphaned");
+          }
+          dir = sessionConversationDir(workspace, entry.name);
         }
-        const raw = await readJson(file, MAX_TURN_RECORD_BYTES);
+        await assertRealDirectory(dir, "local reports conversation path is unsafe");
+        const metadataRead = await readJson(path.join(dir, "conversation.json"), MAX_METADATA_BYTES);
+        chargeStableBytes(metadataRead.bytes);
+        const metadata = metadataRead.value;
         if (
-          !isTurnRecord(raw) ||
-          raw.positionId !== positionId ||
-          raw.conversationId !== metadata.conversationId ||
-          turnRecordFile(workspace, raw.positionId, raw.turnId) !== path.resolve(file)
+          !isConversationMetadata(metadata) ||
+          (source.kind === "position" && metadata.positionId !== entry.name) ||
+          (source.kind === "session" && (
+            metadata.conversationId !== entry.name ||
+            metadata.positionId !== authoritativeSession?.positionId
+          ))
         ) {
-          throw storageError("local reports contains an invalid turn record");
+          throw storageError("local reports conversation metadata is invalid");
         }
-        records.push(raw);
+        const turnsDir = path.join(dir, "turns");
+        await assertRealDirectory(turnsDir, "local reports turn directory is unsafe");
+        const turnEntries = await fs.readdir(turnsDir, { withFileTypes: true });
+        if (turnEntries.length > MAX_TURN_DIRECTORY_ENTRIES) {
+          throw storageError("local reports turn directory exceeds its entry bound");
+        }
+        const jsonEntries = turnEntries.filter((turnEntry) => turnEntry.name.endsWith(".json"));
+        if (jsonEntries.length > MAX_TURNS_PER_POSITION) {
+          throw storageError("local reports turn count exceeds its bound");
+        }
+        recordCount += jsonEntries.length;
+        if (recordCount > MAX_REPORT_RECORDS) {
+          throw storageError("local reports record count exceeds its bound");
+        }
+        let temporaryCount = 0;
+        for (const turnEntry of turnEntries) {
+          if (turnEntry.name.endsWith(".tmp")) {
+            temporaryCount += 1;
+            if (
+              temporaryCount > MAX_TURN_TEMP_FILES ||
+              !isAtomicTurnTemporaryName(turnEntry.name) ||
+              !turnEntry.isFile() ||
+              turnEntry.isSymbolicLink()
+            ) {
+              throw storageError("local reports turn directory contains an unsafe temporary");
+            }
+            const temporary = await readBoundedStateFile(
+              path.join(turnsDir, turnEntry.name),
+              MAX_TURN_RECORD_BYTES,
+            );
+            chargeStableBytes(temporary.bytes);
+            continue;
+          }
+          if (!turnEntry.isFile() || turnEntry.isSymbolicLink() || !turnEntry.name.endsWith(".json")) {
+            throw storageError("local reports turn directory contains an unsafe record");
+          }
+          const file = path.join(turnsDir, turnEntry.name);
+          const recordRead = await readJson(file, MAX_TURN_RECORD_BYTES);
+          chargeStableBytes(recordRead.bytes);
+          const raw = recordRead.value;
+          if (
+            !isTurnRecord(raw) ||
+            raw.positionId !== metadata.positionId ||
+            raw.conversationId !== metadata.conversationId
+          ) {
+            throw storageError("local reports contains an invalid turn record");
+          }
+          const expectedFile = source.kind === "position"
+            ? turnRecordFile(workspace, raw.positionId, raw.turnId)
+            : sessionTurnRecordFile(workspace, entry.name, raw.turnId);
+          if (expectedFile !== path.resolve(file)) {
+            throw storageError("local reports contains an invalid turn record");
+          }
+          const recordIdentity = `${raw.conversationId}\0${raw.turnId}`;
+          if (recordIdentities.has(recordIdentity)) {
+            throw storageError("local reports contains a duplicate turn identity");
+          }
+          recordIdentities.add(recordIdentity);
+          records.push(raw);
+        }
       }
     }
-    records.sort((left, right) =>
-      compareRfc3339Instants(right.updatedAt, left.updatedAt) === 0
-        ? right.turnId.localeCompare(left.turnId, "en")
-        : compareRfc3339Instants(right.updatedAt, left.updatedAt),
-    );
+    records.sort(compareReportRecords);
     return records;
   }
 
@@ -1060,7 +1193,7 @@ export class TurnStore {
     const dir = sessionConversationDir(workspace, sessionId);
     const file = path.join(dir, "conversation.json");
     try {
-      const raw = await readJson(file, MAX_METADATA_BYTES);
+      const { value: raw } = await readJson(file, MAX_METADATA_BYTES);
       if (
         !isConversationMetadata(raw) ||
         raw.positionId !== positionId ||
@@ -1103,7 +1236,7 @@ export class TurnStore {
     const dir = conversationDir(workspace, positionId);
     const file = path.join(dir, "conversation.json");
     try {
-      const raw = await readJson(file, MAX_METADATA_BYTES);
+      const { value: raw } = await readJson(file, MAX_METADATA_BYTES);
       if (!isConversationMetadata(raw) || raw.positionId !== positionId) {
         throw storageError("local conversation metadata is invalid");
       }
