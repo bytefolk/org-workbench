@@ -10,6 +10,7 @@ import { spawn } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
+import { resolveQoderExecutable } from "../src/qoder-binary.js";
 
 const VERSION = "0.1.0";
 const POSITION_ID_PATTERN = /^[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?$/;
@@ -203,7 +204,11 @@ function turnRun(workspaceDir, positionId) {
       process.exit(0);
     };
 
-    const qoderBin = process.env.ORG_WORKBENCH_QODER_BIN ?? "qoder";
+    const qoderBin = resolveQoderExecutable(process.env);
+    if (qoderBin === null) {
+      fail("turn_engine_unavailable", "cannot resolve an executable Qoder CLI; install qoder/qodercli or set ORG_WORKBENCH_QODER_BIN", true);
+      return;
+    }
     const permissionMode = process.env.ORG_WORKBENCH_QODER_PERMISSION_MODE ?? "dont_ask";
     const args = [
       "-p", "-o", "stream-json", "--no-session-persistence",
@@ -216,7 +221,7 @@ function turnRun(workspaceDir, positionId) {
     try {
       child = spawn(qoderBin, args, { stdio: ["ignore", "pipe", "pipe"] });
     } catch {
-      fail("turn_engine_unavailable", `cannot spawn ${qoderBin}`, true);
+      fail("turn_engine_unavailable", "cannot spawn the resolved Qoder CLI; install qoder/qodercli or check ORG_WORKBENCH_QODER_BIN", true);
       return;
     }
 
@@ -265,7 +270,11 @@ function turnRun(workspaceDir, positionId) {
       }
     }
 
-    child.on("error", () => fail("turn_engine_unavailable", `cannot spawn ${qoderBin} (ENOENT); install qoder or set ORG_WORKBENCH_QODER_BIN`, true));
+    child.on("error", () => fail(
+      "turn_engine_unavailable",
+      "cannot spawn the resolved Qoder CLI; install qoder/qodercli or check ORG_WORKBENCH_QODER_BIN",
+      true,
+    ));
     child.on("close", (code) => {
       if (terminalEmitted) return;
       if (code === 0) {

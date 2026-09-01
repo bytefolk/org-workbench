@@ -7,16 +7,16 @@ org-workbench 是 [digital-employee](https://github.com/bytefolk/digital-employe
 ## 当前状态：D2 组织操作 + D3 本地对话 + D4 本地上报（开发预览）
 
 - 壳-服务分离：Electron main 拉起 `apps/server`（Node，仅 127.0.0.1，每启动随机 boot-token）；控制面可脱离壳独立运行。
-- 引擎消费：spawn 钉版 `digital-employee` CLI（ADR-0002）；`/health` 分开报告 CLI 可用性与 Qoder/Claude Code 的非敏感本地预检状态，不把 CLI 可达冒充 Host 已配置。
+- 引擎消费：服务端 spawn 钉版 `digital-employee` CLI，桌面壳默认使用仓内 `qoder-engine` adapter（ADR-0002）；`/health` 分开报告引擎可用性与 Qoder/Claude Code 的非敏感本地预检状态。bundled Qoder 只检查本地 1.1.x CLI 前置，不把它冒充远端账号/权限已通过。
 - `org apply`：客户端直接物化 `positions/` 提案树，再运行 `digital-employee org apply <workspace> --json`；成功后重载引擎应用态，失败保留提案供修正。裁撤目录移至树外 `.digital-employee/backup/`，应用态由引擎原子维护（ADR-0005）。
 - D2 工作台：拖拽岗位生成可审计 move 提案；招聘弹窗要求明确的 per-task/per-day token 预算；裁撤必须二次确认并移入 `.digital-employee/backup/`；恢复区支持显式、幂等的一键恢复与冲突提示。所有变更仍走枚举 IPC → 本地控制面 → `org apply`，renderer 不写工作区文件。
 - D4 上报中心：只读聚合引擎 `.digital-employee/org-audit.jsonl` 与工作台本地 `turn-record.v1`，展示组织审计、脱敏回合证据、失败/不确定升级链和已记录预算用量；不推断不存在的委派、长期记忆或指标，原始输入/输出默认不进入报告响应。
 - API 契约 v0 已冻结并以加法扩展：见 [`docs/api-contract-v0.md`](docs/api-contract-v0.md)（D0 端点 + D3 `/turns`；破坏性变更升 v1）。
 - D1/D2 组织树：`packages/ui` 四组件（OrgTree/OrgTreeNode/PositionCard/BudgetBar，消费 design-system 语义 token）+ React/Vite 渲染层（AppShell 四区、键盘树导航、拖拽提案、SSE 驱动刷新）。
-- D3 本地对话闭环：Bearer 保护的 `POST /turns` 与 `GET /turns?positionId=...`，只允许 Qoder/Claude Code；工作台可从组织树或 `@岗位` 选择器加载本地历史、发送并 readback，展示密封信封 digest 与可信终态。退出码 1 不自动重试；委派链、长期 Context 与 live Host 验证仍明确标为未完成。
+- D3 本地对话闭环：Bearer 保护的 `POST /turns` 与 `GET /turns?positionId=...`，只允许 Qoder/Claude Code；工作台可从组织树或 `@岗位` 选择器加载本地历史、发送并 readback，展示密封信封 digest 与可信终态。退出码 1 不自动重试；bundled Qoder 已完成一次 macOS 本地 E4（发送 → `completed` 落盘 → 历史 readback），Claude live、委派链与长期 Context 仍明确标为未完成。
 - 显式 Workbench session：每个岗位可新建、选择和轮换 `workbench-session.v1`；轮换产生新的稳定 sessionId 和空白本地回合目录，旧 session 保持只读可查询。它只是本地控制面边界，不是 Host resume、授权或长期记忆。
 - Context 导出接缝：显式 session 的可信 `completed` 回合在终态记录落盘后异步导出为两条 `context-occurrence.v1`；导出状态可跨重启恢复，失败不改变回合结果、也不重跑 Host。当前钉定 provider 为 [`context@f63f57f`](https://github.com/bytefolk/context/commit/f63f57f7b4cb7071309561f0383683017ae79eb2)，只走公共 CLI/stdio adapter，不直连 vault SQLite。
-- 里程碑：D0 骨架 → D1 组织树只读 → D2 拖拽/预算/裁撤恢复闭环 → D3 @岗位对话 → D4 本地上报中心。委派链、长期 Context 与 Qoder/Claude Code live E4 仍不在“已验证”范围。
+- 里程碑：D0 骨架 → D1 组织树只读 → D2 拖拽/预算/裁撤恢复闭环 → D3 @岗位对话 → D4 本地上报中心。Qoder 的 bundled adapter 已有单机 E4 证据；委派链、长期 Context 与 Claude live E4 仍不在“已验证”范围。
 - 当前仓库尚无 tag、Release 或签名安装包；快速开始面向源码开发者，不代表已发布客户端。
 
 ## 快速开始
@@ -42,7 +42,7 @@ curl -s -H "Authorization: Bearer <token>" http://127.0.0.1:N/org/tree
 curl -s -H "Authorization: Bearer <token>" http://127.0.0.1:N/org/backups
 curl -s -H "Authorization: Bearer <token>" http://127.0.0.1:N/reports
 
-# D3：启动服务/桌面壳前按 Host 设置一个凭据；请求体不接受 token/key
+# D3：普通 digital-employee Qoder Host 仍需要 service token；请求体不接受 token/key
 # export QODER_PERSONAL_ACCESS_TOKEN='<redacted>'
 # export ANTHROPIC_API_KEY='<redacted>'
 curl -s -X POST -H "Authorization: Bearer <token>" -H "Content-Type: application/json" \
@@ -69,10 +69,12 @@ export CONTEXT_RUNTIME_TOKEN='<redacted-runtime-token>'
 
 **桌面壳**（需 `npm install` 安装 Electron 后）：`npm run dev:desktop`（自动构建 renderer 再启动）。打开工作区后，可在左侧组织树拖拽调岗、从“招聘岗位”声明预算并新增岗位、在岗位详情确认裁撤、从恢复区显式恢复；选择岗位后先新建/选择本地会话，再发送回合；“轮换当前会话”显式创建空白 successor，旧会话可切回只读查看。切换顶部“上报中心”查看本地证据。恢复和会话轮换都不会自动发生。
 
+桌面壳默认的 bundled `qoder-engine` 与 `/health` 共用同一个无 shell 的本机 Qoder 解析器：非空 `ORG_WORKBENCH_QODER_BIN` 优先且无效时 fail closed；否则按 PATH 的 `qodercli` / `qoder`，再按 macOS 已支持的用户安装位置解析到可执行普通文件。当前支持窗口为 1.1.x；`/health` 只运行有超时和输出上限的 `--version`，不会读取登录态或凭据存储，也不代表远端 entitlement 可用。turn adapter 直接 spawn 同一个绝对路径并原样继承父进程 PATH；Finder 启动时恢复用户登录 PATH 由 #106 单独承接。是否真正可执行仍以一次真实回合的可信终态为准。普通 `digital-employee` 的 Qoder model port 不走这个例外，仍由 `QODER_PERSONAL_ACCESS_TOKEN` 门禁。
+
 **design-system 依赖说明**：`@fullstack-ai-infra/ui` 目前以开发期 `file:` 链接指向同级 `design-system` 克隆（骨架定稿方案 A：开发期 file: 链接，CI/正式包只认钉版）。链接要求该克隆已 `npm run build:package`（产出 dist，含 `--ui-sidebar-wide` 等 tokens）；设计系统发布 npm 后改钉版依赖。
 
-**引擎指针**：开发期以 `ORG_WORKBENCH_DIGITAL_EMPLOYEE_CLI` 指向钉版入口，例如
-`node <repo>/digital-employee/dist/apps/cli/bin.js`。`digital-employee` 当前 main 已提供 `org apply`，但尚未进入公开 v0.4.0 制品；控制面会按实际 CLI 能力返回成功或 `engine_capability_missing`（503），不会把 main 预览冒充已发布能力。
+**引擎指针**：独立服务开发期以 `ORG_WORKBENCH_DIGITAL_EMPLOYEE_CLI` 指向钉版入口，例如
+`node <repo>/digital-employee/dist/apps/cli/bin.js`；桌面壳未覆盖该变量时使用仓内 `apps/server/bin/qoder-engine.mjs`。控制面会按实际 CLI 能力返回成功或 `engine_capability_missing`（503），不会把 main 预览冒充已发布能力。
 
 ## 仓库结构
 

@@ -21,7 +21,7 @@
 - D3 `POST /turns` / `GET /turns?positionId=...` 控制面，只允许 Qoder 与 Claude Code；密封 `turn-envelope.v1`、严格 `engine.v1` NDJSON、turn SSE 与退出码 1 不自动重试。
 - 工作区本地 `turn-record.v1` / `turn-history.v1`：0600 原子文件、0700 目录、崩溃遗留 running 回合恢复为 indeterminate，拒绝符号链接与无界历史。
 - D3 `@岗位` 对话面板：组织树与岗位选择器联动，本地历史加载、回合发送与服务端 readback、Host idle 禁用、API 失败保留输入、信封 digest 展示；委派链与长期 Context 继续诚实标记为 Planned。
-- `/health` 增加 Qoder/Claude Code 各自的 `configured` / `ready` / `nextStep` 本地预检，仅返回布尔值和非敏感操作提示；renderer 不读取凭据，也不从 CLI 可达性推断 Host ready。
+- `/health` 增加 Qoder/Claude Code 各自的 `configured` / `ready` / `nextStep` 本地预检，仅返回布尔值和非敏感操作提示；bundled `qoder-engine` 以本地 Qoder 1.1.x 的有界版本探针作为前置，普通 `digital-employee` 仍保持 service-token 门禁。renderer 不读取凭据，也不从引擎可达性推断远端 Host entitlement。
 - D2 工作台交互：组织树拖拽只生成 move 清单；招聘弹窗强制声明 token 预算；裁撤二次确认；`.digital-employee/backup` 恢复区支持显式幂等恢复和冲突保护。
 - D4 上报中心：从真实 org-audit 和本地 turn record 派生脱敏证据、失败/不确定升级链及已记录预算用量；空状态与损坏数据均 fail closed，不显示原始输入/输出。
 - 枚举式 `orgBackups` / `orgRestore` / `reports` IPC 与恢复 ID 边界验证；renderer 仍无通用请求或文件写能力。
@@ -57,6 +57,7 @@
 
 ### Fixed
 
+- #104: 桌面默认的 bundled `qoder-engine` 已能真实执行本机 Qoder 回合，但 `/health` 仍只检查 `QODER_PERSONAL_ACCESS_TOKEN`，导致 renderer 把可用 Host 错误禁用。现在仅在引擎精确宣布 `qoder-engine <semver>` 时，以 health/turn 共用的无 shell resolver 解析绝对 Qoder executable：显式覆盖无效即 fail closed，否则查 PATH 与 macOS 已支持的用户安装位置；有界版本探针支持 1.1.x，缺失、非普通文件、不可执行、超时和版本越界均有非敏感下一步。turn 子进程保留继承 PATH；Finder 登录 PATH 恢复与打包验收由后续消费项 #106 承接，不是 #104 的完成依赖。普通 `digital-employee` 的 Qoder service-token 规则、Claude 判定和远端 entitlement 边界不变。
 - D4 rejects symlinked/oversized org-audit sources before bounded reads, projects audit entries through an exact allowlist, and no longer reuses the latest per-task ratio as a per-day percentage when no day bucket exists.
 - D3 turn control plane now preserves split UTF-8 output, accepts the upstream 1,048,576-character model boundary, reaps timed-out engine processes without late SSE, and safely preserves allowlisted spawn error codes.
 - Active turns are no longer recovered as interrupted; trusted terminal SSE is emitted only after the final turn record is durably persisted, and position IDs mirror the engine organization contract.
@@ -82,7 +83,8 @@
 - 本地 `npm run check` 全绿（ui 15/15、server 46/46、renderer 13/13、desktop-main 4/4，依赖审计 0 漏洞）；Ubuntu/macOS required checks 以 PR CI 为准。
 - 真实本地引擎 E2E：digital-employee `7a92690` 成功招聘后 `/org/tree` 重载 5 岗位；非法预算拒绝码透传，`org.json`/`org-audit.jsonl`/`permissions.json` 前后 SHA-256 一致，提案和 0600 `budget.json` 保留。
 - macOS 桌面壳实测：组织树渲染、岗位卡片、SSE 刷新、关窗进程退出全部通过（issue #4 验收，证据见 issue #1/#2 评论）。
-- D3 后端以 fixture CLI 和 HTTP 集成测试验证；renderer 以 IPC fixture 验证“打开工作区 → 选岗位 → 加载本地历史 → 发送 → readback”、idle 禁用和 API failure。Qoder/Claude Code live Host 未在本机执行；委派与 mem recall 不在本切片范围。
+- D3 后端以 fixture CLI 和 HTTP 集成测试验证；renderer 以 IPC fixture 验证“打开工作区 → 选岗位 → 加载本地历史 → 发送 → readback”、idle 禁用和 API failure。bundled Qoder 已在 macOS 本机完成真实 `POST /turns` → `completed` turn-record → `GET /turns` readback；响应正文不进入仓库。Claude Code live Host、委派与 mem recall 不在本切片范围。
+- Fix for #104: Node 24.13.0 的完整 `npm run check` 通过（scripts 4/4、UI 31/31、server 148 pass + 1 expected skip、renderer 155/155、desktop-main 39/39、依赖审计 0 漏洞）；真实 bundled Qoder health、direct engine turn 与 Workbench HTTP E4 的公开安全事实见 `docs/evidence/issue-104/README.md`。
 - Session E3 以真实临时 workspace 覆盖 create → turn → rotate → restart → old/read-only + successor/zero-turn，另覆盖双 rotate、running conflict、错误请求不触发 Host 和持久化攻击面。Memory recall/write 与 live Host E4 明确未实现/未验证。
 - PR #77：`tsc -b`、`typecheck:ui`、`typecheck:renderer` 全绿；`test:ui` 31/31、`test:renderer` 97/97、`test:desktop-main` 27/27（含新增 `window-ipc.test.cjs` 6 例负向安全测试、`contrast.test.cjs` 1 例真实 WCAG 计算）；`npm audit --audit-level=high` 0 漏洞。`apps/server/*` 未改动，其测试套件本地重跑两次分别为 17 / 20 个失败（非确定性、失败数不稳定，`git diff apps/server/` 为空），系既有 test 隔离问题，非本 PR 引入，CI（干净环境）按 reviewer 记录为全绿；未在本 PR 内处理（越出 AC-005 边界）。窗口边缘拖拽缩放：CDP 视口模拟 940/680/1680 三档均验证通过，真实 WM 交互（WSLg）未验证，已在 macOS 实机验证通过（见 PR review）。
 - Fix for #92: `tsc -b` and `typecheck:renderer` clean. The new regression test derives the boundary instead of restating a constant — it binary-searches the description length the live request gate actually accepts, then asserts the resulting SKILL.md frontmatter and `employee.json` both satisfy the upstream bounds; reverting the fix makes it fail with `accepted description of 2048 chars yields 2048 in SKILL.md frontmatter, over the upstream 1024 bound`, confirming it catches the original defect. `hire.test.ts` + `apply.test.ts` 17/18 pass (the 1 failure is the pre-existing `hire/move/dismiss` isolation flake). `test:desktop-main` 34/34. Full `apps/server` suite: 124/142 pass, 17 fail, 1 skipped — a `git stash` A/B against unmodified `main` produced 37 failures on the baseline run, so the flake's failure *count* is itself non-deterministic (as this file already records); the meaningful check is that the failing-test-name set under this change is a strict **subset** of the baseline set, with zero failures unique to the change. `test:renderer` 125/136 with the same 11 pre-existing duplicate-React failures; no renderer source is touched by this diff. `test:ui` / `security:check` not rerun locally — untouched trees, CI is the gate of record.
