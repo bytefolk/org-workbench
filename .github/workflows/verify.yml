@@ -25,7 +25,7 @@ jobs:
       - name: Check out pinned design system
         uses: actions/checkout@v6
         with:
-          repository: fullstack-ai-infra/design-system
+          repository: ${{ github.repository_owner }}/design-system
           ref: 9d048faaabe0429a6a8720bfbb31418544237b6b
           path: design-system
 

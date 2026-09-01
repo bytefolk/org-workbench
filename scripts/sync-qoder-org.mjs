@@ -18,9 +18,9 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-const ORG_SCHEMA = "https://raw.githubusercontent.com/fullstack-ai-infra/digital-employee/main/configs/workspace-org.schema.json";
-const WS_SCHEMA = "https://raw.githubusercontent.com/fullstack-ai-infra/digital-employee/main/configs/workspace.schema.json";
-const PKG_SCHEMA = "https://raw.githubusercontent.com/fullstack-ai-infra/digital-employee/main/configs/employee-package.schema.json";
+const ORG_SCHEMA = "https://raw.githubusercontent.com/bytefolk/digital-employee/main/configs/workspace-org.schema.json";
+const WS_SCHEMA = "https://raw.githubusercontent.com/bytefolk/digital-employee/main/configs/workspace.schema.json";
+const PKG_SCHEMA = "https://raw.githubusercontent.com/bytefolk/digital-employee/main/configs/employee-package.schema.json";
 
 const OWNER_ID = "client-lead";
 const BUSINESS = "qoder-team";
