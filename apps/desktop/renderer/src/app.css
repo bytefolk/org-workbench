@@ -656,18 +656,10 @@
   gap: 5px;
 }
 
-.owb-position-mention__field {
-  position: relative;
-  display: flex;
+.owb-position-mention .ant-select-prefix {
+  display: inline-flex;
   align-items: center;
-}
-
-.owb-position-mention__field > svg {
-  position: absolute;
-  left: 10px;
-  z-index: 1;
   color: var(--ui-primary);
-  pointer-events: none;
 }
 
 .owb-position-mention .ant-select,
@@ -676,11 +668,6 @@
 .owb-groups__add-member .ant-select {
   width: 100%;
   min-width: 0;
-}
-
-/* 给 @ 图标（owb-position-mention__field 内绝对定位）让位。 */
-.owb-position-mention .ant-select .ant-select-selector {
-  padding-left: 26px;
 }
 
 /* 引擎下拉选项里的品牌 icon + 文案内联排布。 */
