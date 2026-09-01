@@ -340,7 +340,7 @@ Workbench 只 spawn 钉定 `context@f63f57f`（或兼容后续 main）的公共 
 
 ### 2.14 `POST /hire` — 创建员工（#33 加法，hire-request.v1alpha1 契约面）
 
-唯一创建通道：招聘不再经变更清单（§2.5 已移除 `add`）。消费 digital-employee #194/#198（merge b3d54bf）的 hire-request.v1alpha1 **静态参考信封面**；上游 CLI 只有 `hire validate <file> [--json]`，无 spawn/run/审批事件，本端点不虚构任何上游不存在的调用形态。
+唯一创建通道：招聘不再经变更清单（§2.5 已移除 `add`）。消费 digital-employee #194/#198（merge b3d54bf）的 hire-request.v1alpha1 **静态参考信封面**；CLI 形态只有 `hire validate <file> [--json]`，无 spawn/run/审批事件，本端点不虚构任何上游不存在的调用形态。#113 起，桌面默认 bundled `qoder-engine` 也实现同一静态面：只读一个不超过 256 KiB 的普通非符号链接 JSON 文件，按冻结词表/字段约束校验，并以 turn-envelope.v1 的 canonical JSON + SHA-256 算法核对 `envelopeDigest`；该子命令不解析或启动 Qoder、不访问 provider，也不写工作区。
 
 请求（只允许下列字段，缺一即 400 `hire_request_invalid`）：
 
@@ -364,7 +364,7 @@ Workbench 只 spawn 钉定 `context@f63f57f`（或兼容后续 main）的公共 
 
 1. 形状/冲突预检 → 重名 409 `hire_position_exists`；`reportTo` 幽灵岗位 400。
 2. 控制面组装岗位骨架并封装 hire-request.v1alpha1 信封：`workspaceRef`、`packageRef{name, version:"v1alpha1", digest}`（digest 为骨架 `employee.json` 字节的 SHA-256，先于 staging 计算）、`targetParentId`、`budget`、`requestedBy:"operator"`、`deadline?`、`envelopeDigest`（canonical JSON + SHA-256，与 turn-envelope.v1 同算法）。信封词表只由控制面组装，renderer 不构造、不扩展。
-3. 闸门一：`digital-employee hire validate <envelope> --json`（静态校验，先于任何副作用）。引擎不可用 → 503 `engine_unavailable`（retryable=true）；构建缺 hire 面 → 503 `engine_capability_missing`；上游拒绝 → 422 原样透传上游稳定码。
+3. 闸门一：`digital-employee hire validate <envelope> --json`（bundled 包中命令为同形态的 `qoder-engine`；静态校验，先于任何副作用）。引擎不可用 → 503 `engine_unavailable`（retryable=true）；构建缺 hire 面 → 503 `engine_capability_missing`；校验拒绝 → 422 原样透传稳定码。摘要不等于去掉 `envelopeDigest` 后的 canonical body 摘要时，稳定拒绝码为 `hire_request_invalid_field:envelopeDigest`。
 4. 闸门二：staging 骨架到 `positions/` 提案树（0600 `budget.json`），再走与 move/delete 同一接缝的 `digital-employee org apply <workspace> --json` 引擎裁决；失败 → 422 透传稳定码并回滚已 staging 的目录，不留半吊子岗位。
 5. 成功：重载 `.digital-employee/org.json`、追加 org-layout 兄弟序、广播 `org.updated`（changes 含 `{op:"hire"}`），并在全程按相位广播 `hire.progress`。
 
