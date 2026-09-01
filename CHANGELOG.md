@@ -58,6 +58,7 @@
 ### Fixed
 
 - #104: 桌面默认的 bundled `qoder-engine` 已能真实执行本机 Qoder 回合，但 `/health` 仍只检查 `QODER_PERSONAL_ACCESS_TOKEN`，导致 renderer 把可用 Host 错误禁用。现在仅在引擎精确宣布 `qoder-engine <semver>` 时，以 health/turn 共用的无 shell resolver 解析绝对 Qoder executable：显式覆盖无效即 fail closed，否则查 PATH 与 macOS 已支持的用户安装位置；有界版本探针支持 1.1.x，缺失、非普通文件、不可执行、超时和版本越界均有非敏感下一步。turn 子进程保留继承 PATH；Finder 登录 PATH 恢复与打包验收由后续消费项 #106 承接，不是 #104 的完成依赖。普通 `digital-employee` 的 Qoder service-token 规则、Claude 判定和远端 entitlement 边界不变。
+- Renderer verification now isolates Vitest workers from Node 26's experimental global Web Storage, so Node 24 and Node 26 both exercise jsdom-owned `localStorage` without changing Electron theme persistence.
 - D4 rejects symlinked/oversized org-audit sources before bounded reads, projects audit entries through an exact allowlist, and no longer reuses the latest per-task ratio as a per-day percentage when no day bucket exists.
 - D3 turn control plane now preserves split UTF-8 output, accepts the upstream 1,048,576-character model boundary, reaps timed-out engine processes without late SSE, and safely preserves allowlisted spawn error codes.
 - Active turns are no longer recovered as interrupted; trusted terminal SSE is emitted only after the final turn record is durably persisted, and position IDs mirror the engine organization contract.

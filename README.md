@@ -29,6 +29,8 @@ npm install          # 根目录（npm workspaces；Electron 二进制仅在 mac
 npm run check        # 全量门禁：tsc -b + ui 类型检查 + vitest + server node --test + renderer 构建
 ```
 
+`npm run test:renderer` 通过仓库内 wrapper 仅为 Vitest 进程及其 workers 禁用 Node 的实验性全局 Web Storage，确保 Node 24/26 都使用 jsdom 自己的 `localStorage`。该设置不进入 Electron，也不改变产品主题持久化。
+
 **壳-服务分离实证（控制面独立运行）**：
 
 ```bash
