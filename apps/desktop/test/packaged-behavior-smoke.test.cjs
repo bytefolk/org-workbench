@@ -53,6 +53,15 @@ test("behavior qualification is business-facing but separate from static smoke",
   assert.match(PACKAGED_BEHAVIOR_SMOKE_SCRIPT, /window\.owb\.status\(\)/);
   assert.match(PACKAGED_BEHAVIOR_SMOKE_SCRIPT, /window\.owb\.createTurn/);
   assert.match(PACKAGED_BEHAVIOR_SMOKE_SCRIPT, /window\.owb\.turnHistory/);
+  assert.match(PACKAGED_BEHAVIOR_SMOKE_SCRIPT, /const withTimeout/);
+  for (const stage of [
+    "control plane status",
+    "workspace read",
+    "Qoder fixture turn",
+    "history readback",
+  ]) {
+    assert.match(PACKAGED_BEHAVIOR_SMOKE_SCRIPT, new RegExp(stage));
+  }
   assert.doesNotMatch(PACKAGED_BEHAVIOR_SMOKE_SCRIPT, /orgWorkbenchPackagedSmoke/);
 
   const mainSource = fs.readFileSync(path.join(__dirname, "..", "src", "main.js"), "utf8");

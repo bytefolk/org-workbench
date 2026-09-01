@@ -8,6 +8,7 @@ import test from "node:test";
 import {
   cleanupSmokeStaging,
   createBehaviorFixtures,
+  createBehaviorLaunchEnvironment,
   createExternalStagingRoot,
   launchApp,
   smokePackagedApp,
@@ -32,6 +33,19 @@ test("behavior qualification is macOS-only and its fixtures preserve the PATH bo
   assert.match(qoder, /printf '%s\\n' "\$\$"/);
   assert.match(qoder, /owb-mcp-smoke/);
   assert.doesNotMatch(qoder, /must-not-cross/);
+
+  const launchEnvironment = createBehaviorLaunchEnvironment({
+    stagingRoot: root,
+    workspace: path.join(root, "workspace"),
+    report: path.join(root, "behavior-report.json"),
+    nonce: "a".repeat(64),
+    fixtures: fixture,
+  });
+  assert.equal(
+    await fs.realpath(launchEnvironment.TMPDIR),
+    await fs.realpath(path.dirname(root)),
+    "behavior launch TMPDIR must keep hardened report validation anchored to the native temp parent",
+  );
 });
 
 test("report polling tolerates the reserved empty inode and a partial write", async (t) => {

@@ -165,7 +165,7 @@ printf '%s\\n' '__ORG_WORKBENCH_LOGIN_PATH__=${smokeBin}:/usr/bin:/bin:/usr/sbin
   return { homeDir, loginShell, qoderPidFile, tempDir };
 }
 
-function createBehaviorLaunchEnvironment({ stagingRoot, workspace, report, nonce, fixtures }) {
+export function createBehaviorLaunchEnvironment({ stagingRoot, workspace, report, nonce, fixtures }) {
   return {
     HOME: fixtures.homeDir,
     LANG: "en_US.UTF-8",
@@ -176,7 +176,10 @@ function createBehaviorLaunchEnvironment({ stagingRoot, workspace, report, nonce
     ORG_WORKBENCH_PACKAGED_BEHAVIOR_SMOKE_ROOT: stagingRoot,
     PATH: "/usr/bin:/bin:/usr/sbin:/sbin",
     SHELL: fixtures.loginShell,
-    TMPDIR: fixtures.tempDir,
+    // The packaged main process uses os.tmpdir() as the independent anchor
+    // for its canonical staging-root/report reservation. Keep TMPDIR on that
+    // native parent; the Qoder fixture has its own explicit tempDir path.
+    TMPDIR: path.dirname(stagingRoot),
     USER: "org-workbench-behavior-smoke",
   };
 }

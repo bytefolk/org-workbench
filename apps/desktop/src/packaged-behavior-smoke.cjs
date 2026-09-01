@@ -8,6 +8,19 @@ const {
 // turn, and durable history readback without turning those claims into release proof.
 const PACKAGED_BEHAVIOR_SMOKE_SCRIPT = String.raw`(async () => {
   const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+  const withTimeout = async (stage, operation, timeoutMs = 6000) => {
+    let timer = null;
+    try {
+      return await Promise.race([
+        operation,
+        new Promise((_, reject) => {
+          timer = setTimeout(() => reject(new Error(stage + " timed out")), timeoutMs);
+        }),
+      ]);
+    } finally {
+      if (timer !== null) clearTimeout(timer);
+    }
+  };
   for (let attempt = 0; attempt < 50; attempt += 1) {
     if (document.querySelector("#root")?.childElementCount > 0) break;
     await sleep(100);
@@ -23,20 +36,24 @@ const PACKAGED_BEHAVIOR_SMOKE_SCRIPT = String.raw`(async () => {
   localStorage.removeItem("owb-packaged-smoke");
   if (!localStorageRoundTrip) throw new Error("renderer localStorage roundtrip failed");
 
-  const status = await window.owb.status();
+  const status = await withTimeout("control plane status", window.owb.status());
   if (status?.running !== true || status?.health?.status !== "ok") {
     throw new Error("control plane health did not become ready");
   }
-  const workspace = await window.owb.workspace();
+  const workspace = await withTimeout("workspace read", window.owb.workspace());
   if (workspace?.status !== 200 || workspace?.body?.open !== true) {
     throw new Error("packaged workspace did not open");
   }
 
-  const created = await window.owb.createTurn({
-    positionId: "repo-owner",
-    input: "Verify packaged PATH propagation.",
-    engine: "qoder",
-  });
+  const created = await withTimeout(
+    "Qoder fixture turn",
+    window.owb.createTurn({
+      positionId: "repo-owner",
+      input: "Verify packaged PATH propagation.",
+      engine: "qoder",
+    }),
+    12000,
+  );
   if (
     created?.status !== 200 ||
     created?.body?.status !== "completed" ||
@@ -44,7 +61,10 @@ const PACKAGED_BEHAVIOR_SMOKE_SCRIPT = String.raw`(async () => {
   ) {
     throw new Error("packaged Qoder/MCP PATH turn did not complete");
   }
-  const history = await window.owb.turnHistory("repo-owner");
+  const history = await withTimeout(
+    "history readback",
+    window.owb.turnHistory("repo-owner"),
+  );
   const persisted = history?.status === 200 && history?.body?.turns?.some(
     (turn) => turn?.turnId === created.body.turnId &&
       turn?.status === "completed" &&
