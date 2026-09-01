@@ -71,7 +71,20 @@ export CONTEXT_RUNTIME_TOKEN='<redacted-runtime-token>'
 
 **桌面壳**（需 `npm install` 安装 Electron 后）：`npm run dev:desktop`（自动构建 renderer 再启动）。打开工作区后，可在左侧组织树拖拽调岗、从“招聘岗位”声明预算并新增岗位、在岗位详情确认裁撤、从恢复区显式恢复；选择岗位后先新建/选择本地会话，再发送回合；“轮换当前会话”显式创建空白 successor，旧会话可切回只读查看。切换顶部“上报中心”查看本地证据。恢复和会话轮换都不会自动发生。
 
-桌面壳默认的 bundled `qoder-engine` 与 `/health` 共用同一个无 shell 的本机 Qoder 解析器：非空 `ORG_WORKBENCH_QODER_BIN` 优先且无效时 fail closed；否则按 PATH 的 `qodercli` / `qoder`，再按 macOS 已支持的用户安装位置解析到可执行普通文件。当前支持窗口为 1.1.x；`/health` 只运行有超时和输出上限的 `--version`，不会读取登录态或凭据存储，也不代表远端 entitlement 可用。turn adapter 直接 spawn 同一个绝对路径并原样继承父进程 PATH；Finder 启动时恢复用户登录 PATH 由 #106 单独承接。是否真正可执行仍以一次真实回合的可信终态为准。普通 `digital-employee` 的 Qoder model port 不走这个例外，仍由 `QODER_PERSONAL_ACCESS_TOKEN` 门禁。
+桌面壳默认的 bundled `qoder-engine` 与 `/health` 共用同一个无 shell 的本机 Qoder 解析器：非空 `ORG_WORKBENCH_QODER_BIN` 优先且无效时 fail closed；否则按 PATH 的 `qodercli` / `qoder`，再按 macOS 已支持的用户安装位置解析到可执行普通文件。当前支持窗口为 1.1.x；`/health` 只运行有超时和输出上限的 `--version`，不会读取登录态或凭据存储，也不代表远端 entitlement 可用。turn adapter 直接 spawn 同一个绝对路径并原样继承父进程 PATH。Finder/LaunchServices 启动的桌面进程会用固定 argv、有界输出和不可忽略的硬超时从登录 shell **只恢复 PATH**；输出不满足单行 marker 与绝对路径规则时保留原 PATH，其他 shell 环境和凭据一律不导入。Electron 的 `ELECTRON_RUN_AS_NODE=1` 只跨到桌面默认 bundled adapter；普通 CLI override 的 health/hire/org 使用非凭据运行时 allowlist，turn 只携所选 Host 的明确授权。bundled adapter 接收 Qoder binary 与 permission mode，并在单一校验点拒绝不受支持的 mode；真实 Qoder/MCP 后代只接收 Qoder 所需运行时、代理/证书和凭据 allowlist，不接收 Electron flag、Workbench adapter 配置、boot/internal/Context authority 或任意 secret。是否真正可执行仍以一次真实回合的可信终态为准。普通 `digital-employee` 的 Qoder model port 不走这个例外，仍由 `QODER_PERSONAL_ACCESS_TOKEN` 门禁。
+
+### macOS unsigned 本地候选包
+
+下面的流程只生成供开发验收使用的 arm64 `.app` 目录；不会安装到 `/Applications`，不会签名、公证、上传或发布。前置仍是干净 checkout、Node 24，以及同级钉版 design-system 已构建：
+
+```bash
+(cd ../design-system && npm ci && npm run build:package)
+npm ci
+npm run package:macos:unsigned  # 构建并验证 release/mac-arm64/Org Workbench.app
+npm run smoke:package:macos     # 复制到系统临时目录做 clean-staging 启动/E2E/进程清理
+```
+
+`verify:package:macos` 会检查 arm64、未密封/无开发者签名、精确运行时文件清单与源文件哈希，并拒绝把 server tests 带进产物；smoke 会在最小 LaunchServices 风格 PATH 下验证 renderer、preload、localStorage、控制面、bundled Qoder readiness、真实 fixture 回合与历史 readback，并确认 Workbench server/Qoder 进程退出。`asar: false` 便于逐文件审计和运行 Node 子进程，不构成防篡改边界；该产物仍只是本地 unsigned 候选。回滚只需删除被忽略的 `release/` 目录；无系统安装状态需要清理。
 
 **design-system 依赖说明**：`@fullstack-ai-infra/ui` 目前以开发期 `file:` 链接指向同级 `design-system` 克隆（骨架定稿方案 A：开发期 file: 链接，CI/正式包只认钉版）。链接要求该克隆已 `npm run build:package`（产出 dist，含 `--ui-sidebar-wide` 等 tokens）；设计系统发布 npm 后改钉版依赖。
 

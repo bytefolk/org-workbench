@@ -4,6 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import test from "node:test";
+import { fileURLToPath } from "node:url";
 import { DigitalEmployeeCliDriver } from "../src/engine/driver-cli.js";
 import { api, copyExampleWorkspace, startTestServer } from "./helpers.js";
 
@@ -57,6 +58,193 @@ test("turn driver uses stdin, exact turn argv, and the selected engine environme
   });
   assert.equal(result.status, "trusted");
   assert.equal(result.events.length, 2);
+});
+
+test("run-as-node crosses only the exact packaged bundled-engine boundary", async () => {
+  const saved = process.env.ELECTRON_RUN_AS_NODE;
+  try {
+    const cases: Array<{
+      source: string | undefined;
+      bundled: boolean;
+      expected: string | undefined;
+      label: string;
+    }> = [
+      { source: "1", bundled: true, expected: "1", label: "packaged bundled engine" },
+      { source: "true", bundled: true, expected: undefined, label: "non-exact source true" },
+      { source: "0", bundled: true, expected: undefined, label: "non-exact source 0" },
+      { source: undefined, bundled: true, expected: undefined, label: "missing source" },
+      { source: "1", bundled: false, expected: undefined, label: "normal CLI override" },
+    ];
+    for (const { source, bundled, expected, label } of cases) {
+      if (source === undefined) delete process.env.ELECTRON_RUN_AS_NODE;
+      else process.env.ELECTRON_RUN_AS_NODE = source;
+      const command = await fixtureCli(`
+        let input = "";
+        process.stdin.setEncoding("utf8");
+        for await (const chunk of process.stdin) input += chunk;
+        if (process.env.ELECTRON_RUN_AS_NODE !== ${JSON.stringify(expected)}) process.exit(6);
+        const base = { runId: "run-1", timestamp: "2026-08-24T00:00:00.000Z" };
+        console.log(JSON.stringify({ ...base, type: "run.started" }));
+        console.log(JSON.stringify({ ...base, type: "run.completed", output: "ok", terminalReason: "goal_met" }));
+      `);
+      const result = await new DigitalEmployeeCliDriver(command, 120_000, bundled).turnRun({
+        workspace: "/workspace",
+        positionId: "repo-owner",
+        engine: "qoder",
+        envelope: ENVELOPE,
+      });
+      assert.equal(result.status, "trusted", label);
+    }
+  } finally {
+    if (saved === undefined) delete process.env.ELECTRON_RUN_AS_NODE;
+    else process.env.ELECTRON_RUN_AS_NODE = saved;
+  }
+});
+
+test("Qoder runtime reaches only selected Qoder while adapter controls require the bundled boundary", async () => {
+  const qoderRuntimeEnvironment = {
+    LOGNAME: "qoder-user",
+    TMP: "/tmp/qoder-tmp",
+    TEMP: "/tmp/qoder-temp",
+    LC_CTYPE: "en_US.UTF-8",
+    XDG_CONFIG_HOME: "/tmp/qoder-config",
+    XDG_CACHE_HOME: "/tmp/qoder-cache",
+    HTTP_PROXY: "http://127.0.0.1:9001",
+    HTTPS_PROXY: "http://127.0.0.1:9002",
+    NO_PROXY: "localhost,127.0.0.1",
+    http_proxy: "http://127.0.0.1:9003",
+    https_proxy: "http://127.0.0.1:9004",
+    no_proxy: "localhost",
+    NODE_EXTRA_CA_CERTS: "",
+    SSL_CERT_FILE: "/tmp/qoder-ca.pem",
+    SSL_CERT_DIR: "/tmp/qoder-certs",
+  } as const;
+  const saved = {
+    bin: process.env.ORG_WORKBENCH_QODER_BIN,
+    permissionMode: process.env.ORG_WORKBENCH_QODER_PERMISSION_MODE,
+    runtime: Object.fromEntries(
+      Object.keys(qoderRuntimeEnvironment).map((key) => [key, process.env[key]]),
+    ) as NodeJS.ProcessEnv,
+  };
+  try {
+    const cases: Array<{
+      engine: "qoder" | "claude-code";
+      bundled: boolean;
+      permissionMode: string;
+      expectedBin: string | undefined;
+      expectedPermissionMode: string | undefined;
+      expectQoderRuntime: boolean;
+      label: string;
+    }> = [
+      {
+        engine: "qoder",
+        bundled: true,
+        permissionMode: "auto",
+        expectedBin: "/opt/qoder/bin/qodercli",
+        expectedPermissionMode: "auto",
+        expectQoderRuntime: true,
+        label: "bundled adapter receives supported controls",
+      },
+      {
+        engine: "qoder",
+        bundled: false,
+        permissionMode: "auto",
+        expectedBin: undefined,
+        expectedPermissionMode: undefined,
+        expectQoderRuntime: true,
+        label: "ordinary operator command receives no adapter controls",
+      },
+      {
+        engine: "qoder",
+        bundled: true,
+        permissionMode: "anything-goes",
+        expectedBin: "/opt/qoder/bin/qodercli",
+        expectedPermissionMode: "anything-goes",
+        expectQoderRuntime: true,
+        label: "bundled adapter receives invalid input for single-point validation",
+      },
+      {
+        engine: "claude-code",
+        bundled: true,
+        permissionMode: "auto",
+        expectedBin: undefined,
+        expectedPermissionMode: undefined,
+        expectQoderRuntime: false,
+        label: "a non-Qoder turn receives neither adapter controls nor Qoder runtime",
+      },
+    ];
+    for (const testCase of cases) {
+      process.env.ORG_WORKBENCH_QODER_BIN = "/opt/qoder/bin/qodercli";
+      process.env.ORG_WORKBENCH_QODER_PERMISSION_MODE = testCase.permissionMode;
+      Object.assign(process.env, qoderRuntimeEnvironment);
+      const command = await fixtureCli(`
+        let input = "";
+        process.stdin.setEncoding("utf8");
+        for await (const chunk of process.stdin) input += chunk;
+        if (process.env.ORG_WORKBENCH_QODER_BIN !== ${JSON.stringify(testCase.expectedBin)}) process.exit(6);
+        if (process.env.ORG_WORKBENCH_QODER_PERMISSION_MODE !== ${JSON.stringify(testCase.expectedPermissionMode)}) process.exit(5);
+        const expectedRuntime = ${JSON.stringify(qoderRuntimeEnvironment)};
+        for (const [key, value] of Object.entries(expectedRuntime)) {
+          const expected = ${JSON.stringify(testCase.expectQoderRuntime)} ? value : undefined;
+          if (process.env[key] !== expected) process.exit(4);
+        }
+        const base = { runId: "run-1", timestamp: "2026-08-24T00:00:00.000Z" };
+        console.log(JSON.stringify({ ...base, type: "run.started" }));
+        console.log(JSON.stringify({ ...base, type: "run.completed", output: "ok", terminalReason: "goal_met" }));
+      `);
+      const result = await new DigitalEmployeeCliDriver(command, 120_000, testCase.bundled).turnRun({
+        workspace: "/workspace",
+        positionId: "repo-owner",
+        engine: testCase.engine,
+        envelope: ENVELOPE,
+      });
+      assert.equal(result.status, "trusted", testCase.label);
+    }
+  } finally {
+    if (saved.bin === undefined) delete process.env.ORG_WORKBENCH_QODER_BIN;
+    else process.env.ORG_WORKBENCH_QODER_BIN = saved.bin;
+    if (saved.permissionMode === undefined) delete process.env.ORG_WORKBENCH_QODER_PERMISSION_MODE;
+    else process.env.ORG_WORKBENCH_QODER_PERMISSION_MODE = saved.permissionMode;
+    for (const [key, value] of Object.entries(saved.runtime)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
+});
+
+test("an invalid bundled Qoder permission mode reaches the adapter and fails without defaulting", async () => {
+  const adapter = fileURLToPath(new URL("../../bin/qoder-engine.mjs", import.meta.url));
+  const saved = {
+    bin: process.env.ORG_WORKBENCH_QODER_BIN,
+    permissionMode: process.env.ORG_WORKBENCH_QODER_PERMISSION_MODE,
+  };
+  try {
+    process.env.ORG_WORKBENCH_QODER_BIN = process.execPath;
+    process.env.ORG_WORKBENCH_QODER_PERMISSION_MODE = "unrestricted";
+    const result = await new DigitalEmployeeCliDriver(
+      `${process.execPath} ${adapter}`,
+      120_000,
+      true,
+    ).turnRun({
+      workspace: "/workspace",
+      positionId: "repo-owner",
+      engine: "qoder",
+      envelope: ENVELOPE,
+    });
+    assert.equal(result.status, "trusted", "a valid engine.v1 failure terminal remains trusted evidence");
+    const terminal = result.events.at(-1);
+    assert.equal(terminal?.type, "run.failed");
+    if (terminal?.type === "run.failed") {
+      assert.equal(terminal.error.code, "qoder.permission_mode_invalid");
+      assert.equal(terminal.error.retryable, false);
+    }
+    assert.equal(result.events.some((event) => event.type === "run.completed"), false);
+  } finally {
+    if (saved.bin === undefined) delete process.env.ORG_WORKBENCH_QODER_BIN;
+    else process.env.ORG_WORKBENCH_QODER_BIN = saved.bin;
+    if (saved.permissionMode === undefined) delete process.env.ORG_WORKBENCH_QODER_PERMISSION_MODE;
+    else process.env.ORG_WORKBENCH_QODER_PERMISSION_MODE = saved.permissionMode;
+  }
 });
 
 test("claude-local turn env forwards the binary override and never a service credential", async () => {

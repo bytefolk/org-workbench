@@ -12,6 +12,10 @@ import type {
   TurnTerminalReason,
 } from "@org-workbench/shared";
 import { splitCommand } from "./probe.js";
+import {
+  bundledElectronRunAsNode,
+  engineCliEnvironment,
+} from "./process-environment.js";
 
 type DriverOutcome = Awaited<ReturnType<OrgApplyDriver["apply"]>>;
 type HireValidateOutcome = Awaited<ReturnType<HireValidateDriver["hireValidate"]>>;
@@ -292,7 +296,7 @@ function parseEngineEvent(line: string): EngineEvent {
   }
 }
 
-function turnEnvironment(engine: TurnEngine): NodeJS.ProcessEnv {
+function turnEnvironment(engine: TurnEngine, bundledElectronEngine: boolean): NodeJS.ProcessEnv {
   const source = process.env;
   const allowed = ["PATH", "HOME", "USER", "TMPDIR", "LANG", "LC_ALL", "SHELL"] as const;
   const environment: NodeJS.ProcessEnv = {
@@ -301,13 +305,49 @@ function turnEnvironment(engine: TurnEngine): NodeJS.ProcessEnv {
   for (const key of allowed) {
     if (source[key] !== undefined) environment[key] = source[key];
   }
+  // A packaged Electron main uses process.execPath as the bundled engine
+  // runtime. Preserve only the exact opt-in value across that one boundary;
+  // arbitrary values stay outside the turn allowlist. The bundled adapter
+  // removes the flag again before it starts the real Host process.
+  const runAsNode = bundledElectronRunAsNode(source, bundledElectronEngine);
+  if (runAsNode !== undefined) environment.ELECTRON_RUN_AS_NODE = runAsNode;
   if (engine === "qoder") {
+    const qoderRuntimeKeys = [
+      "LOGNAME",
+      "TMP",
+      "TEMP",
+      "LC_CTYPE",
+      "XDG_CONFIG_HOME",
+      "XDG_CACHE_HOME",
+      "HTTP_PROXY",
+      "HTTPS_PROXY",
+      "NO_PROXY",
+      "http_proxy",
+      "https_proxy",
+      "no_proxy",
+      "NODE_EXTRA_CA_CERTS",
+      "SSL_CERT_FILE",
+      "SSL_CERT_DIR",
+    ] as const;
+    for (const key of qoderRuntimeKeys) {
+      if (source[key] !== undefined) environment[key] = source[key];
+    }
     if (source.QODER_PERSONAL_ACCESS_TOKEN !== undefined) environment.QODER_PERSONAL_ACCESS_TOKEN = source.QODER_PERSONAL_ACCESS_TOKEN;
+    // These are adapter controls, not provider/runtime variables. They cross
+    // only the desktop-owned bundled qoder-engine boundary; an operator CLI
+    // must not gain them merely because the selected turn engine is Qoder.
+    if (bundledElectronEngine && source.ORG_WORKBENCH_QODER_BIN !== undefined) {
+      environment.ORG_WORKBENCH_QODER_BIN = source.ORG_WORKBENCH_QODER_BIN;
+    }
+    if (bundledElectronEngine && source.ORG_WORKBENCH_QODER_PERMISSION_MODE !== undefined) {
+      environment.ORG_WORKBENCH_QODER_PERMISSION_MODE =
+        source.ORG_WORKBENCH_QODER_PERMISSION_MODE;
+    }
   } else if (engine === "claude-code") {
     if (source.ANTHROPIC_API_KEY !== undefined) environment.ANTHROPIC_API_KEY = source.ANTHROPIC_API_KEY;
-    // #81: allow a self-hosted or proxy ANTHROPIC_BASE_URL through, so turn-run
-    // matches org apply / hire validate (which pass env: process.env in full).
-    // Forward verbatim without local validation — the engine adapter's
+    // #81: allow a self-hosted or proxy ANTHROPIC_BASE_URL through the selected
+    // claude-code turn contract. Forward verbatim without local validation —
+    // the engine adapter's
     // validatedBaseUrl() is the single source of truth (HTTPS or loopback HTTP,
     // no embedded credentials / fragments / control chars / >2 KiB); an invalid
     // value fails closed on the engine side as `claude_base_url_invalid` via
@@ -336,6 +376,7 @@ export class DigitalEmployeeCliDriver implements OrgApplyDriver, TurnRunDriver, 
   constructor(
     private readonly command: string,
     private readonly timeoutMs = 120_000,
+    private readonly bundledElectronEngine = false,
   ) {}
 
   /**
@@ -359,7 +400,7 @@ export class DigitalEmployeeCliDriver implements OrgApplyDriver, TurnRunDriver, 
       try {
         child = spawn(bin, [...prefix, "hire", "validate", file, "--json"], {
           stdio: ["ignore", "pipe", "pipe"],
-          env: process.env,
+          env: engineCliEnvironment(process.env, this.bundledElectronEngine),
         });
       } catch {
         finish({ status: "engine_unavailable", message: `cannot spawn ${this.command}` });
@@ -434,7 +475,7 @@ export class DigitalEmployeeCliDriver implements OrgApplyDriver, TurnRunDriver, 
       try {
         child = spawn(bin, [...prefix, "org", "apply", workspaceDir, "--json"], {
           stdio: ["ignore", "pipe", "pipe"],
-          env: process.env,
+          env: engineCliEnvironment(process.env, this.bundledElectronEngine),
         });
       } catch {
         finish({
@@ -619,7 +660,7 @@ export class DigitalEmployeeCliDriver implements OrgApplyDriver, TurnRunDriver, 
           [...prefix, "turn", "run", request.workspace, "--position", request.positionId, "--stdin"],
           {
             stdio: ["pipe", "pipe", "pipe"],
-            env: turnEnvironment(request.engine),
+            env: turnEnvironment(request.engine, this.bundledElectronEngine),
           },
         );
       } catch {

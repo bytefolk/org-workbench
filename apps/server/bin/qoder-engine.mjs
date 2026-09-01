@@ -14,6 +14,46 @@ import { resolveQoderExecutable } from "../src/qoder-binary.js";
 
 const VERSION = "0.1.0";
 const POSITION_ID_PATTERN = /^[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?$/;
+const QODER_PERMISSION_MODES = new Set([
+  "default",
+  "accept_edits",
+  "bypass_permissions",
+  "dont_ask",
+  "auto",
+]);
+const QODER_CHILD_ENV_KEYS = [
+  "PATH",
+  "HOME",
+  "USER",
+  "LOGNAME",
+  "TMPDIR",
+  "TMP",
+  "TEMP",
+  "LANG",
+  "LC_ALL",
+  "LC_CTYPE",
+  "SHELL",
+  "XDG_CONFIG_HOME",
+  "XDG_CACHE_HOME",
+  "QODER_PERSONAL_ACCESS_TOKEN",
+  "HTTP_PROXY",
+  "HTTPS_PROXY",
+  "NO_PROXY",
+  "http_proxy",
+  "https_proxy",
+  "no_proxy",
+  "NODE_EXTRA_CA_CERTS",
+  "SSL_CERT_FILE",
+  "SSL_CERT_DIR",
+];
+
+function qoderChildEnvironment(source) {
+  const environment = {};
+  for (const key of QODER_CHILD_ENV_KEYS) {
+    if (source[key] !== undefined) environment[key] = source[key];
+  }
+  return environment;
+}
 
 function sha256(text) {
   return `sha256:${createHash("sha256").update(text, "utf8").digest("hex")}`;
@@ -209,7 +249,16 @@ function turnRun(workspaceDir, positionId) {
       fail("turn_engine_unavailable", "cannot resolve an executable Qoder CLI; install qoder/qodercli or set ORG_WORKBENCH_QODER_BIN", true);
       return;
     }
-    const permissionMode = process.env.ORG_WORKBENCH_QODER_PERMISSION_MODE ?? "dont_ask";
+    const requestedPermissionMode = process.env.ORG_WORKBENCH_QODER_PERMISSION_MODE;
+    const permissionMode = requestedPermissionMode === undefined
+      ? "dont_ask"
+      : QODER_PERMISSION_MODES.has(requestedPermissionMode)
+        ? requestedPermissionMode
+        : null;
+    if (permissionMode === null) {
+      fail("qoder.permission_mode_invalid", "unsupported Qoder permission mode", false);
+      return;
+    }
     const args = [
       "-p", "-o", "stream-json", "--no-session-persistence",
       "-w", workspaceDir,
@@ -219,7 +268,14 @@ function turnRun(workspaceDir, positionId) {
     ];
     let child;
     try {
-      child = spawn(qoderBin, args, { stdio: ["ignore", "pipe", "pipe"] });
+      // Adapter controls, Electron runtime switches, boot authority, Context
+      // tokens, and arbitrary server configuration stop here. Qoder and any
+      // MCP descendants receive only their explicit runtime/credential contract.
+      const qoderEnvironment = qoderChildEnvironment(process.env);
+      child = spawn(qoderBin, args, {
+        env: qoderEnvironment,
+        stdio: ["ignore", "pipe", "pipe"],
+      });
     } catch {
       fail("turn_engine_unavailable", "cannot spawn the resolved Qoder CLI; install qoder/qodercli or check ORG_WORKBENCH_QODER_BIN", true);
       return;

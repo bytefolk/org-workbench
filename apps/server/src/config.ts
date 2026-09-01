@@ -9,6 +9,8 @@ export interface ServerConfig {
   token: string;
   /** Pinned digital-employee CLI command consumed via spawn. */
   cliCommand: string;
+  /** Desktop-owned Electron adapter boundary; never inferred from CLI text. */
+  bundledElectronEngine: boolean;
   /** Spawn timeout (ms) for engine org apply / turn run. */
   engineTimeoutMs?: number;
   /** Pinned context provider CLI/stdio adapter command (context main >= f63f57f). */
@@ -31,12 +33,16 @@ export function resolveServerConfig(
   const token =
     typeof envToken === "string" && envToken.length >= 16 ? envToken : createBootToken();
   const cliCommand = env.ORG_WORKBENCH_DIGITAL_EMPLOYEE_CLI ?? "digital-employee";
+  const bundledElectronEngine =
+    env.ORG_WORKBENCH_INTERNAL_BUNDLED_ELECTRON_ENGINE === "1" &&
+    env.ELECTRON_RUN_AS_NODE === "1";
   const contextCliCommand = env.ORG_WORKBENCH_CONTEXT_CLI ?? "context";
   return {
     host: "127.0.0.1",
     port,
     token,
     cliCommand,
+    bundledElectronEngine,
     contextCliCommand,
     serverVersion: readServerVersion(),
   };

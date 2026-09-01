@@ -175,6 +175,75 @@ test("Qoder local probe accepts only the 1.1.x family and fails closed for missi
   assert.equal(supportedQoderVersion(null), false);
 });
 
+test("Qoder local probe receives only the non-secret runtime environment allowlist", async (t) => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), "owb-qoder-probe-env-"));
+  const qoderBin = path.join(dir, "qoder-no-electron-flag");
+  const envFile = path.join(dir, "probe-env.txt");
+  const home = path.join(dir, "home");
+  const temp = path.join(dir, "tmp");
+  t.after(() => fs.rm(dir, { recursive: true, force: true }));
+  await fs.mkdir(home);
+  await fs.mkdir(temp);
+  await fs.writeFile(
+    qoderBin,
+    `#!/bin/sh
+/usr/bin/env > ${JSON.stringify(envFile)}
+printf '%s\\n' '1.1.31'
+`,
+    { mode: 0o755 },
+  );
+
+  assert.deepEqual(
+    probeQoderLocalBinary({
+      ORG_WORKBENCH_QODER_BIN: qoderBin,
+      PATH: "/usr/bin:/bin",
+      HOME: home,
+      USER: "probe-user",
+      LOGNAME: "probe-logname",
+      TMPDIR: temp,
+      LANG: "C.UTF-8",
+      LC_ALL: "C",
+      SHELL: "/bin/sh",
+      ELECTRON_RUN_AS_NODE: "1",
+      ORG_WORKBENCH_BOOT_TOKEN: "boot-secret",
+      ORG_WORKBENCH_INTERNAL_BUNDLED_ELECTRON_ENGINE: "1",
+      QODER_PERSONAL_ACCESS_TOKEN: "qoder-secret",
+      ANTHROPIC_API_KEY: "anthropic-secret",
+      ARBITRARY_SECRET: "arbitrary-secret",
+    }),
+    { installed: true, version: "1.1.31", supported: true },
+  );
+
+  const childEnvironment = Object.fromEntries(
+    (await fs.readFile(envFile, "utf8"))
+      .trim()
+      .split("\n")
+      .map((line) => {
+        const separator = line.indexOf("=");
+        return [line.slice(0, separator), line.slice(separator + 1)];
+      }),
+  );
+  assert.equal(childEnvironment.PATH, "/usr/bin:/bin");
+  assert.equal(childEnvironment.HOME, home);
+  assert.equal(childEnvironment.USER, "probe-user");
+  assert.equal(childEnvironment.LOGNAME, "probe-logname");
+  assert.equal(childEnvironment.TMPDIR, temp);
+  assert.equal(childEnvironment.LANG, "C.UTF-8");
+  assert.equal(childEnvironment.LC_ALL, "C");
+  assert.equal(childEnvironment.SHELL, "/bin/sh");
+  for (const forbidden of [
+    "ELECTRON_RUN_AS_NODE",
+    "ORG_WORKBENCH_BOOT_TOKEN",
+    "ORG_WORKBENCH_INTERNAL_BUNDLED_ELECTRON_ENGINE",
+    "ORG_WORKBENCH_QODER_BIN",
+    "QODER_PERSONAL_ACCESS_TOKEN",
+    "ANTHROPIC_API_KEY",
+    "ARBITRARY_SECRET",
+  ]) {
+    assert.equal(forbidden in childEnvironment, false, `${forbidden} reached the Qoder probe`);
+  }
+});
+
 test("Qoder local probe forcibly reaps a version check that ignores SIGTERM", async (t) => {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), "owb-qoder-sigterm-"));
   const pidFile = path.join(dir, "probe.pid");
@@ -341,15 +410,56 @@ test("GET /health recognizes only the bundled qoder-engine local preflight and n
   }
 });
 
-test("claude-local probe reads the announced version from the resolved binary", async () => {
+test("claude-local probe reads the version with only non-secret runtime environment", async (t) => {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), "owb-claude-probe-"));
   const bin = path.join(dir, "claude-fixture");
-  await fs.writeFile(bin, "#!/bin/sh\nprintf '%s\\n' '2.1.223 (Claude Code)'\n", { mode: 0o755 });
+  const envFile = path.join(dir, "claude-env.txt");
+  t.after(() => fs.rm(dir, { recursive: true, force: true }));
+  await fs.writeFile(
+    bin,
+    `#!/bin/sh
+/usr/bin/env > ${JSON.stringify(envFile)}
+printf '%s\\n' '2.1.223 (Claude Code)'
+`,
+    { mode: 0o755 },
+  );
 
-  const found = probeClaudeLocalBinary({ DIGITAL_EMPLOYEE_CLAUDE_COMMAND: bin });
+  const found = probeClaudeLocalBinary({
+    DIGITAL_EMPLOYEE_CLAUDE_COMMAND: bin,
+    PATH: "/usr/bin:/bin",
+    HOME: dir,
+    USER: "claude-probe",
+    ELECTRON_RUN_AS_NODE: "1",
+    ORG_WORKBENCH_BOOT_TOKEN: "server-only-secret",
+    ORG_WORKBENCH_INTERNAL_BUNDLED_ELECTRON_ENGINE: "1",
+    ANTHROPIC_API_KEY: "provider-secret",
+    ARBITRARY_SECRET: "arbitrary-secret",
+  });
   assert.equal(found.installed, true);
   assert.equal(found.version, "2.1.223");
   assert.equal(found.supported, true);
+  const childEnvironment = Object.fromEntries(
+    (await fs.readFile(envFile, "utf8"))
+      .trim()
+      .split("\n")
+      .map((line) => {
+        const separator = line.indexOf("=");
+        return [line.slice(0, separator), line.slice(separator + 1)];
+      }),
+  );
+  assert.equal(childEnvironment.PATH, "/usr/bin:/bin");
+  assert.equal(childEnvironment.HOME, dir);
+  assert.equal(childEnvironment.USER, "claude-probe");
+  for (const forbidden of [
+    "DIGITAL_EMPLOYEE_CLAUDE_COMMAND",
+    "ELECTRON_RUN_AS_NODE",
+    "ORG_WORKBENCH_BOOT_TOKEN",
+    "ORG_WORKBENCH_INTERNAL_BUNDLED_ELECTRON_ENGINE",
+    "ANTHROPIC_API_KEY",
+    "ARBITRARY_SECRET",
+  ]) {
+    assert.equal(forbidden in childEnvironment, false, `${forbidden} reached the Claude probe`);
+  }
 
   const gone = probeClaudeLocalBinary({ DIGITAL_EMPLOYEE_CLAUDE_COMMAND: path.join(dir, "no-such-binary") });
   assert.deepEqual(gone, { installed: false, version: null, supported: false });

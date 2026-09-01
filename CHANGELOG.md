@@ -38,6 +38,7 @@
 - #73 无边框窗口自定义标题栏：`owb:window:minimize` / `owb:window:toggle-maximize` / `owb:window:close` 三个枚举式 IPC；每个 handler 均校验 `event.senderFrame` 是 mainWindow 自身主 frame 且仍在展示打包渲染层（`window-ipc.cjs` 纯函数 + 6 条负向单测），并对 mainWindow 加 `will-navigate`/`setWindowOpenHandler` 拦截，拒绝导航到打包文件之外的任何地址与新窗口。
 - `apps/desktop/test/contrast.test.cjs`：对 `--ui-foreground-subtle` 在亮/暗两套主题的全部 5 个背景阶做真实 WCAG 对比度计算断言（≥4.5:1），而非仅检查 token 字符串存在。
 - #94 主题切换入口：自定义标题栏新增亮/暗切换按钮（`aria-pressed` + 目标态 `title`/`aria-label`），`theme-mode.ts` 提供唯一的 `data-theme` 写入路径与 `localStorage` 持久化，`main.tsx` 在 `createRoot()` 前种子化。未显式选择过时跟随系统 `prefers-color-scheme`（含运行时变化），首次点击即固化为显式选择并停止跟随。`antd-skin.css` 的暗色调色板与 antd `darkAlgorithm`/`ANTD_SEED.dark` 自 #73 起已完备，此前只是无人可达。
+- #110 macOS arm64 foundation（partial，承接已 supersede 的 #106）：锁定 `electron-builder@26.15.3`，以显式 FileSet 生成 unsigned arm64 `.app` 目录，并加入逐文件/架构/无开发者签名 verifier 与 clean-staging renderer → preload → 控制面 → Qoder fixture 回合 → history readback smoke；CI 新增 macOS-only package lane，不上传或发布 artifact。本项不代表 #110 的 Windows/x64、签名、公证、发布或更新闭环已完成。
 
 ### Changed
 
@@ -57,8 +58,9 @@
 
 ### Fixed
 
-- #104: 桌面默认的 bundled `qoder-engine` 已能真实执行本机 Qoder 回合，但 `/health` 仍只检查 `QODER_PERSONAL_ACCESS_TOKEN`，导致 renderer 把可用 Host 错误禁用。现在仅在引擎精确宣布 `qoder-engine <semver>` 时，以 health/turn 共用的无 shell resolver 解析绝对 Qoder executable：显式覆盖无效即 fail closed，否则查 PATH 与 macOS 已支持的用户安装位置；有界版本探针支持 1.1.x，缺失、非普通文件、不可执行、超时和版本越界均有非敏感下一步。turn 子进程保留继承 PATH；Finder 登录 PATH 恢复与打包验收由后续消费项 #106 承接，不是 #104 的完成依赖。普通 `digital-employee` 的 Qoder service-token 规则、Claude 判定和远端 entitlement 边界不变。
+- #104: 桌面默认的 bundled `qoder-engine` 已能真实执行本机 Qoder 回合，但 `/health` 仍只检查 `QODER_PERSONAL_ACCESS_TOKEN`，导致 renderer 把可用 Host 错误禁用。现在仅在引擎精确宣布 `qoder-engine <semver>` 时，以 health/turn 共用的无 shell resolver 解析绝对 Qoder executable：显式覆盖无效即 fail closed，否则查 PATH 与 macOS 已支持的用户安装位置；有界版本探针支持 1.1.x，缺失、非普通文件、不可执行、超时和版本越界均有非敏感下一步。turn 子进程保留继承 PATH；Finder 登录 PATH 恢复与打包验收由 #110 的 macOS arm64 foundation partial 承接，不是 #104 的完成依赖。普通 `digital-employee` 的 Qoder service-token 规则、Claude 判定和远端 entitlement 边界不变。
 - Renderer verification now isolates Vitest workers from Node 26's experimental global Web Storage, so Node 24 and Node 26 both exercise jsdom-owned `localStorage` without changing Electron theme persistence.
+- #110 macOS arm64 foundation（partial）：Finder/LaunchServices 的最小 PATH 无法发现用户 Qoder/MCP 命令。桌面 main 现在用固定 argv、单行 marker、绝对路径校验、输出上限和 `SIGKILL` 硬超时只恢复登录 PATH；失败保留原 PATH，不导入其他 shell 环境。`ELECTRON_RUN_AS_NODE=1` 只到桌面默认 bundled engine；health/hire/org 的普通 operator CLI 使用无凭据运行时 allowlist，turn 只携所选 Host 的明确授权，真实 Qoder/Claude probe 同样不读凭据。bundled Qoder adapter 只接收受支持的 binary/permission 配置，真实 Qoder/MCP 后代只接收 Qoder 运行时/凭据 allowlist，server boot token、internal marker、Context authority 与任意 secret 均不会跨越各自边界。
 - D4 rejects symlinked/oversized org-audit sources before bounded reads, projects audit entries through an exact allowlist, and no longer reuses the latest per-task ratio as a per-day percentage when no day bucket exists.
 - D3 turn control plane now preserves split UTF-8 output, accepts the upstream 1,048,576-character model boundary, reaps timed-out engine processes without late SSE, and safely preserves allowlisted spawn error codes.
 - Active turns are no longer recovered as interrupted; trusted terminal SSE is emitted only after the final turn record is durably persisted, and position IDs mirror the engine organization contract.

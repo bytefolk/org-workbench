@@ -11,13 +11,18 @@
 
 const { app, BrowserWindow, dialog, ipcMain } = require("electron");
 const { spawn } = require("node:child_process");
-const { createControlPlaneChild } = require("./control-plane-launch.cjs");
+const {
+  createControlPlaneChild,
+  engineRuntimeEnvironment,
+} = require("./control-plane-launch.cjs");
 const fs = require("node:fs");
 const http = require("node:http");
 const os = require("node:os");
 const path = require("node:path");
 const { pathToFileURL } = require("node:url");
 const { rendererEntryPath } = require("./runtime-paths.cjs");
+const { recoverMacGuiPath } = require("./macos-login-path.cjs");
+const { packagedSmokeReportPath, runPackagedSmoke } = require("./packaged-smoke.cjs");
 const { isAllowedNavigationTarget, isTrustedWindowSender } = require("./window-ipc.cjs");
 const { validateRestoreRequest, validateOrgApply } = require("./org-ipc.cjs");
 const {
@@ -85,9 +90,10 @@ function startControlPlane() {
         ...process.env,
         // Directly runnable: default the pinned engine to the bundled qoder
         // adapter unless the operator pins a real digital-employee CLI.
-        ORG_WORKBENCH_DIGITAL_EMPLOYEE_CLI:
-          process.env.ORG_WORKBENCH_DIGITAL_EMPLOYEE_CLI ??
+        ...engineRuntimeEnvironment(
+          process.env,
           pinnedEngineCommandDefault(),
+        ),
       },
     });
     let buffer = "";
@@ -506,6 +512,18 @@ function createWindow() {
     },
   });
   mainWindow.setMenuBarVisibility(false);
+  const smokeReportPath = packagedSmokeReportPath(process.env);
+  if (smokeReportPath !== null) {
+    mainWindow.webContents.once("did-finish-load", () => {
+      void runPackagedSmoke({
+        reportPath: smokeReportPath,
+        webContents: mainWindow.webContents,
+        serverPid: controlPlane?.child?.pid,
+        resourcesPath: process.resourcesPath,
+        quit: () => app.quit(),
+      });
+    });
+  }
   void mainWindow.loadFile(entryPath);
   // #77 review item 2: this shell never legitimately navigates away from the
   // packaged renderer or opens child windows; deny both explicitly rather
@@ -549,6 +567,10 @@ ipcMain.handle("owb:window:close", (event) => {
 
 
 app.whenReady().then(async () => {
+  // Finder/LaunchServices does not inherit the user's command search path.
+  // Recover only a bounded login-shell PATH before the control plane (and in
+  // turn Qoder/MCP children) is spawned; all other inherited env is unchanged.
+  process.env.PATH = await recoverMacGuiPath();
   try {
     controlPlane = await startControlPlane();
     startEventStream();

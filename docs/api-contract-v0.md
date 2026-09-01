@@ -52,7 +52,7 @@
 }
 ```
 
-约束：`engine.available` 为对已配置引擎命令的 `--version` 探针结果；不可用时必须给出可执行的 `nextStep`（"失败也有路"）。普通 `digital-employee` 的 Qoder model port 保持 service-token 门禁：`configured` 仅表示 `QODER_PERSONAL_ACCESS_TOKEN` 非空。仅当引擎精确宣布 `qoder-engine <semver>` 时，Qoder Host 才使用与 turn adapter 相同的无 shell executable resolver：非空 `ORG_WORKBENCH_QODER_BIN` 是权威覆盖（无效即 fail closed），否则查 PATH 的 `qodercli` / `qoder` 与 macOS 已支持的精确用户安装位置；符号链接的最终目标必须是可执行普通文件。解析出的绝对路径接受有界 `--version` 探针；当前支持 1.1.x，缺失、不可执行、超时、无法解析或版本越界均 fail closed。adapter spawn 同一绝对路径并保持继承 PATH 不变；Finder 登录 PATH 恢复和打包验收由后续消费项 #106 承接，不是本修复的完成依赖。该探针不读取账号、登录态或凭据存储，`ready` 也只表示本地执行前置满足，不代表远端 provider 接受了账号或具备 entitlement；一次真实回合仍是唯一的运行证据。响应只含布尔值与非敏感 `nextStep`，绝不返回凭据值、绝对 Qoder 路径或原始探针输出。Claude 各 Host 的判定独立，不得成为 bundled Qoder ready 的门槛。客户端必须以 Host 状态控制选择和发送，不得以 `engine.available` 代替 Host ready。
+约束：`engine.available` 为对已配置引擎命令的 `--version` 探针结果；不可用时必须给出可执行的 `nextStep`（"失败也有路"）。普通 `digital-employee` 的 Qoder model port 保持 service-token 门禁：`configured` 仅表示 `QODER_PERSONAL_ACCESS_TOKEN` 非空。仅当引擎精确宣布 `qoder-engine <semver>` 时，Qoder Host 才使用与 turn adapter 相同的无 shell executable resolver：非空 `ORG_WORKBENCH_QODER_BIN` 是权威覆盖（无效即 fail closed），否则查 PATH 的 `qodercli` / `qoder` 与 macOS 已支持的精确用户安装位置；符号链接的最终目标必须是可执行普通文件。解析出的绝对路径接受有界 `--version` 探针；当前支持 1.1.x，缺失、不可执行、超时、无法解析或版本越界均 fail closed。adapter spawn 同一绝对路径并保持继承 PATH 不变；Finder 登录 PATH 恢复和打包验收由 #110 的 macOS arm64 foundation partial 承接，不是本修复的完成依赖。该探针不读取账号、登录态或凭据存储，`ready` 也只表示本地执行前置满足，不代表远端 provider 接受了账号或具备 entitlement；一次真实回合仍是唯一的运行证据。响应只含布尔值与非敏感 `nextStep`，绝不返回凭据值、绝对 Qoder 路径或原始探针输出。Claude 各 Host 的判定独立，不得成为 bundled Qoder ready 的门槛。客户端必须以 Host 状态控制选择和发送，不得以 `engine.available` 代替 Host ready。
 
 ### 2.2 `GET /workspace` — 当前工作区信息
 

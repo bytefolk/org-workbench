@@ -70,16 +70,19 @@ async function makeWorkspace(): Promise<string> {
   return dir;
 }
 
-const FAKE_QODER_OK = `#!/usr/bin/env node
+function fakeQoderOk(argsFile: string, envFile: string): string {
+  return `#!/usr/bin/env node
 const fs = require("node:fs");
-if (process.env.FAKE_QODER_ARGS_FILE) fs.writeFileSync(process.env.FAKE_QODER_ARGS_FILE, JSON.stringify(process.argv.slice(2)));
-if (process.env.FAKE_QODER_ENV_FILE) fs.writeFileSync(process.env.FAKE_QODER_ENV_FILE, JSON.stringify({ PATH: process.env.PATH }));
+if (process.env.ELECTRON_RUN_AS_NODE !== undefined) process.exit(44);
+fs.writeFileSync(${JSON.stringify(argsFile)}, JSON.stringify(process.argv.slice(2)));
+fs.writeFileSync(${JSON.stringify(envFile)}, JSON.stringify(process.env));
 const write = (event) => process.stdout.write(JSON.stringify(event) + "\\n");
 write({ type: "system", subtype: "init" });
 write({ type: "assistant", message: { content: [{ type: "thinking", thinking: "internal" }, { type: "text", text: "正在核对" }], usage: { input_tokens: 10, output_tokens: 5 } } });
 write({ type: "assistant", message: { content: [{ type: "text", text: "，门禁通过" }] } });
 write({ type: "result", subtype: "success", is_error: false, result: "release gate passed", usage: { input_tokens: 100, output_tokens: 40 } });
 `;
+}
 
 const FAKE_QODER_ERROR_RESULT = `#!/usr/bin/env node
 const write = (event) => process.stdout.write(JSON.stringify(event) + "\\n");
@@ -164,17 +167,42 @@ test("qoder-engine org apply: a stray top-level directory fails with the actiona
 test("qoder-engine turn run: maps qoder stream-json into engine.v1 events and passes --agent <position>", async () => {
   const dir = await makeWorkspace();
   const fakeDir = await fs.mkdtemp(path.join(os.tmpdir(), "owb-fake-qoder-"));
-  const fakeBin = await writeFakeQoder(fakeDir, FAKE_QODER_OK);
   const argsFile = path.join(fakeDir, "args.json");
   const envFile = path.join(fakeDir, "env.json");
+  const fakeBin = await writeFakeQoder(fakeDir, fakeQoderOk(argsFile, envFile));
   const inheritedPath = `${fakeDir}${path.delimiter}${process.env.PATH ?? ""}`;
+  const qoderRuntimeEnvironment = {
+    LOGNAME: "qoder-user",
+    TMP: path.join(fakeDir, "tmp"),
+    TEMP: path.join(fakeDir, "temp"),
+    LC_CTYPE: "en_US.UTF-8",
+    XDG_CONFIG_HOME: path.join(fakeDir, "config"),
+    XDG_CACHE_HOME: path.join(fakeDir, "cache"),
+    HTTP_PROXY: "http://127.0.0.1:9001",
+    HTTPS_PROXY: "http://127.0.0.1:9002",
+    NO_PROXY: "localhost,127.0.0.1",
+    http_proxy: "http://127.0.0.1:9003",
+    https_proxy: "http://127.0.0.1:9004",
+    no_proxy: "localhost",
+    NODE_EXTRA_CA_CERTS: "",
+    SSL_CERT_FILE: path.join(fakeDir, "ca.pem"),
+    SSL_CERT_DIR: path.join(fakeDir, "certs"),
+  };
   const result = await runAdapter(["turn", "run", dir, "--position", "docs-writer", "--stdin"], {
     stdin: JSON.stringify({ input: "检查发布门禁" }),
     env: {
+      ELECTRON_RUN_AS_NODE: "1",
       ORG_WORKBENCH_QODER_BIN: fakeBin,
-      FAKE_QODER_ARGS_FILE: argsFile,
-      FAKE_QODER_ENV_FILE: envFile,
+      ORG_WORKBENCH_QODER_PERMISSION_MODE: "auto",
+      ORG_WORKBENCH_INTERNAL_BUNDLED_ELECTRON_ENGINE: "1",
+      ORG_WORKBENCH_BOOT_TOKEN: "boot-secret",
+      DIGITAL_EMPLOYEE_ENGINE_MODEL: "qoder",
+      CONTEXT_RUNTIME_TOKEN: "context-secret",
+      CONTEXT_VAULT: "/private/context-vault",
+      ARBITRARY_SECRET: "arbitrary-secret",
+      QODER_PERSONAL_ACCESS_TOKEN: "qoder-credential",
       PATH: inheritedPath,
+      ...qoderRuntimeEnvironment,
     },
   });
   assert.equal(result.code, 0);
@@ -196,9 +224,44 @@ test("qoder-engine turn run: maps qoder stream-json into engine.v1 events and pa
   const qoderArgs = JSON.parse(await fs.readFile(argsFile, "utf8")) as string[];
   assert.ok(qoderArgs.includes("-w") && qoderArgs[qoderArgs.indexOf("-w") + 1] === dir);
   assert.ok(qoderArgs.includes("--agent") && qoderArgs[qoderArgs.indexOf("--agent") + 1] === "docs-writer");
+  assert.ok(qoderArgs.includes("--permission-mode") && qoderArgs[qoderArgs.indexOf("--permission-mode") + 1] === "auto");
   assert.equal(qoderArgs.at(-1), "检查发布门禁", "envelope input becomes the qoder prompt");
-  const qoderEnv = JSON.parse(await fs.readFile(envFile, "utf8")) as { PATH?: string };
+  const qoderEnv = JSON.parse(await fs.readFile(envFile, "utf8")) as Record<string, string>;
   assert.equal(qoderEnv.PATH, inheritedPath, "qoder-engine must not replace or truncate the inherited user PATH");
+  assert.equal(qoderEnv.QODER_PERSONAL_ACCESS_TOKEN, "qoder-credential");
+  for (const [key, value] of Object.entries(qoderRuntimeEnvironment)) {
+    assert.equal(qoderEnv[key], value, `${key} must reach the real Qoder/MCP runtime`);
+  }
+  for (const forbidden of [
+    "ELECTRON_RUN_AS_NODE",
+    "ORG_WORKBENCH_QODER_BIN",
+    "ORG_WORKBENCH_QODER_PERMISSION_MODE",
+    "ORG_WORKBENCH_INTERNAL_BUNDLED_ELECTRON_ENGINE",
+    "ORG_WORKBENCH_BOOT_TOKEN",
+    "DIGITAL_EMPLOYEE_ENGINE_MODEL",
+    "CONTEXT_RUNTIME_TOKEN",
+    "CONTEXT_VAULT",
+    "ARBITRARY_SECRET",
+  ]) {
+    assert.equal(forbidden in qoderEnv, false, `${forbidden} reached Qoder or its MCP descendants`);
+  }
+});
+
+test("qoder-engine turn run: an unsupported permission mode fails before spawning Qoder", async () => {
+  const dir = await makeWorkspace();
+  const fakeDir = await fs.mkdtemp(path.join(os.tmpdir(), "owb-qoder-mode-"));
+  const fakeBin = await writeFakeQoder(fakeDir, "#!/usr/bin/env node\nprocess.exit(91);\n");
+  const result = await runAdapter(["turn", "run", dir, "--position", "repo-owner", "--stdin"], {
+    stdin: JSON.stringify({ input: "hi" }),
+    env: {
+      ORG_WORKBENCH_QODER_BIN: fakeBin,
+      ORG_WORKBENCH_QODER_PERMISSION_MODE: "unrestricted",
+    },
+  });
+  assert.equal(result.code, 0);
+  const failed = result.stdout.trim().split("\n").map((line) => JSON.parse(line) as Record<string, unknown>).find((event) => event.type === "run.failed");
+  assert.equal((failed?.error as { code: string }).code, "qoder.permission_mode_invalid");
+  assert.equal((failed?.error as { retryable: boolean }).retryable, false);
 });
 
 test("qoder-engine turn run uses the same PATH resolver without an explicit binary override", async () => {
