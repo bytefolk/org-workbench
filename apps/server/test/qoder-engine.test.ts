@@ -1,11 +1,11 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
-import crypto from "node:crypto";
+import { constants as fsConstants } from "node:fs";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 /** The adapter is a standalone script implementing the pinned digital-employee
  * CLI surface; tests drive it exactly like driver-cli spawns an engine. */
@@ -42,35 +42,39 @@ const BUDGET = {
   perDay: { tokens: 200000, iterations: 64 },
 };
 
-function canonicalJson(value: unknown): unknown {
-  if (value === null || typeof value !== "object") return value;
-  if (Array.isArray(value)) return value.map(canonicalJson);
-  const sorted: Record<string, unknown> = {};
-  for (const key of Object.keys(value as Record<string, unknown>).sort()) {
-    sorted[key] = canonicalJson((value as Record<string, unknown>)[key]);
-  }
-  return sorted;
-}
-
-function envelopeDigest(body: Record<string, unknown>): string {
-  const canonical = JSON.stringify(canonicalJson(body));
-  return `sha256:${crypto.createHash("sha256").update(canonical, "utf8").digest("hex")}`;
-}
-
-function hireEnvelope(workspaceRef: string): Record<string, unknown> {
-  const body = {
+/** Byte-for-byte field values from the pinned digital-employee #194 fixture. */
+function upstreamHireEnvelope(): Record<string, unknown> {
+  return {
     schemaVersion: "hire-request.v1alpha1",
-    workspaceRef,
+    workspaceRef: "ws-main",
     packageRef: {
-      name: "docs-writer",
+      name: "team-answer",
       version: "v1alpha1",
-      digest: "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+      digest: "sha256:0123456789abcdef",
     },
-    targetParentId: "repo-owner",
-    budget: BUDGET,
-    requestedBy: "operator",
+    targetParentId: "pos-parent-1",
+    budget: {
+      perTask: { tokens: 50_000, iterations: 8 },
+      perDay: { tokens: 500_000 },
+    },
+    requestedBy: "cto",
+    deadline: "2026-01-01T00:00:00Z",
+    envelopeDigest: "sha256:abcdef0123456789",
   };
-  return { ...body, envelopeDigest: envelopeDigest(body) };
+}
+
+type ReadBoundedHireFile = (file: string, options?: Record<string, unknown>) => Promise<string>;
+
+async function loadBoundedHireReader(): Promise<ReadBoundedHireFile> {
+  const module = await import(pathToFileURL(ADAPTER).href) as { readBoundedHireFile: ReadBoundedHireFile };
+  return module.readBoundedHireFile;
+}
+
+async function assertHireReadFailure(promise: Promise<string>, code: string): Promise<void> {
+  await assert.rejects(promise, (error: unknown) => {
+    assert.equal((error as { code?: string }).code, code);
+    return true;
+  });
 }
 
 async function writeHireEnvelope(dir: string, body: unknown): Promise<string> {
@@ -160,14 +164,14 @@ test("qoder-engine hire validate: help advertises the bounded static contract", 
   assert.match(result.stderr, /hire validate <file> --json/);
 });
 
-test("qoder-engine hire validate: accepts the sealed envelope without spawning Qoder or mutating the workspace", async (t) => {
+test("qoder-engine hire validate: accepts the pinned upstream opaque-digest fixture without effects", async (t) => {
   const workspace = await makeWorkspace();
   const fixtureDir = await fs.mkdtemp(path.join(os.tmpdir(), "owb-qoder-hire-"));
   t.after(() => Promise.all([
     fs.rm(workspace, { recursive: true, force: true }),
     fs.rm(fixtureDir, { recursive: true, force: true }),
   ]));
-  const envelope = hireEnvelope(workspace);
+  const envelope = upstreamHireEnvelope();
   const file = await writeHireEnvelope(fixtureDir, envelope);
   const marker = path.join(fixtureDir, "qoder-spawned");
   const fakeQoder = await writeFakeQoder(
@@ -187,7 +191,7 @@ test("qoder-engine hire validate: accepts the sealed envelope without spawning Q
   assert.equal(await exists(path.join(workspace, ".digital-employee")), false);
 });
 
-test("qoder-engine hire validate: malformed and digest-invalid envelopes fail closed before any effect", async (t) => {
+test("qoder-engine hire validate: malformed and too-short opaque digests fail closed before any effect", async (t) => {
   const workspace = await makeWorkspace();
   const fixtureDir = await fs.mkdtemp(path.join(os.tmpdir(), "owb-qoder-hire-invalid-"));
   t.after(() => Promise.all([
@@ -203,13 +207,13 @@ test("qoder-engine hire validate: malformed and digest-invalid envelopes fail cl
   const cases: Array<{ name: string; body: Record<string, unknown>; code: string }> = [
     {
       name: "unknown root field",
-      body: { ...hireEnvelope(workspace), approvedBy: "operator" },
+      body: { ...upstreamHireEnvelope(), approvedBy: "operator" },
       code: "hire_request_unknown_field:approvedBy",
     },
     {
       name: "missing budget",
       body: (() => {
-        const body = hireEnvelope(workspace);
+        const body = upstreamHireEnvelope();
         delete body.budget;
         return body;
       })(),
@@ -217,14 +221,14 @@ test("qoder-engine hire validate: malformed and digest-invalid envelopes fail cl
     },
     {
       name: "invalid deadline",
-      body: { ...hireEnvelope(workspace), deadline: "not-a-date" },
+      body: { ...upstreamHireEnvelope(), deadline: "not-a-date" },
       code: "hire_request_invalid_field:deadline",
     },
     {
-      name: "digest mismatch",
+      name: "opaque digest shorter than 16 characters",
       body: {
-        ...hireEnvelope(workspace),
-        envelopeDigest: "sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+        ...upstreamHireEnvelope(),
+        envelopeDigest: "123456789012345",
       },
       code: "hire_request_invalid_field:envelopeDigest",
     },
@@ -268,6 +272,94 @@ test("qoder-engine hire validate: malformed and digest-invalid envelopes fail cl
   assert.equal(await exists(marker), false, "rejected hire envelopes never start Qoder");
   assert.deepEqual(await fs.readdir(path.join(workspace, "positions", "repo-owner")), before);
   assert.equal(await exists(path.join(workspace, ".digital-employee")), false);
+});
+
+test("qoder-engine hire read: deterministic pathname replacement race fails closed", async (t) => {
+  const fixtureDir = await fs.mkdtemp(path.join(os.tmpdir(), "owb-qoder-hire-race-"));
+  t.after(() => fs.rm(fixtureDir, { recursive: true, force: true }));
+  const requested = await writeHireEnvelope(fixtureDir, upstreamHireEnvelope());
+  const replacement = path.join(fixtureDir, "replacement.json");
+  const displaced = path.join(fixtureDir, "displaced.json");
+  await fs.writeFile(replacement, `${JSON.stringify({ ...upstreamHireEnvelope(), requestedBy: "replacement" })}\n`, { mode: 0o600 });
+  const readBoundedHireFile = await loadBoundedHireReader();
+
+  await assertHireReadFailure(
+    readBoundedHireFile(requested, {
+      hooks: {
+        beforeOpen: async () => {
+          await fs.rename(requested, displaced);
+          await fs.rename(replacement, requested);
+        },
+      },
+    }),
+    "hire_request_file_unreadable",
+  );
+});
+
+test("qoder-engine hire read: concurrent growth is detected by the MAX+1 positional read", async (t) => {
+  const fixtureDir = await fs.mkdtemp(path.join(os.tmpdir(), "owb-qoder-hire-growth-"));
+  t.after(() => fs.rm(fixtureDir, { recursive: true, force: true }));
+  const requested = await writeHireEnvelope(fixtureDir, upstreamHireEnvelope());
+  const readBoundedHireFile = await loadBoundedHireReader();
+  let grown = false;
+
+  await assertHireReadFailure(
+    readBoundedHireFile(requested, {
+      hooks: {
+        afterReadChunk: async () => {
+          if (grown) return;
+          grown = true;
+          await fs.appendFile(requested, Buffer.alloc(256 * 1024 + 1, 0x20));
+        },
+      },
+    }),
+    "hire_request_too_large",
+  );
+  assert.equal(grown, true);
+});
+
+test("qoder-engine hire read: Windows/no-O_NOFOLLOW fallback remains bounded and fail-closed", async (t) => {
+  const fixtureDir = await fs.mkdtemp(path.join(os.tmpdir(), "owb-qoder-hire-win-"));
+  t.after(() => fs.rm(fixtureDir, { recursive: true, force: true }));
+  const requested = await writeHireEnvelope(fixtureDir, upstreamHireEnvelope());
+  const expected = await fs.readFile(requested, "utf8");
+  const readBoundedHireFile = await loadBoundedHireReader();
+  let windowsFlags: number | undefined;
+
+  const actual = await readBoundedHireFile(requested, {
+    platform: "win32",
+    constants: { O_RDONLY: fsConstants.O_RDONLY },
+    hooks: { beforeOpen: ({ flags }: { flags: number }) => { windowsFlags = flags; } },
+  });
+  assert.equal(actual, expected);
+  assert.equal(windowsFlags, fsConstants.O_RDONLY, "Windows fallback adds neither unavailable O_NOFOLLOW nor O_NONBLOCK");
+
+  if (fsConstants.O_NONBLOCK !== undefined) {
+    let posixFlags: number | undefined;
+    await readBoundedHireFile(requested, {
+      platform: "darwin",
+      constants: { O_RDONLY: fsConstants.O_RDONLY, O_NONBLOCK: fsConstants.O_NONBLOCK },
+      hooks: { beforeOpen: ({ flags }: { flags: number }) => { posixFlags = flags; } },
+    });
+    assert.equal((posixFlags ?? 0) & fsConstants.O_NONBLOCK, fsConstants.O_NONBLOCK, "POSIX adds O_NONBLOCK when available");
+  }
+
+  const replacement = path.join(fixtureDir, "windows-replacement.json");
+  const displaced = path.join(fixtureDir, "windows-displaced.json");
+  await fs.writeFile(replacement, `${JSON.stringify({ ...upstreamHireEnvelope(), requestedBy: "replacement" })}\n`, { mode: 0o600 });
+  await assertHireReadFailure(
+    readBoundedHireFile(requested, {
+      platform: "win32",
+      constants: { O_RDONLY: fsConstants.O_RDONLY },
+      hooks: {
+        beforeOpen: async () => {
+          await fs.rename(requested, displaced);
+          await fs.rename(replacement, requested);
+        },
+      },
+    }),
+    "hire_request_file_unreadable",
+  );
 });
 
 test("qoder-engine org apply: bootstrap writes 0600 applied state and reports EngineOrgApplySuccess", async () => {

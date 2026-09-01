@@ -108,13 +108,13 @@ test("POST /hire: the bundled qoder-engine validates and applies a hire through 
   }
 });
 
-test("POST /hire: bundled validation rejects a digest-corrupted envelope before staging or org apply", async (t) => {
+test("POST /hire: bundled validation rejects a too-short opaque digest before staging or org apply", async (t) => {
   const spawned = new DigitalEmployeeCliDriver(QODER_ADAPTER_COMMAND);
   let applyCalls = 0;
   const driver = {
     async hireValidate(file: string) {
       const envelope = await readJson<Record<string, unknown>>(file);
-      envelope.envelopeDigest = "sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff";
+      envelope.envelopeDigest = "too-short";
       await fs.writeFile(file, `${JSON.stringify(envelope, null, 2)}\n`, { mode: 0o600 });
       return spawned.hireValidate(file);
     },
@@ -142,7 +142,7 @@ test("POST /hire: bundled validation rejects a digest-corrupted envelope before 
     });
     assert.equal(response.status, 422);
     assert.equal((response.body as { code: string }).code, "hire_request_invalid_field:envelopeDigest");
-    assert.equal(applyCalls, 0, "digest rejection never opens the org apply gate");
+    assert.equal(applyCalls, 0, "opaque digest rejection never opens the org apply gate");
     assert.deepEqual(await fs.readdir(path.join(dir, "positions", "repo-owner")), before);
     assert.equal(await exists(path.join(dir, "positions", "repo-owner", "docs-writer")), false);
     assert.equal(await exists(path.join(dir, ".digital-employee", "org.json")), false);

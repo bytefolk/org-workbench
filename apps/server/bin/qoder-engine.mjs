@@ -9,9 +9,10 @@
  */
 import { spawn } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
-import { constants as fsConstants } from "node:fs";
+import { constants as fsConstants, realpathSync } from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { resolveQoderExecutable } from "../src/qoder-binary.js";
 
 const VERSION = "0.2.0";
@@ -80,24 +81,13 @@ const HIRE_BUDGET_SCOPE_FIELDS = ["tokens", "iterations"];
  * Static mirror of digital-employee #194/#198 (b3d54bf). The adapter is a
  * standalone packaged entrypoint, so importing an unbuilt workspace package
  * would make the desktop contract depend on source layout. #113 adds only the
- * canonical envelopeDigest comparison; it does not turn validation into a
- * provider call or replace the later org apply gate.
+ * frozen static validation surface; it does not turn validation into a
+ * provider call or replace the later org apply gate. In that pinned contract,
+ * envelopeDigest is an opaque sealed-turn reference with minLength 16.
  */
 
 function sha256(text) {
   return `sha256:${createHash("sha256").update(text, "utf8").digest("hex")}`;
-}
-
-function canonicalJson(value) {
-  if (value === null || typeof value !== "object") return value;
-  if (Array.isArray(value)) return value.map(canonicalJson);
-  const sorted = {};
-  for (const key of Object.keys(value).sort()) sorted[key] = canonicalJson(value[key]);
-  return sorted;
-}
-
-function hireEnvelopeDigest(body) {
-  return sha256(JSON.stringify(canonicalJson(body)));
 }
 
 class HireValidationError extends Error {
@@ -219,11 +209,6 @@ function validateHireRequest(raw) {
     deadline = raw.deadline;
   }
   const envelopeDigest = assertHireDigest(raw.envelopeDigest, "envelopeDigest");
-  const sealedBody = { ...raw };
-  delete sealedBody.envelopeDigest;
-  if (envelopeDigest !== hireEnvelopeDigest(sealedBody)) {
-    throw hireError("hire_request_invalid_field:envelopeDigest", "envelopeDigest does not match the canonical envelope body");
-  }
   return {
     schemaVersion: HIRE_REQUEST_SCHEMA_VERSION,
     workspaceRef,
@@ -236,34 +221,100 @@ function validateHireRequest(raw) {
   };
 }
 
-async function readBoundedHireFile(file) {
+function assertHirePathStats(stats) {
+  if (stats.isSymbolicLink() || !stats.isFile()) {
+    throw hireError("hire_request_file_unreadable", "hire request must be a regular non-symlink file");
+  }
+}
+
+function assertHireHandleStats(stats) {
+  if (!stats.isFile()) {
+    throw hireError("hire_request_file_unreadable", "hire request must be a regular file");
+  }
+}
+
+function assertHireSize(stats) {
+  if (stats.size > BigInt(HIRE_REQUEST_MAX_BYTES)) {
+    throw hireError("hire_request_too_large", "hire request exceeds the bounded envelope size");
+  }
+}
+
+function sameHireFile(left, right) {
+  return left.dev === right.dev && left.ino === right.ino;
+}
+
+function assertStableHireFile(pathStats, handleStats) {
+  if (!sameHireFile(pathStats, handleStats) || pathStats.size !== handleStats.size) {
+    throw hireError("hire_request_file_unreadable", "hire request file identity or size changed during validation");
+  }
+}
+
+/**
+ * Read one bounded immutable snapshot of the requested path. `options` exists
+ * only as a deterministic test seam; the CLI never accepts or populates it.
+ */
+export async function readBoundedHireFile(file, options = {}) {
+  const fileSystem = options.fileSystem ?? fs;
+  const constants = options.constants ?? fsConstants;
+  const platform = options.platform ?? process.platform;
+  const hooks = options.hooks ?? {};
   let initial;
   try {
-    initial = await fs.lstat(file);
+    initial = await fileSystem.lstat(file, { bigint: true });
   } catch {
     throw hireError("hire_request_file_unreadable", "hire request file is unreadable");
   }
-  if (initial.isSymbolicLink() || !initial.isFile()) {
-    throw hireError("hire_request_file_unreadable", "hire request must be a regular non-symlink file");
-  }
-  if (initial.size > HIRE_REQUEST_MAX_BYTES) {
-    throw hireError("hire_request_too_large", "hire request exceeds the bounded envelope size");
-  }
+  assertHirePathStats(initial);
+  assertHireSize(initial);
+
   let handle;
   try {
-    handle = await fs.open(file, fsConstants.O_RDONLY | fsConstants.O_NOFOLLOW);
-    const opened = await handle.stat();
-    if (!opened.isFile()) {
-      throw hireError("hire_request_file_unreadable", "hire request must be a regular file");
+    const noFollow = constants.O_NOFOLLOW ?? 0;
+    const nonBlock = platform === "win32" ? 0 : (constants.O_NONBLOCK ?? 0);
+    const flags = constants.O_RDONLY | noFollow | nonBlock;
+    await hooks.beforeOpen?.({ file, flags });
+    handle = await fileSystem.open(file, flags);
+    await hooks.afterOpen?.({ file, flags, handle });
+
+    const opened = await handle.stat({ bigint: true });
+    const pathAfterOpen = await fileSystem.lstat(file, { bigint: true });
+    assertHireHandleStats(opened);
+    assertHirePathStats(pathAfterOpen);
+    assertHireSize(opened);
+    assertHireSize(pathAfterOpen);
+    assertStableHireFile(initial, opened);
+    assertStableHireFile(pathAfterOpen, opened);
+
+    const buffer = Buffer.allocUnsafe(HIRE_REQUEST_MAX_BYTES + 1);
+    let totalBytes = 0;
+    while (totalBytes < buffer.length) {
+      const { bytesRead } = await handle.read(
+        buffer,
+        totalBytes,
+        buffer.length - totalBytes,
+        totalBytes,
+      );
+      if (bytesRead === 0) break;
+      totalBytes += bytesRead;
+      await hooks.afterReadChunk?.({ file, bytesRead, totalBytes, handle });
     }
-    if (opened.size > HIRE_REQUEST_MAX_BYTES) {
+    if (totalBytes > HIRE_REQUEST_MAX_BYTES) {
       throw hireError("hire_request_too_large", "hire request exceeds the bounded envelope size");
     }
-    const text = await handle.readFile("utf8");
-    if (Buffer.byteLength(text, "utf8") > HIRE_REQUEST_MAX_BYTES) {
-      throw hireError("hire_request_too_large", "hire request exceeds the bounded envelope size");
+
+    const openedAfterRead = await handle.stat({ bigint: true });
+    const pathAfterRead = await fileSystem.lstat(file, { bigint: true });
+    assertHireHandleStats(openedAfterRead);
+    assertHirePathStats(pathAfterRead);
+    assertHireSize(openedAfterRead);
+    assertHireSize(pathAfterRead);
+    assertStableHireFile(opened, openedAfterRead);
+    assertStableHireFile(pathAfterRead, openedAfterRead);
+    if (openedAfterRead.size !== BigInt(totalBytes)) {
+      throw hireError("hire_request_file_unreadable", "hire request file size changed during validation");
     }
-    return text;
+
+    return buffer.subarray(0, totalBytes).toString("utf8");
   } catch (error) {
     if (error instanceof HireValidationError) throw error;
     throw hireError("hire_request_file_unreadable", "hire request file is unreadable");
@@ -585,34 +636,48 @@ function turnRun(workspaceDir, positionId) {
   });
 }
 
-const argv = process.argv.slice(2);
-if (argv.includes("--version") || argv.includes("-v")) {
-  console.log(`qoder-engine ${VERSION}`);
-} else if (argv[0] === "hire" && (argv[1] === "--help" || argv[1] === "-h")) {
-  console.log("qoder-engine hire validate <file> [--json]\nstatic hire-request.v1alpha1 validation only; no Qoder or provider process is started");
-} else if (
-  argv[0] === "hire" &&
-  argv[1] === "validate" &&
-  typeof argv[2] === "string" &&
-  (argv.length === 3 || (argv.length === 4 && argv[3] === "--json"))
-) {
-  hireValidate(argv[2], argv[3] === "--json").catch(() => {
-    emitHireFailure("hire_request_file_unreadable", argv[3] === "--json");
-  });
-} else if (argv[0] === "org" && argv[1] === "apply" && typeof argv[2] === "string") {
-  orgApply(argv[2]).catch((error) => {
-    console.log(JSON.stringify({ status: "failed", code: "qoder.org_apply_failed", message: String(error?.message ?? error).slice(0, 2000) }));
-    process.exit(0);
-  });
-} else if (argv[0] === "turn" && argv[1] === "run" && typeof argv[2] === "string") {
-  const positionIndex = argv.indexOf("--position");
-  const positionId = positionIndex >= 0 ? argv[positionIndex + 1] : undefined;
-  if (!positionId) {
-    console.error("qoder-engine: turn run requires --position <id>");
-    process.exit(1);
+function runCli(argv) {
+  if (argv.includes("--version") || argv.includes("-v")) {
+    console.log(`qoder-engine ${VERSION}`);
+  } else if (argv[0] === "hire" && (argv[1] === "--help" || argv[1] === "-h")) {
+    console.log("qoder-engine hire validate <file> [--json]\nstatic hire-request.v1alpha1 validation only; no Qoder or provider process is started");
+  } else if (
+    argv[0] === "hire" &&
+    argv[1] === "validate" &&
+    typeof argv[2] === "string" &&
+    (argv.length === 3 || (argv.length === 4 && argv[3] === "--json"))
+  ) {
+    hireValidate(argv[2], argv[3] === "--json").catch(() => {
+      emitHireFailure("hire_request_file_unreadable", argv[3] === "--json");
+    });
+  } else if (argv[0] === "org" && argv[1] === "apply" && typeof argv[2] === "string") {
+    orgApply(argv[2]).catch((error) => {
+      console.log(JSON.stringify({ status: "failed", code: "qoder.org_apply_failed", message: String(error?.message ?? error).slice(0, 2000) }));
+      process.exit(0);
+    });
+  } else if (argv[0] === "turn" && argv[1] === "run" && typeof argv[2] === "string") {
+    const positionIndex = argv.indexOf("--position");
+    const positionId = positionIndex >= 0 ? argv[positionIndex + 1] : undefined;
+    if (!positionId) {
+      console.error("qoder-engine: turn run requires --position <id>");
+      process.exit(1);
+    }
+    turnRun(argv[2], positionId);
+  } else {
+    console.error(`qoder-engine ${VERSION} — digital-employee CLI surface over the qoder CLI\nusage: qoder-engine [--version] | hire validate <file> --json | org apply <workspace> --json | turn run <workspace> --position <id> --stdin`);
+    process.exit(argv.length === 0 || argv.includes("--help") || argv.includes("-h") ? 0 : 1);
   }
-  turnRun(argv[2], positionId);
-} else {
-  console.error(`qoder-engine ${VERSION} — digital-employee CLI surface over the qoder CLI\nusage: qoder-engine [--version] | hire validate <file> --json | org apply <workspace> --json | turn run <workspace> --position <id> --stdin`);
-  process.exit(argv.length === 0 || argv.includes("--help") || argv.includes("-h") ? 0 : 1);
+}
+
+const invokedEntry = process.argv[1];
+let invokedDirectly = false;
+if (invokedEntry) {
+  try {
+    invokedDirectly = realpathSync(invokedEntry) === realpathSync(fileURLToPath(import.meta.url));
+  } catch {
+    invokedDirectly = false;
+  }
+}
+if (invokedDirectly) {
+  runCli(process.argv.slice(2));
 }
