@@ -16,6 +16,41 @@ import "./app.css";
 import { App } from "./App";
 import { initThemeMode } from "./theme-mode";
 
+export const PACKAGED_SMOKE_QUERY_KEY = "orgWorkbenchPackagedSmoke";
+const PACKAGED_SMOKE_NONCE = /^[a-f0-9]{64}$/;
+
+type RendererLocation = Pick<Location, "protocol" | "search">;
+
+export function isPackagedSmokeEntry(location: RendererLocation): boolean {
+  if (location.protocol !== "file:") return false;
+  const query = new URLSearchParams(location.search);
+  const keys = [...query.keys()];
+  return keys.length === 1 &&
+    keys[0] === PACKAGED_SMOKE_QUERY_KEY &&
+    PACKAGED_SMOKE_NONCE.test(query.get(PACKAGED_SMOKE_QUERY_KEY) ?? "");
+}
+
+export function rendererEntryElement(
+  location: RendererLocation,
+  AppComponent: React.ComponentType = App,
+): React.ReactElement {
+  if (isPackagedSmokeEntry(location)) {
+    // The main process independently proves control-plane readiness. This
+    // static renderer marker intentionally calls no bridge method, so Lane A
+    // never triggers health/Qoder/business work while scoring package layout.
+    return (
+      <main data-org-workbench-packaged-smoke-entry="true">
+        Org Workbench clean-staging renderer
+      </main>
+    );
+  }
+  return (
+    <React.StrictMode>
+      <AppComponent />
+    </React.StrictMode>
+  );
+}
+
 const root = document.getElementById("root");
 if (!root) throw new Error("renderer root element missing");
 
@@ -30,7 +65,5 @@ initThemeMode();
 // The antd ConfigProvider (ADR-0002 theme tokens) lives inside <App /> so the
 // test harness renders the exact same configuration as production.
 createRoot(root).render(
-  <React.StrictMode>
-    <App />
-  </React.StrictMode>,
+  rendererEntryElement(window.location),
 );

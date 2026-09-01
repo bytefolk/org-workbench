@@ -31,6 +31,14 @@ function controlPlaneMode(env) {
   return (env.ORG_WORKBENCH_CONTROL_PLANE ?? "").toLowerCase() === "wsl" ? "wsl" : "native";
 }
 
+function stripPackagedSmokeControls(env) {
+  return Object.fromEntries(
+    Object.entries(env).filter(([key]) =>
+      !key.startsWith("ORG_WORKBENCH_PACKAGED_SMOKE_") &&
+      !key.startsWith("ORG_WORKBENCH_PACKAGED_BEHAVIOR_SMOKE_")),
+  );
+}
+
 /**
  * Spawn the control-plane server. Returns a ChildProcess whose stdout carries
  * the "org-workbench-server ready {port,token}" line. For the WSL mode the
@@ -39,17 +47,18 @@ function controlPlaneMode(env) {
  * 127.0.0.1:port and the loopback security model is unchanged.
  */
 function createControlPlaneChild({ serverEntry, env }) {
-  const mode = controlPlaneMode(env);
+  const childEnv = stripPackagedSmokeControls(env);
+  const mode = controlPlaneMode(childEnv);
   if (mode === "wsl") {
     const wslEntry = winToWslPath(serverEntry);
     return spawn(
       "wsl.exe",
       ["-e", "bash", "-lc", `node "${wslEntry}"`],
-      { stdio: ["ignore", "pipe", "pipe"] },
+      { env: childEnv, stdio: ["ignore", "pipe", "pipe"] },
     );
   }
   return spawn(process.execPath, [serverEntry], {
-    env: { ...env, ELECTRON_RUN_AS_NODE: "1" },
+    env: { ...childEnv, ELECTRON_RUN_AS_NODE: "1" },
     stdio: ["ignore", "pipe", "pipe"],
   });
 }
@@ -58,5 +67,6 @@ module.exports = {
   controlPlaneMode,
   createControlPlaneChild,
   engineRuntimeEnvironment,
+  stripPackagedSmokeControls,
   winToWslPath,
 };

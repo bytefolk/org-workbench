@@ -4,12 +4,11 @@ module.exports = {
   appId: "org.fullstack-ai-infra.org-workbench",
   productName: "Org Workbench",
   directories: {
-    output: "release",
+    output: "release/staging",
   },
   asar: false,
-  // The package script materializes the exact locked Electron distribution
-  // through Electron's checksum-verifying installer. Reuse that directory so
-  // electron-builder never performs a separate, implicit download.
+  // npm ci materializes the checksum-verified, platform-native Electron dist.
+  // Native CI jobs reuse it and never ask builder to fetch another Electron.
   electronDist: "node_modules/electron/dist",
   npmRebuild: false,
   extraMetadata: {
@@ -19,6 +18,10 @@ module.exports = {
   mac: {
     category: "public.app-category.developer-tools",
     identity: null,
-    target: [{ target: "dir", arch: ["arm64"] }],
+  },
+  // Lane A is deterministic unsigned staging even when an operator shell has
+  // CSC_LINK/WIN_CSC_LINK. Keep PE metadata editing, but never enter signing.
+  win: {
+    signExecutable: false,
   },
 };

@@ -38,7 +38,7 @@
 - #73 无边框窗口自定义标题栏：`owb:window:minimize` / `owb:window:toggle-maximize` / `owb:window:close` 三个枚举式 IPC；每个 handler 均校验 `event.senderFrame` 是 mainWindow 自身主 frame 且仍在展示打包渲染层（`window-ipc.cjs` 纯函数 + 6 条负向单测），并对 mainWindow 加 `will-navigate`/`setWindowOpenHandler` 拦截，拒绝导航到打包文件之外的任何地址与新窗口。
 - `apps/desktop/test/contrast.test.cjs`：对 `--ui-foreground-subtle` 在亮/暗两套主题的全部 5 个背景阶做真实 WCAG 对比度计算断言（≥4.5:1），而非仅检查 token 字符串存在。
 - #94 主题切换入口：自定义标题栏新增亮/暗切换按钮（`aria-pressed` + 目标态 `title`/`aria-label`），`theme-mode.ts` 提供唯一的 `data-theme` 写入路径与 `localStorage` 持久化，`main.tsx` 在 `createRoot()` 前种子化。未显式选择过时跟随系统 `prefers-color-scheme`（含运行时变化），首次点击即固化为显式选择并停止跟随。`antd-skin.css` 的暗色调色板与 antd `darkAlgorithm`/`ANTD_SEED.dark` 自 #73 起已完备，此前只是无人可达。
-- #110 macOS arm64 foundation（partial，承接已 supersede 的 #106）：锁定 `electron-builder@26.15.3`，以显式 FileSet 生成 unsigned arm64 `.app` 目录，并加入逐文件/架构/无开发者签名 verifier 与 clean-staging renderer → preload → 控制面 → Qoder fixture 回合 → history readback smoke；CI 新增 macOS-only package lane，不上传或发布 artifact。本项不代表 #110 的 Windows/x64、签名、公证、发布或更新闭环已完成。
+- #110 Lane A：新增 macOS arm64 / Windows x64 原生无产品签名的 unpacked staging、逐文件字节精确的运行时 inventory/拒绝清单、架构与签名状态核验，以及从源码树外 clean staging 启动后证明静态 renderer、控制面 ready 和已绑定可归因进程归零的 smoke；只扩展只读验证工作流，不含安装器、分发签名、发布或自动更新。#111 的 Finder PATH → Qoder/MCP fixture → turn/history 行为资格验证保留为独立 macOS-only command/schema，不与 static smoke 混称。Windows 原生结果需等待 `windows-latest` 实际运行，不能由本机 macOS 推断。
 
 ### Changed
 
@@ -92,6 +92,7 @@
 
 ### Verification
 
+- #110 Lane A 原始候选 `2645033`（old base `764bfe0`）：macOS 15.5 arm64 本机以单一前台串行链从 cold `npm ci` 开始，通过 focused scripts 15/15、desktop behavior 17/17、packaged renderer 2/2、完整 `npm run check`、无产品签名的 unpacked staging、manifest/arm64 核验及 static clean-staging smoke；该证据只属于原始固定 SHA，不自动覆盖后续 current-main 集成。主 executable 的签名口径是 `unsealed-linker-adhoc`，不是产品/分发签名。Windows x64 原生结果仍为 **NOT VERIFIED**；current-main 集成链见 `docs/evidence/issue-110/lane-a/README.md`。
 - 本地 `npm run check` 全绿（ui 15/15、server 46/46、renderer 13/13、desktop-main 4/4，依赖审计 0 漏洞）；Ubuntu/macOS required checks 以 PR CI 为准。
 - 真实本地引擎 E2E：digital-employee `7a92690` 成功招聘后 `/org/tree` 重载 5 岗位；非法预算拒绝码透传，`org.json`/`org-audit.jsonl`/`permissions.json` 前后 SHA-256 一致，提案和 0600 `budget.json` 保留。
 - macOS 桌面壳实测：组织树渲染、岗位卡片、SSE 刷新、关窗进程退出全部通过（issue #4 验收，证据见 issue #1/#2 评论）。

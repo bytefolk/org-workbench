@@ -22,7 +22,17 @@ const path = require("node:path");
 const { pathToFileURL } = require("node:url");
 const { rendererEntryPath } = require("./runtime-paths.cjs");
 const { recoverMacGuiPath } = require("./macos-login-path.cjs");
-const { packagedSmokeReportPath, runPackagedSmoke } = require("./packaged-smoke.cjs");
+const {
+  packagedBehaviorSmokeRequest,
+  runPackagedBehaviorSmoke,
+} = require("./packaged-behavior-smoke.cjs");
+const {
+  closeSmokeReportReservation,
+  createPackagedSmokeLifecycle,
+  packagedSmokeLoadOptions,
+  packagedSmokeRequest,
+  runPackagedSmoke,
+} = require("./packaged-smoke.cjs");
 const { isAllowedNavigationTarget, isTrustedWindowSender } = require("./window-ipc.cjs");
 const { validateRestoreRequest, validateOrgApply } = require("./org-ipc.cjs");
 const {
@@ -527,7 +537,22 @@ ipcMain.handle("owb:sse-status:get", async () => currentSseStatus);
 // (WM edge drag) and the bar carries -webkit-app-region: drag for moving.
 function createWindow() {
   const entryPath = rendererEntryPath(__dirname);
-  trustedRendererUrl = pathToFileURL(entryPath).toString();
+  // This request remains null in source-tree development and for every normal
+  // packaged launch. Only the external clean-staging harness owns all three
+  // controls and a create-exclusive report inode.
+  const smokeRequest = app.isPackaged ? packagedSmokeRequest(process.env) : null;
+  const behaviorSmokeRequest = app.isPackaged
+    ? packagedBehaviorSmokeRequest(process.env)
+    : null;
+  if (smokeRequest !== null && behaviorSmokeRequest !== null) {
+    closeSmokeReportReservation(smokeRequest);
+    closeSmokeReportReservation(behaviorSmokeRequest);
+    process.stderr.write("static and behavior packaged smoke modes are mutually exclusive\n");
+    app.exit(1);
+    return;
+  }
+  const smokeLoad = smokeRequest === null ? null : packagedSmokeLoadOptions(entryPath, smokeRequest);
+  trustedRendererUrl = smokeLoad?.trustedRendererUrl ?? pathToFileURL(entryPath).toString();
   mainWindow = new BrowserWindow({
     width: 1240,
     height: 800,
@@ -555,19 +580,75 @@ function createWindow() {
     },
   });
   mainWindow.setMenuBarVisibility(false);
-  const smokeReportPath = packagedSmokeReportPath(process.env);
-  if (smokeReportPath !== null) {
+  // Lane A staging harness: static, opt-in, packaged-only, and confined to the
+  // caller's freshly created OS-temp root. Source-tree dev behavior is not
+  // reachable through this seam.
+  let smokeLifecycle = null;
+  if (smokeRequest !== null) {
+    smokeLifecycle = createPackagedSmokeLifecycle({
+      reportRequest: smokeRequest,
+      onUnexpected: (error) => {
+        process.stderr.write(`${error.message}\n`);
+        process.exitCode = 1;
+        app.exit(1);
+      },
+    });
+    mainWindow.webContents.once("did-fail-load", (_event, code, description) => {
+      smokeLifecycle.unexpected(`renderer load failed (${code}): ${description}`);
+    });
+    mainWindow.webContents.once("render-process-gone", (_event, details) => {
+      smokeLifecycle.unexpected(`renderer process gone: ${details?.reason ?? "unknown"}`);
+    });
+    mainWindow.once("closed", () => {
+      smokeLifecycle.unexpected("smoke window closed before the harness requested it");
+    });
     mainWindow.webContents.once("did-finish-load", () => {
-      void runPackagedSmoke({
-        reportPath: smokeReportPath,
+      runPackagedSmoke({
+        reportRequest: smokeRequest,
+        webContents: mainWindow.webContents,
+        appPid: process.pid,
+        serverPid: controlPlane?.child?.pid,
+        serverPort: controlPlane?.port,
+        resourcesPath: process.resourcesPath,
+        onReportWritten: () => smokeLifecycle.markReportWritten(),
+        // Keep the process tree alive briefly after the create-exclusive
+        // report write so the external native oracle can snapshot descendants.
+        close: () => setTimeout(() => {
+          smokeLifecycle.beginIntentionalClose();
+          mainWindow?.close();
+        }, 2500),
+      }).catch((error) => {
+        smokeLifecycle.unexpected(error);
+      });
+    });
+  } else if (behaviorSmokeRequest !== null) {
+    // #111 behavior qualification remains a separate, explicitly requested
+    // path. Unlike the Lane A static smoke it may exercise the local Qoder/MCP
+    // fixture and a business turn, so the two reports and commands never mix.
+    mainWindow.webContents.once("did-finish-load", () => {
+      runPackagedBehaviorSmoke({
+        reportRequest: behaviorSmokeRequest,
         webContents: mainWindow.webContents,
         serverPid: controlPlane?.child?.pid,
         resourcesPath: process.resourcesPath,
-        quit: () => app.quit(),
+        // Keep the behavior-qualified tree alive long enough for the same
+        // identity-bound external oracle used by static staging to snapshot it.
+        quit: () => setTimeout(() => app.quit(), 2500),
+      }).catch((error) => {
+        process.stderr.write(`behavior smoke failed before reporting: ${String(error?.message ?? error)}\n`);
+        app.exit(1);
       });
     });
   }
-  void mainWindow.loadFile(entryPath);
+  const load = smokeLoad === null
+    ? mainWindow.loadFile(entryPath)
+    : mainWindow.loadFile(entryPath, smokeLoad.loadOptions);
+  if (smokeRequest === null) void load;
+  else load.catch((error) => {
+    // did-fail-load normally fires first; the lifecycle is deliberately
+    // idempotent so the rejected load promise cannot become unhandled.
+    smokeLifecycle.unexpected(`renderer load promise rejected: ${String(error?.message ?? error)}`);
+  });
   // #77 review item 2: this shell never legitimately navigates away from the
   // packaged renderer or opens child windows; deny both explicitly rather
   // than relying on Electron's defaults.
