@@ -93,6 +93,7 @@
 ### Verification
 
 - #110 Lane A 原始候选 `2645033`（old base `764bfe0`）：macOS 15.5 arm64 本机以单一前台串行链从 cold `npm ci` 开始，通过 focused scripts 15/15、desktop behavior 17/17、packaged renderer 2/2、完整 `npm run check`、无产品签名的 unpacked staging、manifest/arm64 核验及 static clean-staging smoke；该证据只属于原始固定 SHA，不自动覆盖后续 current-main 集成。主 executable 的签名口径是 `unsealed-linker-adhoc`，不是产品/分发签名。Windows x64 原生结果仍为 **NOT VERIFIED**；current-main 集成链见 `docs/evidence/issue-110/lane-a/README.md`。
+- #110 current-main 集成 code head `6ca9929`（base `24ce31a`）：bundled Node 24 冷安装保持 current-main lock 字节不变；focused integrated 44/44、packaged renderer 2/2 与完整 `npm run check` 全绿；macOS arm64 unpacked staging 通过 33-entry/188-file exact-byte verifier、Lane A static clean-staging smoke，以及独立的 #111 Finder PATH → Qoder/MCP fixture → turn/history behavior smoke。两种 smoke 的控制、schema 与结论分离，known/bound residual 均为 0、临时 staging 均删除。Windows x64 原生 staging/verify/smoke、安装器、签名、发布与更新仍为 **NOT VERIFIED / 未实现**。
 - 本地 `npm run check` 全绿（ui 15/15、server 46/46、renderer 13/13、desktop-main 4/4，依赖审计 0 漏洞）；Ubuntu/macOS required checks 以 PR CI 为准。
 - 真实本地引擎 E2E：digital-employee `7a92690` 成功招聘后 `/org/tree` 重载 5 岗位；非法预算拒绝码透传，`org.json`/`org-audit.jsonl`/`permissions.json` 前后 SHA-256 一致，提案和 0600 `budget.json` 保留。
 - macOS 桌面壳实测：组织树渲染、岗位卡片、SSE 刷新、关窗进程退出全部通过（issue #4 验收，证据见 issue #1/#2 评论）。
