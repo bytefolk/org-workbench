@@ -191,6 +191,23 @@ test("qoder-engine hire validate: accepts the pinned upstream opaque-digest fixt
   assert.equal(await exists(path.join(workspace, ".digital-employee")), false);
 });
 
+test("qoder-engine hire validate: preserves valid Unicode in bounded string fields", async (t) => {
+  const fixtureDir = await fs.mkdtemp(path.join(os.tmpdir(), "owb-qoder-hire-unicode-"));
+  t.after(() => fs.rm(fixtureDir, { recursive: true, force: true }));
+  const envelope = {
+    ...upstreamHireEnvelope(),
+    workspaceRef: "工作区/研发",
+    targetParentId: "岗位/负责人",
+    requestedBy: "产品负责人·修雨",
+  };
+  const file = await writeHireEnvelope(fixtureDir, envelope);
+
+  const result = await runAdapter(["hire", "validate", file, "--json"]);
+
+  assert.equal(result.code, 0, result.stderr);
+  assert.deepEqual(JSON.parse(result.stdout), { status: "valid", hire: envelope });
+});
+
 test("qoder-engine hire validate: malformed and too-short opaque digests fail closed before any effect", async (t) => {
   const workspace = await makeWorkspace();
   const fixtureDir = await fs.mkdtemp(path.join(os.tmpdir(), "owb-qoder-hire-invalid-"));
@@ -248,6 +265,27 @@ test("qoder-engine hire validate: malformed and too-short opaque digests fail cl
   const malformedResult = await runAdapter(["hire", "validate", malformed, "--json"]);
   assert.equal(malformedResult.code, 1);
   assert.deepEqual(JSON.parse(malformedResult.stdout), { status: "failed", code: "hire_request_invalid_json" });
+
+  const malformedUtf8 = path.join(fixtureDir, "malformed-utf8.json");
+  const markerBytes = Buffer.from("INVALID_UTF8_MARKER", "utf8");
+  const otherwiseValid = Buffer.from(JSON.stringify({
+    ...upstreamHireEnvelope(),
+    requestedBy: markerBytes.toString("utf8"),
+  }), "utf8");
+  const markerOffset = otherwiseValid.indexOf(markerBytes);
+  assert.notEqual(markerOffset, -1);
+  await fs.writeFile(malformedUtf8, Buffer.concat([
+    otherwiseValid.subarray(0, markerOffset),
+    Buffer.from([0x80]),
+    otherwiseValid.subarray(markerOffset + markerBytes.length),
+    Buffer.from("\n", "utf8"),
+  ]), { mode: 0o600 });
+  const malformedUtf8Result = await runAdapter(["hire", "validate", malformedUtf8, "--json"], {
+    env: { ORG_WORKBENCH_QODER_BIN: fakeQoder, FAKE_QODER_SPAWN_MARKER: marker },
+  });
+  assert.equal(malformedUtf8Result.code, 1);
+  assert.deepEqual(JSON.parse(malformedUtf8Result.stdout), { status: "failed", code: "hire_request_invalid_json" });
+  assert.equal(malformedUtf8Result.stderr, "", "fatal UTF-8 failure does not disclose request bytes");
 
   const symlink = path.join(fixtureDir, "hire-request-link.json");
   await fs.symlink(malformed, symlink);

@@ -13,6 +13,7 @@ import { constants as fsConstants, realpathSync } from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { TextDecoder } from "node:util";
 import { resolveQoderExecutable } from "../src/qoder-binary.js";
 
 const VERSION = "0.2.0";
@@ -76,6 +77,7 @@ const HIRE_REQUEST_FIELDS = [
 const HIRE_PACKAGE_FIELDS = ["name", "version", "digest"];
 const HIRE_BUDGET_FIELDS = ["perTask", "perDay"];
 const HIRE_BUDGET_SCOPE_FIELDS = ["tokens", "iterations"];
+const HIRE_UTF8_DECODER = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true });
 
 /*
  * Static mirror of digital-employee #194/#198 (b3d54bf). The adapter is a
@@ -314,7 +316,11 @@ export async function readBoundedHireFile(file, options = {}) {
       throw hireError("hire_request_file_unreadable", "hire request file size changed during validation");
     }
 
-    return buffer.subarray(0, totalBytes).toString("utf8");
+    try {
+      return HIRE_UTF8_DECODER.decode(buffer.subarray(0, totalBytes));
+    } catch {
+      throw hireError("hire_request_invalid_json", "hire request must be valid UTF-8 JSON");
+    }
   } catch (error) {
     if (error instanceof HireValidationError) throw error;
     throw hireError("hire_request_file_unreadable", "hire request file is unreadable");
