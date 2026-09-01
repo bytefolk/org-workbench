@@ -17,8 +17,10 @@ const ENVELOPE = {
   envelopeDigest: `sha256:${"a".repeat(64)}`,
 };
 
+const FIXTURE_TMPDIR = os.tmpdir();
+
 async function fixtureCli(source: string): Promise<string> {
-  const dir = await fs.mkdtemp(path.join(os.tmpdir(), "owb-turn-driver-"));
+  const dir = await fs.mkdtemp(path.join(FIXTURE_TMPDIR, "owb-turn-driver-"));
   const file = path.join(dir, "fixture.mjs");
   await fs.writeFile(file, source, { mode: 0o600 });
   return `${process.execPath} ${file}`;
