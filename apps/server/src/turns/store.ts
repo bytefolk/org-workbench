@@ -11,7 +11,7 @@ import {
 import type { TurnEngine, TurnHistory, TurnRecord, WorkbenchSession } from "@org-workbench/shared";
 import type { EngineEvent, TurnTerminalReason } from "@org-workbench/shared";
 import { assertSessionId, readAuthoritativeSessionIndex } from "../sessions/store.js";
-import { StableReadError, readStableBoundedFile } from "../stable-read.js";
+import { StableReadError, decodeStableUtf8, readStableBoundedFile } from "../stable-read.js";
 
 const STATE_ROOT = path.join(".digital-employee", "workbench", "conversations");
 const SESSION_CONVERSATIONS_ROOT = path.join(
@@ -263,7 +263,7 @@ async function readBoundedStateFile(file: string, maxBytes: number) {
 async function readJson(file: string, maxBytes: number): Promise<BoundedJsonRead> {
   const stable = await readBoundedStateFile(file, maxBytes);
   try {
-    return { value: JSON.parse(stable.buffer.toString("utf8")) as unknown, bytes: stable.bytes };
+    return { value: JSON.parse(decodeStableUtf8(stable.buffer)) as unknown, bytes: stable.bytes };
   } catch {
     throw storageError("local state record is not valid JSON");
   }

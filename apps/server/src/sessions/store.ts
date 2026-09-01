@@ -9,7 +9,7 @@ import {
   isPositionId,
 } from "@org-workbench/shared";
 import type { WorkbenchSession, WorkbenchSessionList } from "@org-workbench/shared";
-import { StableReadError, readStableBoundedFile } from "../stable-read.js";
+import { StableReadError, decodeStableUtf8, readStableBoundedFile } from "../stable-read.js";
 
 const SESSION_ROOT_SEGMENTS = [".digital-employee", "workbench", "sessions"];
 const POSITIONS_SEGMENT = "positions";
@@ -250,7 +250,7 @@ async function readBoundedJson(
   const stable = await readBoundedFile(file, maxBytes);
   beforeParse?.(stable.bytes);
   try {
-    return { value: JSON.parse(stable.buffer.toString("utf8")) as unknown, bytes: stable.bytes };
+    return { value: JSON.parse(decodeStableUtf8(stable.buffer)) as unknown, bytes: stable.bytes };
   } catch {
     throw sessionError("local session record is not valid JSON");
   }

@@ -1,6 +1,7 @@
 import { constants as fsConstants } from "node:fs";
 import type { BigIntStats } from "node:fs";
 import fs from "node:fs/promises";
+import { TextDecoder } from "node:util";
 
 export interface StableReadHandle {
   stat(): Promise<BigIntStats>;
@@ -22,6 +23,14 @@ export class StableReadError extends Error {
   constructor(message: string) {
     super(message);
     this.name = "StableReadError";
+  }
+}
+
+export function decodeStableUtf8(buffer: Uint8Array): string {
+  try {
+    return new TextDecoder("utf-8", { fatal: true }).decode(buffer);
+  } catch {
+    throw new StableReadError("state record is not valid UTF-8");
   }
 }
 

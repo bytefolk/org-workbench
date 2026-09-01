@@ -755,6 +755,84 @@ test("reports: corrupt audit or turn data fails closed with a stable public-safe
   }
 });
 
+test("#112 reports: malformed UTF-8 in persisted input or output text fails closed", async (t) => {
+  for (const field of ["input", "output"] as const) {
+    await t.test(field, async () => {
+      const server = await startTestServer();
+      const dir = await copyExampleWorkspace();
+      const marker = `malformed-${field}-marker`;
+      try {
+        const base = turn({ turnId: `malformed-utf8-${field}` });
+        const record = field === "input"
+          ? { ...base, input: marker }
+          : {
+              ...base,
+              output: marker,
+              events: base.events.map((event) =>
+                event.type === "run.completed" ? { ...event, output: marker } : event),
+            };
+        await writeTurn(dir, record);
+        const file = path.join(
+          dir,
+          ".digital-employee",
+          "workbench",
+          "conversations",
+          record.positionId,
+          "turns",
+          `${record.turnId}.json`,
+        );
+        const payload = await fs.readFile(file);
+        const markerBytes = Buffer.from(marker, "utf8");
+        let markerOffset = payload.indexOf(markerBytes);
+        let corruptedCount = 0;
+        while (markerOffset !== -1) {
+          payload[markerOffset] = 0xff;
+          corruptedCount += 1;
+          markerOffset = payload.indexOf(markerBytes, markerOffset + markerBytes.length);
+        }
+        assert.equal(corruptedCount, field === "input" ? 1 : 2, field);
+        await fs.writeFile(file, payload, { mode: 0o600 });
+
+        await open(server, dir);
+        const response = await api(server.baseUrl, "/reports", { token: server.token });
+        assert.equal(response.status, 500, field);
+        assert.equal((response.body as { code: string }).code, "reports_data_invalid", field);
+        const serialized = JSON.stringify(response.body);
+        assert.equal(serialized.includes(marker), false, field);
+        assert.equal(serialized.includes("�"), false, field);
+      } finally {
+        await server.close();
+      }
+    });
+  }
+});
+
+test("#112 reports: legitimate Unicode persisted text remains valid and private", async () => {
+  const server = await startTestServer();
+  const dir = await copyExampleWorkspace();
+  try {
+    const base = turn({
+      turnId: "legitimate-unicode-text",
+      input: "合法输入：你好",
+    });
+    await writeTurn(dir, {
+      ...base,
+      output: "合法输出：完成 🚀",
+      events: base.events.map((event) =>
+        event.type === "run.completed" ? { ...event, output: "合法输出：完成 🚀" } : event),
+    });
+    await open(server, dir);
+    const response = await api(server.baseUrl, "/reports", { token: server.token });
+    assert.equal(response.status, 200);
+    assert.equal((response.body as ReportsResponse).streams.evidence.length, 1);
+    const serialized = JSON.stringify(response.body);
+    assert.equal(serialized.includes("合法输入：你好"), false);
+    assert.equal(serialized.includes("合法输出：完成 🚀"), false);
+  } finally {
+    await server.close();
+  }
+});
+
 test("reports: malformed persisted turn events fail closed instead of becoming inferred metrics", async () => {
   const server = await startTestServer();
   const dir = await copyExampleWorkspace();
