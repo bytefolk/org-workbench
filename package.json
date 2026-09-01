@@ -19,7 +19,7 @@
     "typecheck:ui": "tsc --noEmit -p packages/ui",
     "typecheck:renderer": "tsc --noEmit -p apps/desktop",
     "test:ui": "vitest run --config packages/ui/vitest.config.ts",
-    "test:renderer": "vitest run --config apps/desktop/vitest.config.ts",
+    "test:renderer": "node scripts/run-renderer-tests.mjs",
     "test:desktop-main": "npm run build:renderer && node --test \"apps/desktop/test/*.test.cjs\"",
     "test:context-e3": "node --test apps/server/dist/test/context-exporter-e3.test.js",
     "security:check": "npm audit --audit-level=high",
