@@ -4,43 +4,120 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { api, startTestServer } from "./helpers.js";
-import { hostHealth, probeClaudeLocalBinary, supportedClaudeVersion } from "../src/routes/health.js";
+import {
+  hostHealth,
+  probeClaudeLocalBinary,
+  probeQoderLocalBinary,
+  supportedClaudeVersion,
+  supportedQoderVersion,
+} from "../src/routes/health.js";
+import { resolveQoderExecutable } from "../src/qoder-binary.js";
 
-test("health Host readiness is credential-presence only and never returns credential values", () => {
+test("normal digital-employee Qoder readiness keeps the service-token gate and never returns credential values", () => {
   const secret = "qoder-secret-must-not-leak";
-  const health = hostHealth(true, { QODER_PERSONAL_ACCESS_TOKEN: secret });
+  const health = hostHealth({
+    engineAvailable: true,
+    engineVersion: "digital-employee 0.6.1",
+    env: { QODER_PERSONAL_ACCESS_TOKEN: secret },
+  });
   assert.deepEqual(health.qoder, { configured: true, ready: true });
   assert.equal(health["claude-code"].configured, false);
   assert.equal(health["claude-code"].ready, false);
   assert.doesNotMatch(JSON.stringify(health), new RegExp(secret));
 
-  const cliUnavailable = hostHealth(false, {
-    QODER_PERSONAL_ACCESS_TOKEN: secret,
-    ANTHROPIC_API_KEY: "claude-secret-must-not-leak",
+  const cliUnavailable = hostHealth({
+    engineAvailable: false,
+    engineVersion: "digital-employee 0.6.1",
+    env: {
+      QODER_PERSONAL_ACCESS_TOKEN: secret,
+      ANTHROPIC_API_KEY: "claude-secret-must-not-leak",
+    },
   });
   assert.equal(cliUnavailable.qoder.configured, true);
   assert.equal(cliUnavailable.qoder.ready, false, "CLI reachability alone is not Host readiness");
   assert.equal(cliUnavailable["claude-code"].ready, false);
   assert.doesNotMatch(JSON.stringify(cliUnavailable), /secret-must-not-leak/);
+
+  const withoutToken = hostHealth({
+    engineAvailable: true,
+    engineVersion: "digital-employee 0.6.1",
+    env: {},
+    qoderLocal: { installed: true, version: "1.1.31", supported: true },
+  });
+  assert.deepEqual(withoutToken.qoder, {
+    configured: false,
+    ready: false,
+    nextStep: "设置 QODER_PERSONAL_ACCESS_TOKEN 后重启工作台",
+  });
+});
+
+test("bundled qoder-engine readiness uses the local Qoder 1.1.x preflight without a service token", () => {
+  const ready = hostHealth({
+    engineAvailable: true,
+    engineVersion: "qoder-engine 0.1.0",
+    env: {},
+    qoderLocal: { installed: true, version: "1.1.31", supported: true },
+  });
+  assert.deepEqual(ready.qoder, { configured: true, ready: true });
+
+  const unsupported = hostHealth({
+    engineAvailable: true,
+    engineVersion: "qoder-engine 0.1.0",
+    env: {},
+    qoderLocal: {
+      installed: true,
+      version: "1.2.0",
+      supported: false,
+      failure: "unsupported_version",
+    },
+  });
+  assert.equal(unsupported.qoder.configured, false);
+  assert.equal(unsupported.qoder.ready, false);
+  assert.match(unsupported.qoder.nextStep ?? "", /1\.2\.0/);
+  assert.match(unsupported.qoder.nextStep ?? "", /1\.1\.x/);
+
+  const missing = hostHealth({
+    engineAvailable: true,
+    engineVersion: "qoder-engine 0.1.0",
+    env: { QODER_PERSONAL_ACCESS_TOKEN: "must-not-change-the-bundled-probe" },
+    qoderLocal: {
+      installed: false,
+      version: null,
+      supported: false,
+      failure: "unavailable",
+    },
+  });
+  assert.equal(missing.qoder.configured, false);
+  assert.equal(missing.qoder.ready, false);
+  assert.match(missing.qoder.nextStep ?? "", /ORG_WORKBENCH_QODER_BIN/);
+  assert.doesNotMatch(JSON.stringify(missing), /must-not-change/);
 });
 
 test("claude-local Host health is binary+version preflight, never a credential check", () => {
   const supported = { installed: true, version: "2.1.223", supported: true };
-  const ready = hostHealth(true, {}, supported);
+  const ready = hostHealth({ engineAvailable: true, env: {}, claudeLocal: supported });
   assert.deepEqual(ready["claude-local"], { configured: true, ready: true });
 
-  const noCli = hostHealth(false, {}, supported);
+  const noCli = hostHealth({ engineAvailable: false, env: {}, claudeLocal: supported });
   assert.equal(noCli["claude-local"].configured, true);
   assert.equal(noCli["claude-local"].ready, false);
   assert.match(noCli["claude-local"].nextStep ?? "", /digital-employee CLI/);
 
-  const outOfWindow = hostHealth(true, {}, { installed: true, version: "2.2.0", supported: false });
+  const outOfWindow = hostHealth({
+    engineAvailable: true,
+    env: {},
+    claudeLocal: { installed: true, version: "2.2.0", supported: false },
+  });
   assert.equal(outOfWindow["claude-local"].configured, false);
   assert.equal(outOfWindow["claude-local"].ready, false);
   assert.match(outOfWindow["claude-local"].nextStep ?? "", /2\.2\.0/);
   assert.match(outOfWindow["claude-local"].nextStep ?? "", /2\.1\.214/);
 
-  const missing = hostHealth(true, {}, { installed: false, version: null, supported: false });
+  const missing = hostHealth({
+    engineAvailable: true,
+    env: {},
+    claudeLocal: { installed: false, version: null, supported: false },
+  });
   assert.equal(missing["claude-local"].configured, false);
   assert.match(missing["claude-local"].nextStep ?? "", /PATH/);
   assert.doesNotMatch(missing["claude-local"].nextStep ?? "", /ANTHROPIC_API_KEY/);
@@ -53,10 +130,221 @@ test("claude-local Host health is binary+version preflight, never a credential c
   assert.equal(supportedClaudeVersion("no-version-here"), false);
 });
 
+test("Qoder local probe accepts only the 1.1.x family and fails closed for missing, unsupported, and timed-out binaries", async (t) => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), "owb-qoder-probe-"));
+  t.after(() => fs.rm(dir, { recursive: true, force: true }));
+  const supportedBin = path.join(dir, "qoder-supported");
+  const unsupportedBin = path.join(dir, "qoder-unsupported");
+  const slowBin = path.join(dir, "qoder-slow");
+  await fs.writeFile(supportedBin, "#!/bin/sh\nprintf '%s\\n' '1.1.31 local-account-data-must-not-leak'\n", { mode: 0o755 });
+  await fs.writeFile(unsupportedBin, "#!/bin/sh\nprintf '%s\\n' '1.2.0'\n", { mode: 0o755 });
+  await fs.writeFile(slowBin, "#!/bin/sh\nwhile :; do :; done\n", { mode: 0o755 });
+
+  const supported = probeQoderLocalBinary({ ORG_WORKBENCH_QODER_BIN: supportedBin });
+  assert.deepEqual(supported, {
+    installed: true,
+    version: "1.1.31",
+    supported: true,
+  });
+  assert.doesNotMatch(JSON.stringify(supported), /local-account-data-must-not-leak/);
+  assert.deepEqual(probeQoderLocalBinary({ ORG_WORKBENCH_QODER_BIN: unsupportedBin }), {
+    installed: true,
+    version: "1.2.0",
+    supported: false,
+    failure: "unsupported_version",
+  });
+  assert.deepEqual(probeQoderLocalBinary({ ORG_WORKBENCH_QODER_BIN: path.join(dir, "missing") }), {
+    installed: false,
+    version: null,
+    supported: false,
+    failure: "unavailable",
+  });
+  const startedAt = Date.now();
+  assert.deepEqual(probeQoderLocalBinary({ ORG_WORKBENCH_QODER_BIN: slowBin }, 50), {
+    installed: true,
+    version: null,
+    supported: false,
+    failure: "timed_out",
+  });
+  assert.ok(Date.now() - startedAt < 1000, "the local-only version probe must stay bounded");
+
+  assert.equal(supportedQoderVersion("1.1.0"), true);
+  assert.equal(supportedQoderVersion("qodercli 1.1.31"), true);
+  assert.equal(supportedQoderVersion("1.0.99"), false);
+  assert.equal(supportedQoderVersion("1.2.0"), false);
+  assert.equal(supportedQoderVersion(null), false);
+});
+
+test("Qoder local probe forcibly reaps a version check that ignores SIGTERM", async (t) => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), "owb-qoder-sigterm-"));
+  const pidFile = path.join(dir, "probe.pid");
+  const signalTrappingBin = path.join(dir, "qoder-ignore-sigterm");
+  t.after(() => fs.rm(dir, { recursive: true, force: true }));
+  await fs.writeFile(
+    signalTrappingBin,
+    `#!/bin/sh
+trap '' TERM
+printf '%s' "$$" > ${JSON.stringify(pidFile)}
+counter=0
+while [ "$counter" -lt 2000000 ]; do counter=$((counter + 1)); done
+printf '1.1.31\\n'
+`,
+    { mode: 0o755 },
+  );
+
+  const timeoutMs = 1000;
+  const startedAt = Date.now();
+  const result = probeQoderLocalBinary({ ORG_WORKBENCH_QODER_BIN: signalTrappingBin }, timeoutMs);
+  const elapsedMs = Date.now() - startedAt;
+  assert.deepEqual(result, {
+    installed: true,
+    version: null,
+    supported: false,
+    failure: "timed_out",
+  });
+  assert.ok(elapsedMs < timeoutMs + 1500, `SIGTERM-ignoring probe exceeded its bound: ${elapsedMs}ms`);
+  const pid = Number(await fs.readFile(pidFile, "utf8"));
+  assert.ok(Number.isSafeInteger(pid) && pid > 0, "fixture must publish the child pid before timeout");
+  assert.throws(() => process.kill(pid, 0), { code: "ESRCH" }, "timed-out Qoder probe must not remain alive");
+});
+
+test("Qoder binary resolution is explicit-first, shell-free, and Finder-safe on supported macOS locations", async (t) => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), "owb-qoder-resolve-"));
+  t.after(() => fs.rm(dir, { recursive: true, force: true }));
+  const home = path.join(dir, "home");
+  const pathBin = path.join(dir, "path-bin");
+  const explicitBin = path.join(dir, "explicit-qoder");
+  const nonExecutableBin = path.join(dir, "non-executable-qoder");
+  const pathQoder = path.join(pathBin, "qoder");
+  const pathQoderCli = path.join(pathBin, "qodercli");
+  const fixedQoderCli = path.join(home, ".local", "bin", "qodercli");
+  const realFixedQoderCli = path.join(home, ".qoder", "bin", "qodercli", "qodercli-1.1.31");
+  const unsafeHome = path.join(dir, "home\nattacker");
+  const unsafeFixedQoderCli = path.join(unsafeHome, ".local", "bin", "qodercli");
+  await fs.mkdir(pathBin, { recursive: true });
+  await fs.mkdir(path.dirname(fixedQoderCli), { recursive: true });
+  await fs.mkdir(path.dirname(realFixedQoderCli), { recursive: true });
+  await fs.mkdir(path.dirname(unsafeFixedQoderCli), { recursive: true });
+  for (const file of [explicitBin, pathQoder, pathQoderCli, realFixedQoderCli]) {
+    await fs.writeFile(file, "#!/bin/sh\nprintf '1.1.31\\n'\n", { mode: 0o755 });
+  }
+  await fs.writeFile(unsafeFixedQoderCli, "#!/bin/sh\nprintf '1.1.31\\n'\n", { mode: 0o755 });
+  await fs.writeFile(nonExecutableBin, "not executable\n", { mode: 0o644 });
+  await fs.symlink(realFixedQoderCli, fixedQoderCli);
+
+  assert.equal(
+    resolveQoderExecutable({ ORG_WORKBENCH_QODER_BIN: explicitBin, PATH: pathBin, HOME: home }, "darwin"),
+    await fs.realpath(explicitBin),
+    "an explicit executable is authoritative",
+  );
+  assert.equal(
+    resolveQoderExecutable({ PATH: pathBin, HOME: home }, "darwin"),
+    await fs.realpath(pathQoderCli),
+    "the native qodercli PATH entry wins over its dispatcher wrapper",
+  );
+  assert.equal(
+    resolveQoderExecutable({ PATH: "/usr/bin:/bin", HOME: home }, "darwin"),
+    await fs.realpath(fixedQoderCli),
+    "Finder-like PATH falls back to the known per-user macOS install",
+  );
+  assert.equal(
+    resolveQoderExecutable({ ORG_WORKBENCH_QODER_BIN: path.dirname(explicitBin), PATH: pathBin, HOME: home }, "darwin"),
+    null,
+    "an invalid explicit override fails closed instead of silently choosing another binary",
+  );
+  assert.equal(
+    resolveQoderExecutable({ ORG_WORKBENCH_QODER_BIN: nonExecutableBin, PATH: pathBin, HOME: home }, "darwin"),
+    null,
+    "a regular but non-executable explicit target fails closed",
+  );
+  const relativeHome = path.relative(process.cwd(), home);
+  assert.equal(path.isAbsolute(relativeHome), false, "adversarial HOME fixture must be cwd-relative");
+  assert.equal(
+    resolveQoderExecutable({ PATH: path.join(dir, "empty-path"), HOME: relativeHome }, "darwin"),
+    null,
+    "a relative HOME must not turn the current working directory into an installer root",
+  );
+  assert.equal(
+    resolveQoderExecutable({ PATH: path.join(dir, "empty-path"), HOME: unsafeHome }, "darwin"),
+    null,
+    "a newline-bearing HOME must not participate in known-path discovery",
+  );
+  assert.equal(
+    resolveQoderExecutable({ PATH: path.join(dir, "empty-path"), HOME: `${home}\0suffix` }, "darwin"),
+    null,
+    "a NUL-bearing HOME must fail closed",
+  );
+  assert.equal(resolveQoderExecutable({ PATH: "/usr/bin:/bin", HOME: path.join(dir, "missing-home") }, "darwin"), null);
+
+  const finderProbe = probeQoderLocalBinary({ PATH: "/usr/bin:/bin", HOME: home }, 3000, "darwin");
+  assert.deepEqual(finderProbe, { installed: true, version: "1.1.31", supported: true });
+});
+
+test("GET /health recognizes only the bundled qoder-engine local preflight and never exposes probe output", async (t) => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), "owb-qoder-health-"));
+  t.after(() => fs.rm(dir, { recursive: true, force: true }));
+  const bundledEngine = path.join(dir, "qoder-engine-fixture");
+  const normalEngine = path.join(dir, "digital-employee-fixture");
+  const localQoder = path.join(dir, "qoder-fixture");
+  const shouldNotProbeQoder = path.join(dir, "qoder-should-not-run");
+  const probeMarker = path.join(dir, "unexpected-qoder-probe");
+  await fs.writeFile(bundledEngine, "#!/bin/sh\nprintf '%s\\n' 'qoder-engine 0.1.0'\n", { mode: 0o755 });
+  await fs.writeFile(normalEngine, "#!/bin/sh\nprintf '%s\\n' 'digital-employee 0.6.1'\n", { mode: 0o755 });
+  await fs.writeFile(localQoder, "#!/bin/sh\nprintf '%s\\n' 'qodercli 1.1.31 private-status-must-not-leak'\n", { mode: 0o755 });
+  await fs.writeFile(
+    shouldNotProbeQoder,
+    `#!/bin/sh\nprintf '%s' 'called' > ${JSON.stringify(probeMarker)}\nprintf '%s\\n' '1.1.31'\n`,
+    { mode: 0o755 },
+  );
+
+  const previousQoderBin = process.env.ORG_WORKBENCH_QODER_BIN;
+  const previousQoderToken = process.env.QODER_PERSONAL_ACCESS_TOKEN;
+  const previousClaudeCommand = process.env.DIGITAL_EMPLOYEE_CLAUDE_COMMAND;
+  delete process.env.QODER_PERSONAL_ACCESS_TOKEN;
+  process.env.ORG_WORKBENCH_QODER_BIN = localQoder;
+  process.env.DIGITAL_EMPLOYEE_CLAUDE_COMMAND = path.join(dir, "claude-not-installed");
+  const server = await startTestServer();
+  try {
+    server.ctx.config.cliCommand = bundledEngine;
+    const bundled = await api(server.baseUrl, "/health");
+    assert.equal(bundled.status, 200);
+    const bundledBody = bundled.body as {
+      engine: { available: boolean; version?: string };
+      hosts: { qoder: { configured: boolean; ready: boolean; nextStep?: string } };
+    };
+    assert.deepEqual(bundledBody.hosts.qoder, { configured: true, ready: true });
+    assert.equal(bundledBody.engine.available, true);
+    assert.equal(bundledBody.engine.version, "qoder-engine 0.1.0");
+    assert.doesNotMatch(JSON.stringify(bundledBody), /private-status-must-not-leak/);
+
+    process.env.ORG_WORKBENCH_QODER_BIN = shouldNotProbeQoder;
+    server.ctx.config.cliCommand = normalEngine;
+    const normal = await api(server.baseUrl, "/health");
+    assert.equal(normal.status, 200);
+    const normalBody = normal.body as {
+      hosts: { qoder: { configured: boolean; ready: boolean; nextStep?: string } };
+    };
+    assert.deepEqual(normalBody.hosts.qoder, {
+      configured: false,
+      ready: false,
+      nextStep: "设置 QODER_PERSONAL_ACCESS_TOKEN 后重启工作台",
+    });
+    await assert.rejects(fs.access(probeMarker), { code: "ENOENT" });
+  } finally {
+    await server.close();
+    if (previousQoderBin === undefined) delete process.env.ORG_WORKBENCH_QODER_BIN;
+    else process.env.ORG_WORKBENCH_QODER_BIN = previousQoderBin;
+    if (previousQoderToken === undefined) delete process.env.QODER_PERSONAL_ACCESS_TOKEN;
+    else process.env.QODER_PERSONAL_ACCESS_TOKEN = previousQoderToken;
+    if (previousClaudeCommand === undefined) delete process.env.DIGITAL_EMPLOYEE_CLAUDE_COMMAND;
+    else process.env.DIGITAL_EMPLOYEE_CLAUDE_COMMAND = previousClaudeCommand;
+  }
+});
+
 test("claude-local probe reads the announced version from the resolved binary", async () => {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), "owb-claude-probe-"));
   const bin = path.join(dir, "claude-fixture");
-  await fs.writeFile(bin, "#!/usr/bin/env node\nconsole.log('2.1.223 (Claude Code)');\n", { mode: 0o755 });
+  await fs.writeFile(bin, "#!/bin/sh\nprintf '%s\\n' '2.1.223 (Claude Code)'\n", { mode: 0o755 });
 
   const found = probeClaudeLocalBinary({ DIGITAL_EMPLOYEE_CLAUDE_COMMAND: bin });
   assert.equal(found.installed, true);

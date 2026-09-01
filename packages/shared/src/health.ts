@@ -3,9 +3,13 @@
 import type { TurnEngine } from "./turns.js";
 
 export interface TurnHostHealth {
-  /** The required credential variable exists and is non-empty; its value never leaves the server. */
+  /** The Host's local preconditions are present; credential values never leave the server. */
   configured: boolean;
-  /** Local preflight only: pinned CLI reachable AND the Host credential is configured. */
+  /**
+   * Local preflight only. For the bundled Qoder adapter this means a supported
+   * local binary; for service-token Hosts it also requires the credential env.
+   * It never claims that a remote provider accepted the operator's account.
+   */
   ready: boolean;
   /** Actionable, non-sensitive explanation when the Host cannot accept a turn. */
   nextStep?: string;
