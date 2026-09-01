@@ -75,7 +75,7 @@ export CONTEXT_RUNTIME_TOKEN='<redacted-runtime-token>'
 
 ### 无产品签名的 unpacked staging（#110 Lane A）
 
-这些命令只生成并验证原生平台的解包目录；输出位于已忽略的 `release/staging/`。Lane A canonical smoke 会把应用复制到源码树外、名称含空格的临时目录，启动控制面与静态 renderer marker，再关闭应用并检查已绑定、可归因的 Workbench/控制面进程与原生隔离组归零，最后删除临时目录。它不调用 health、Host 或业务回合，也不声称能约束主动脱离该边界的恶意进程。
+这些命令只生成并验证原生平台的解包目录；输出位于已忽略的 `release/staging/`。Lane A canonical smoke 会把应用复制到源码树外、名称含空格的临时目录，启动控制面与静态 renderer marker，再关闭应用并检查可验证的当前 root/descendant、已绑定进程身份，以及 POSIX 上来源代际未歧义的预期 detached group 归零，最后删除临时目录。命令文本或 staging 路径永不授予 signal/owned-residual 权限；Windows 无已绑定 root 时 fail closed，且尚未原生验证。它不调用 health、Host 或业务回合，也不声称能约束主动脱离该边界的恶意进程。
 
 ```bash
 # 必须在 macOS arm64 原生主机运行
@@ -92,9 +92,9 @@ npm run verify:package:windows
 npm run smoke:package:windows
 ```
 
-`smoke:package:macos:behavior` 保留 #111 已合入的另一条边界：它使用本地确定性 Qoder/MCP fixture，验证 Finder 登录 PATH 恢复、renderer/preload、health、一次 fixture 回合及历史 readback。该模式有独立环境控制、报告 schema 和命令；它不读取外部凭据，不证明真实账号 entitlement，也不能被写成 Lane A static smoke 或发布能力。Windows 没有对应 behavior claim。
+`smoke:package:macos:behavior` 保留 #111 已合入的另一条边界：它使用本地确定性 Qoder/MCP fixture，验证 Finder 登录 PATH 恢复、renderer/preload、health、一次 fixture 回合及历史 readback。static/behavior 使用互斥且按 Windows 规则大小写无关的 control family，任何报告文件预留前先检测冲突；两族 controls 都从实际控制面 child env 剥离。两种模式共享 `loadFile`/renderer/window lifecycle fail-closed gate，但报告 schema 和结论仍独立。它不读取外部凭据，不证明真实账号 entitlement，也不能被写成 Lane A static smoke 或发布能力。Windows 没有对应 behavior claim。
 
-唯一打包配置是 `apps/desktop/electron-builder.config.cjs`；原 YAML 骨架已移除，避免两份配置漂移。脚本固定使用 `electron-builder@26.15.3`、原生架构参数、`--dir` 和 `--publish never`；macOS 明确不选择产品身份（主 executable 保留上游 linker ad-hoc 状态），Windows 明确 `signExecutable: false`，因此不会消费 CSC 环境去签 staging。`package:macos:unsigned` 与 `package:macos` 保持为兼容入口，并委托 canonical staging 命令。它们不生成 DMG、ZIP、NSIS 或其他安装器，不提供产品/分发签名或公证，不发布 GitHub Release，不实现自动更新，也不证明 Intel Mac 或跨平台运行结果。旧候选 E3 不自动适用于当前集成提交；current-main code head `6ca9929` 已在 macOS arm64 重新通过 33-entry/188-file 精确核验、static smoke 与独立 behavior smoke，完整 authority chain 见 [`docs/evidence/issue-110/lane-a/README.md`](docs/evidence/issue-110/lane-a/README.md)。Windows x64 仍需 `windows-latest` 原生运行，不能由本机 macOS 推断。源码开发入口 `npm run dev:desktop` 保持不变。
+唯一打包配置是 `apps/desktop/electron-builder.config.cjs`；原 YAML 骨架已移除，避免两份配置漂移。脚本固定使用 `electron-builder@26.15.3`、原生架构参数、`--dir` 和 `--publish never`；macOS 明确不选择产品身份（主 executable 保留上游 linker ad-hoc 状态），Windows 明确 `signExecutable: false`，因此不会消费 CSC 环境去签 staging。`package:macos:unsigned` 与 `package:macos` 保持为兼容入口，并委托 canonical staging 命令。它们不生成 DMG、ZIP、NSIS 或其他安装器，不提供产品/分发签名或公证，不发布 GitHub Release，不实现自动更新，也不证明 Intel Mac 或跨平台运行结果。旧候选及旧集成 SHA 的 E3 不自动适用于当前修复；current-main code head `3897329` 已在 macOS arm64 重新通过 focused 68/68、renderer guard 2/2、完整 `npm run check`、33-entry/188-file 精确核验、static smoke 与独立 behavior smoke，完整 authority chain 见 [`docs/evidence/issue-110/lane-a/README.md`](docs/evidence/issue-110/lane-a/README.md)。Windows x64 仍需 `windows-latest` 原生运行，不能由本机 macOS 推断。源码开发入口 `npm run dev:desktop` 保持不变。
 
 **design-system 依赖说明**：`@fullstack-ai-infra/ui` 目前以开发期 `file:` 链接指向同级 `design-system` 克隆（骨架定稿方案 A：开发期 file: 链接，CI/正式包只认钉版）。链接要求该克隆已 `npm run build:package`（产出 dist，含 `--ui-sidebar-wide` 等 tokens）；设计系统发布 npm 后改钉版依赖。
 
