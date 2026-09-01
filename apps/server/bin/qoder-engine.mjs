@@ -241,13 +241,17 @@ function assertHireSize(stats) {
   }
 }
 
-function sameHireFile(left, right) {
-  return left.dev === right.dev && left.ino === right.ino;
+function sameHireSnapshot(left, right) {
+  return left.dev === right.dev &&
+    left.ino === right.ino &&
+    left.size === right.size &&
+    left.mtimeNs === right.mtimeNs &&
+    left.ctimeNs === right.ctimeNs;
 }
 
 function assertStableHireFile(pathStats, handleStats) {
-  if (!sameHireFile(pathStats, handleStats) || pathStats.size !== handleStats.size) {
-    throw hireError("hire_request_file_unreadable", "hire request file identity or size changed during validation");
+  if (!sameHireSnapshot(pathStats, handleStats)) {
+    throw hireError("hire_request_file_unreadable", "hire request file snapshot changed during validation");
   }
 }
 

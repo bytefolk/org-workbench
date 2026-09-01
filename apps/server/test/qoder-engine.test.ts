@@ -356,6 +356,56 @@ test("qoder-engine hire read: concurrent growth is detected by the MAX+1 positio
   assert.equal(grown, true);
 });
 
+test("qoder-engine hire read: same-inode same-length rewrite fails closed before effects", async (t) => {
+  const workspace = await makeWorkspace();
+  const fixtureDir = await fs.mkdtemp(path.join(os.tmpdir(), "owb-qoder-hire-rewrite-"));
+  t.after(() => Promise.all([
+    fs.rm(workspace, { recursive: true, force: true }),
+    fs.rm(fixtureDir, { recursive: true, force: true }),
+  ]));
+  const requested = await writeHireEnvelope(fixtureDir, upstreamHireEnvelope());
+  const original = await fs.readFile(requested, "utf8");
+  const replacement = original.replace('"requestedBy": "cto"', '"requestedBy": "bot"');
+  assert.notEqual(replacement, original);
+  assert.equal(Buffer.byteLength(replacement), Buffer.byteLength(original));
+  const beforeRequest = await fs.lstat(requested, { bigint: true });
+  const beforeWorkspace = await fs.readdir(path.join(workspace, "positions", "repo-owner"));
+  const qoderMarker = path.join(fixtureDir, "qoder-spawned");
+  const readBoundedHireFile = await loadBoundedHireReader();
+  let rewritten = false;
+
+  await assertHireReadFailure(
+    readBoundedHireFile(requested, {
+      hooks: {
+        afterReadChunk: async () => {
+          if (rewritten) return;
+          rewritten = true;
+          const writer = await fs.open(requested, "r+");
+          try {
+            const bytes = Buffer.from(replacement);
+            await writer.write(bytes, 0, bytes.length, 0);
+            await writer.sync();
+            await writer.utimes(new Date("2000-01-01T00:00:00.000Z"), new Date("2000-01-01T00:00:00.000Z"));
+          } finally {
+            await writer.close();
+          }
+          const afterRequest = await fs.lstat(requested, { bigint: true });
+          assert.equal(afterRequest.dev, beforeRequest.dev);
+          assert.equal(afterRequest.ino, beforeRequest.ino);
+          assert.equal(afterRequest.size, beforeRequest.size);
+          assert.notEqual(afterRequest.mtimeNs, beforeRequest.mtimeNs);
+          assert.notEqual(afterRequest.ctimeNs, beforeRequest.ctimeNs);
+        },
+      },
+    }),
+    "hire_request_file_unreadable",
+  );
+  assert.equal(rewritten, true);
+  assert.equal(await exists(qoderMarker), false, "rejected rewrite never starts Qoder");
+  assert.deepEqual(await fs.readdir(path.join(workspace, "positions", "repo-owner")), beforeWorkspace);
+  assert.equal(await exists(path.join(workspace, ".digital-employee")), false);
+});
+
 test("qoder-engine hire read: Windows/no-O_NOFOLLOW fallback remains bounded and fail-closed", async (t) => {
   const fixtureDir = await fs.mkdtemp(path.join(os.tmpdir(), "owb-qoder-hire-win-"));
   t.after(() => fs.rm(fixtureDir, { recursive: true, force: true }));
