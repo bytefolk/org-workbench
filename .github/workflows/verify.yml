@@ -14,7 +14,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-14]
+        os: [ubuntu-latest, macos-14, windows-latest]
     runs-on: ${{ matrix.os }}
     steps:
       - name: Check out org-workbench
@@ -97,3 +97,47 @@ jobs:
       - name: Run clean-staging packaged application smoke
         working-directory: org-workbench
         run: npm run smoke:package:macos
+
+  package-windows:
+    name: Windows x64 / unsigned package smoke
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - name: Check out org-workbench
+        uses: actions/checkout@v6
+        with:
+          path: org-workbench
+
+      - name: Check out pinned design system
+        uses: actions/checkout@v6
+        with:
+          repository: ${{ github.repository_owner }}/design-system
+          ref: 9d048faaabe0429a6a8720bfbb31418544237b6b
+          path: design-system
+
+      - name: Set up Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: |
+            design-system/package-lock.json
+            org-workbench/package-lock.json
+
+      - name: Build pinned design system
+        working-directory: design-system
+        run: |
+          npm ci
+          npm run build:package
+
+      - name: Install workbench
+        working-directory: org-workbench
+        run: npm ci
+
+      - name: Build and verify unsigned application directory
+        working-directory: org-workbench
+        run: npm run package:win:unsigned
+
+      - name: Run clean-staging packaged application smoke
+        working-directory: org-workbench
+        run: npm run smoke:package:win

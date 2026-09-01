@@ -8,6 +8,7 @@ const {
   APP_BUNDLE_REQUIRED_ENTRIES,
   APP_RESOURCES_REQUIRED_ENTRIES,
   RUNTIME_FILE_SETS,
+  WIN_APP_REQUIRED_ENTRIES,
 } = require("../../apps/desktop/packaging/runtime-layout.cjs");
 
 test("unsigned macOS builder config is arm64 dir-only and cannot sign or publish", () => {
@@ -93,4 +94,30 @@ test("file sets are narrow and never sweep source-tree node_modules or credentia
     serverFileSet.filter.some((entry) => entry.includes("dist/test")),
     false,
   );
+});
+
+test("unsigned Windows builder config is x64 dir-only and does not attempt signing", () => {
+  assert.deepEqual(config.win.target, [{ target: "dir", arch: ["x64"] }]);
+  assert.equal(config.win.signAndEditExecutable, false);
+});
+
+test("Windows package script mirrors the macOS pipeline and points at electron-builder --win dir", () => {
+  const rootPackage = require("../../package.json");
+  assert.equal(
+    rootPackage.scripts["prepare:electron:win"],
+    "node node_modules/electron/install.js",
+  );
+  assert.match(
+    rootPackage.scripts["package:win:unsigned"],
+    /npm run prepare:electron:win .* electron-builder .* --win dir/,
+  );
+  assert.equal(rootPackage.scripts["verify:package:win"], "node scripts/verify-packaged-app.mjs");
+  assert.equal(rootPackage.scripts["smoke:package:win"], "node scripts/smoke-packaged-app.mjs");
+});
+
+test("Windows unpacked-app manifest pins the productName exe and packaged resources root", () => {
+  assert.deepEqual(WIN_APP_REQUIRED_ENTRIES, [
+    "Org Workbench.exe",
+    "resources/app/package.json",
+  ]);
 });

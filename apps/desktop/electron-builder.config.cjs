@@ -21,4 +21,11 @@ module.exports = {
     identity: null,
     target: [{ target: "dir", arch: ["arm64"] }],
   },
+  win: {
+    // Unsigned dir output; matches the macOS strategy of proving the packaged
+    // tree first, before any code-signing story is layered on. Explicit x64
+    // avoids electron-builder cross-compiling to ia32 by default.
+    target: [{ target: "dir", arch: ["x64"] }],
+    signAndEditExecutable: false,
+  },
 };

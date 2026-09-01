@@ -7,17 +7,32 @@ import { fileURLToPath } from "node:url";
 import { verifyPackagedApp } from "./verify-packaged-app.mjs";
 
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const sourceApp = path.resolve(process.argv[2] ?? path.join(projectRoot, "release", "mac-arm64", "Org Workbench.app"));
+
+function defaultSourceApp() {
+  if (process.platform === "darwin") {
+    return path.join(projectRoot, "release", "mac-arm64", "Org Workbench.app");
+  }
+  if (process.platform === "win32") {
+    return path.join(projectRoot, "release", "win-unpacked");
+  }
+  throw new Error(`packaged smoke is only supported on macOS and Windows, not ${process.platform}`);
+}
+
+const sourceApp = path.resolve(process.argv[2] ?? defaultSourceApp());
 const packageReport = verifyPackagedApp(sourceApp);
 const stagingRoot = await fs.mkdtemp(path.join(os.tmpdir(), "owb-package-smoke-"));
 let completed = false;
 
-function executableScript(body) {
-  return `#!/bin/sh\nset -eu\n${body}\n`;
+async function writePosixExecutable(file, body) {
+  await fs.writeFile(file, `#!/bin/sh\nset -eu\n${body}\n`, { encoding: "utf8", mode: 0o700 });
 }
 
-async function writeExecutable(file, body) {
-  await fs.writeFile(file, executableScript(body), { encoding: "utf8", mode: 0o700 });
+async function writeWindowsCmd(file, body) {
+  // Windows .cmd/.bat files are consumed by cmd.exe; use CRLF and @echo off
+  // to keep stdout clean of command echoes.
+  await fs.writeFile(file, `@echo off\r\n${body.replace(/\n/g, "\r\n")}\r\n`, {
+    encoding: "utf8",
+  });
 }
 
 async function waitForPidExit(pid, timeoutMs = 5000) {
@@ -57,7 +72,7 @@ async function runApp(binary, env) {
   });
 }
 
-try {
+async function stageMac() {
   const appPath = path.join(stagingRoot, "Org Workbench.app");
   await fs.cp(sourceApp, appPath, {
     recursive: true,
@@ -78,7 +93,7 @@ try {
   ]);
 
   const mcpBin = path.join(smokeBin, "owb-mcp-smoke");
-  await writeExecutable(mcpBin, `
+  await writePosixExecutable(mcpBin, `
 if [ "\${ELECTRON_RUN_AS_NODE:-}" != "" ]; then exit 45; fi
 if [ "\${OWB_LOGIN_ONLY_SECRET:-}" != "" ]; then exit 46; fi
 exit 0
@@ -105,10 +120,10 @@ fi
 printf '%s\\n' '{"type":"assistant","message":{"content":[{"type":"text","text":"packaged path smoke ok"}]}}'
 printf '%s\\n' '{"type":"result","subtype":"success","is_error":false,"result":"packaged path smoke ok","usage":{"input_tokens":1,"output_tokens":1}}'
 `;
-  await writeExecutable(qoderBin, qoderScript);
-  await writeExecutable(qoderAlias, qoderScript);
+  await writePosixExecutable(qoderBin, qoderScript);
+  await writePosixExecutable(qoderAlias, qoderScript);
   const loginShell = path.join(stagingRoot, "login-shell");
-  await writeExecutable(loginShell, `
+  await writePosixExecutable(loginShell, `
 OWB_LOGIN_ONLY_SECRET='must-not-cross'
 export OWB_LOGIN_ONLY_SECRET
 printf '%s\\n' '__ORG_WORKBENCH_LOGIN_PATH__=${smokeBin}:/usr/bin:/bin:/usr/sbin:/sbin'
@@ -127,9 +142,81 @@ printf '%s\\n' '__ORG_WORKBENCH_LOGIN_PATH__=${smokeBin}:/usr/bin:/bin:/usr/sbin
     TMPDIR: tempDir,
     USER: "org-workbench-smoke",
   };
-  await runApp(binary, launchEnv);
+  return { appPath, resources, workspace, tempDir, homeDir, reportPath, binary, launchEnv, qoderPidFile };
+}
 
-  const smoke = JSON.parse(await fs.readFile(reportPath, "utf8"));
+async function stageWin() {
+  // On Windows, electron-builder's win-unpacked directory is safe to relaunch
+  // in place; deep-copying it would rewrite every Chromium locale file and
+  // regress the packaged tree we just verified. Stage the workspace and
+  // helper commands into a separate directory instead.
+  const appPath = sourceApp;
+  const resources = path.join(appPath, "resources", "app");
+  const workspace = path.join(stagingRoot, "workspace");
+  await fs.cp(path.join(resources, "examples", "oss-maintainer"), workspace, { recursive: true });
+
+  const smokeBin = path.join(stagingRoot, "path");
+  const tempDir = path.join(stagingRoot, "tmp");
+  const homeDir = path.join(stagingRoot, "home");
+  await Promise.all([
+    fs.mkdir(smokeBin, { recursive: true }),
+    fs.mkdir(tempDir, { recursive: true }),
+    fs.mkdir(homeDir, { recursive: true }),
+  ]);
+
+  // qoder.cmd — mirrors the POSIX qoder fixture but uses cmd.exe primitives.
+  // The packaged app resolves qoder via PATHEXT, so a .cmd works transparently.
+  // We do not exercise the macOS-only login-shell PATH recovery here; on
+  // Windows PATH is inherited directly from the launching environment.
+  const qoderCmd = path.join(smokeBin, "qoder.cmd");
+  const qoderCliCmd = path.join(smokeBin, "qodercli.cmd");
+  const qoderPidFile = path.join(tempDir, "qoder.pid");
+  const script = `if "%ELECTRON_RUN_AS_NODE%"=="1" exit /b 44
+if "%~1"=="--version" (
+  echo qoder 1.1.0
+  exit /b 0
+)
+echo {"type":"assistant","message":{"content":[{"type":"text","text":"packaged path smoke ok"}]}}
+echo {"type":"result","subtype":"success","is_error":false,"result":"packaged path smoke ok","usage":{"input_tokens":1,"output_tokens":1}}
+exit /b 0`;
+  await writeWindowsCmd(qoderCmd, script);
+  await writeWindowsCmd(qoderCliCmd, script);
+
+  const reportPath = path.join(tempDir, "report.json");
+  const binary = path.join(appPath, "Org Workbench.exe");
+
+  // Preserve the minimum set of Windows system env vars that Electron needs
+  // to boot (SystemRoot, USERPROFILE, ProgramFiles, etc.), then layer the
+  // smoke-specific PATH on top. Fully clearing env breaks user32.dll loading.
+  const inherited = process.env;
+  const preserveKeys = [
+    "SystemRoot", "SYSTEMROOT", "windir", "COMSPEC", "PATHEXT",
+    "ProgramFiles", "ProgramFiles(x86)", "ProgramData", "APPDATA",
+    "LOCALAPPDATA", "USERPROFILE", "USERNAME", "USERDOMAIN", "HOMEDRIVE",
+    "HOMEPATH", "TEMP", "TMP", "OS", "NUMBER_OF_PROCESSORS", "PROCESSOR_ARCHITECTURE",
+  ];
+  const launchEnv = {};
+  for (const key of preserveKeys) {
+    if (inherited[key] !== undefined) launchEnv[key] = inherited[key];
+  }
+  launchEnv.PATH = `${smokeBin};${inherited.PATH ?? ""}`;
+  launchEnv.ORG_WORKBENCH_DEFAULT_WORKSPACE = workspace;
+  launchEnv.ORG_WORKBENCH_PACKAGED_SMOKE_REPORT = reportPath;
+
+  return { appPath, resources, workspace, tempDir, homeDir, reportPath, binary, launchEnv, qoderPidFile };
+}
+
+async function stage() {
+  if (process.platform === "darwin") return stageMac();
+  if (process.platform === "win32") return stageWin();
+  throw new Error(`packaged smoke is only supported on macOS and Windows, not ${process.platform}`);
+}
+
+try {
+  const staged = await stage();
+  await runApp(staged.binary, staged.launchEnv);
+
+  const smoke = JSON.parse(await fs.readFile(staged.reportPath, "utf8"));
   assert.equal(smoke.schemaVersion, "org-workbench-packaged-smoke.v1");
   assert.equal(smoke.ok, true, smoke.error ?? "packaged smoke failed");
   for (const key of [
@@ -145,23 +232,39 @@ printf '%s\\n' '__ORG_WORKBENCH_LOGIN_PATH__=${smokeBin}:/usr/bin:/bin:/usr/sbin
   ]) {
     assert.equal(smoke[key], true, `packaged smoke did not prove ${key}`);
   }
-  assert.equal(
-    await fs.realpath(smoke.resourcesPath),
-    await fs.realpath(path.join(appPath, "Contents", "Resources")),
-  );
+  if (process.platform === "darwin") {
+    assert.equal(
+      await fs.realpath(smoke.resourcesPath),
+      await fs.realpath(path.join(staged.appPath, "Contents", "Resources")),
+    );
+  } else if (process.platform === "win32") {
+    // On Windows Electron reports resourcesPath as the directory containing
+    // the `app` folder. Compare the realpath so short-name / drive-case
+    // differences don't fail the smoke.
+    assert.equal(
+      await fs.realpath(smoke.resourcesPath),
+      await fs.realpath(path.join(staged.appPath, "resources")),
+    );
+  }
   assert.equal(Number.isInteger(smoke.serverPid), true);
-  const qoderPid = Number.parseInt((await fs.readFile(qoderPidFile, "utf8")).trim(), 10);
-  assert.equal(Number.isInteger(qoderPid) && qoderPid > 1, true);
-  await waitForPidExit(qoderPid);
+  if (process.platform === "darwin") {
+    // Only the POSIX qoder fixture writes its own PID. On Windows the .cmd
+    // wrapper cannot cheaply expose the child PID, so we skip the residual
+    // check — the outer runApp() timeout still catches hangs.
+    const qoderPid = Number.parseInt((await fs.readFile(staged.qoderPidFile, "utf8")).trim(), 10);
+    assert.equal(Number.isInteger(qoderPid) && qoderPid > 1, true);
+    await waitForPidExit(qoderPid);
+  }
   await waitForPidExit(smoke.serverPid);
   completed = true;
   process.stdout.write(`${JSON.stringify({
     schemaVersion: "org-workbench-clean-staging-smoke.v1",
     ok: true,
+    platform: process.platform,
     appPath: packageReport.appPath,
-    stagedOutsideSourceTree: !appPath.startsWith(`${projectRoot}${path.sep}`),
-    launchPathWasMinimal: true,
-    nestedMcpResolvedViaRecoveredPath: true,
+    stagedOutsideSourceTree: !staged.appPath.startsWith(`${projectRoot}${path.sep}`),
+    launchPathWasMinimal: process.platform === "darwin",
+    nestedMcpResolvedViaRecoveredPath: process.platform === "darwin",
     loginShellEnvironmentImported: false,
     rendererMounted: smoke.rendererMounted,
     controlPlaneReady: smoke.controlPlaneReady,

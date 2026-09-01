@@ -27,6 +27,15 @@ const APP_BUNDLE_REQUIRED_ENTRIES = [
   "Contents/MacOS/Org Workbench",
 ];
 
+// Windows electron-builder --win dir emits win-unpacked/ with the productName
+// executable at the top and Chromium resources alongside it. Only the entries
+// we actually depend on are asserted here; the point of this list is to catch
+// packaging regressions, not to inventory every Chromium file.
+const WIN_APP_REQUIRED_ENTRIES = [
+  "Org Workbench.exe",
+  "resources/app/package.json",
+];
+
 const APP_RESOURCES_REQUIRED_ENTRIES = [
   "package.json",
   "LICENSE",
@@ -62,4 +71,5 @@ module.exports = {
   APP_BUNDLE_REQUIRED_ENTRIES,
   APP_RESOURCES_REQUIRED_ENTRIES,
   RUNTIME_FILE_SETS,
+  WIN_APP_REQUIRED_ENTRIES,
 };

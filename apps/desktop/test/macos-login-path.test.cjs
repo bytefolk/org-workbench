@@ -117,7 +117,7 @@ test("an untrusted shell path fails closed before process creation", async () =>
   assert.equal(invoked, false);
 });
 
-test("hard timeout kills a login-shell fixture that traps SIGTERM", async (t) => {
+test("hard timeout kills a login-shell fixture that traps SIGTERM", { skip: process.platform === "win32" ? "requires POSIX exec of a #!/bin/sh fixture" : false }, async (t) => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), "owb-login-timeout-"));
   t.after(() => fs.rmSync(home, { force: true, recursive: true }));
   const shell = path.join(home, "trap-term-shell");

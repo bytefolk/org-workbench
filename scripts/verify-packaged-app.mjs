@@ -10,6 +10,7 @@ const require = createRequire(import.meta.url);
 const {
   APP_BUNDLE_REQUIRED_ENTRIES,
   APP_RESOURCES_REQUIRED_ENTRIES,
+  WIN_APP_REQUIRED_ENTRIES,
 } = require("../apps/desktop/packaging/runtime-layout.cjs");
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -26,6 +27,10 @@ function walkFiles(root, filter = () => true) {
       const relative = prefix.length > 0 ? path.join(prefix, entry.name) : entry.name;
       if (relative === ".digital-employee" || relative.startsWith(`.digital-employee${path.sep}`)) continue;
       const absolute = path.join(dir, entry.name);
+      // Windows electron-builder can materialize NTFS junctions inside the
+      // packaged tree; those show up as symbolic links to lstat. Everywhere
+      // we control the layout the packaged runtime must remain a plain file
+      // tree, so we still reject links.
       assert.equal(entry.isSymbolicLink(), false, `runtime tree must not contain symlinks: ${absolute}`);
       if (entry.isDirectory()) visit(absolute, relative);
       else if (entry.isFile() && filter(relative)) files.push(relative.split(path.sep).join("/"));
@@ -53,13 +58,7 @@ function sha256(file) {
   return crypto.createHash("sha256").update(fs.readFileSync(file)).digest("hex");
 }
 
-export function verifyPackagedApp(candidate = path.join(projectRoot, "release", "mac-arm64", "Org Workbench.app")) {
-  const appPath = path.resolve(candidate);
-  assert.equal(process.platform, "darwin", "macOS package verification must run on macOS");
-  assert.equal(path.basename(appPath), "Org Workbench.app");
-  for (const relative of APP_BUNDLE_REQUIRED_ENTRIES) regularFile(path.join(appPath, relative));
-
-  const resources = path.join(appPath, "Contents", "Resources", "app");
+function verifyResourcesTree(resources) {
   for (const relative of APP_RESOURCES_REQUIRED_ENTRIES) regularFile(path.join(resources, relative));
 
   assertMirroredTree(
@@ -103,6 +102,17 @@ export function verifyPackagedApp(candidate = path.join(projectRoot, "release", 
   assert.equal(packagedMetadata.main, "apps/desktop/src/main.js");
   assert.equal(packagedMetadata.name, "org-workbench");
   assert.equal(packagedMetadata.version, "0.0.0");
+}
+
+function verifyMacApp(candidate) {
+  const appPath = path.resolve(
+    candidate ?? path.join(projectRoot, "release", "mac-arm64", "Org Workbench.app"),
+  );
+  assert.equal(path.basename(appPath), "Org Workbench.app");
+  for (const relative of APP_BUNDLE_REQUIRED_ENTRIES) regularFile(path.join(appPath, relative));
+
+  const resources = path.join(appPath, "Contents", "Resources", "app");
+  verifyResourcesTree(resources);
 
   const plist = path.join(appPath, "Contents", "Info.plist");
   assert.equal(plistValue(plist, "CFBundleIdentifier"), "org.fullstack-ai-infra.org-workbench");
@@ -134,6 +144,7 @@ export function verifyPackagedApp(candidate = path.join(projectRoot, "release", 
   return {
     schemaVersion: "org-workbench-package-manifest.v1",
     ok: true,
+    platform: "darwin",
     appPath,
     architectures,
     developerSigned: false,
@@ -144,6 +155,47 @@ export function verifyPackagedApp(candidate = path.join(projectRoot, "release", 
     serverSha256: sha256(path.join(resources, "apps", "server", "dist", "src", "index.js")),
     qoderBinarySha256: sha256(path.join(resources, "apps", "server", "src", "qoder-binary.js")),
   };
+}
+
+function verifyWinApp(candidate) {
+  const appPath = path.resolve(
+    candidate ?? path.join(projectRoot, "release", "win-unpacked"),
+  );
+  assert.equal(path.basename(appPath), "win-unpacked");
+  for (const relative of WIN_APP_REQUIRED_ENTRIES) regularFile(path.join(appPath, relative));
+
+  const resources = path.join(appPath, "resources", "app");
+  verifyResourcesTree(resources);
+
+  // Windows electron-builder emits the productName as the top-level exe; we
+  // treat its presence as the equivalent of the macOS bundle's Info.plist.
+  // Signing is a separate story (kept out of the unsigned build); the smoke
+  // job proves the app actually launches.
+  const exePath = path.join(appPath, "Org Workbench.exe");
+  const exeStat = fs.statSync(exePath);
+  assert.equal(exeStat.isFile(), true, "packaged Windows entry point must be a regular file");
+  assert.ok(exeStat.size > 0, "packaged Windows entry point must not be empty");
+
+  return {
+    schemaVersion: "org-workbench-package-manifest.v1",
+    ok: true,
+    platform: "win32",
+    appPath,
+    architectures: "x64",
+    developerSigned: false,
+    linkerAdhocSignature: false,
+    requiredEntries: WIN_APP_REQUIRED_ENTRIES.length + APP_RESOURCES_REQUIRED_ENTRIES.length,
+    mainSha256: sha256(path.join(resources, "apps", "desktop", "src", "main.js")),
+    rendererSha256: sha256(path.join(resources, "apps", "desktop", "dist", "renderer", "index.html")),
+    serverSha256: sha256(path.join(resources, "apps", "server", "dist", "src", "index.js")),
+    qoderBinarySha256: sha256(path.join(resources, "apps", "server", "src", "qoder-binary.js")),
+  };
+}
+
+export function verifyPackagedApp(candidate) {
+  if (process.platform === "darwin") return verifyMacApp(candidate);
+  if (process.platform === "win32") return verifyWinApp(candidate);
+  throw new Error(`packaged verification is only supported on macOS and Windows, not ${process.platform}`);
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
