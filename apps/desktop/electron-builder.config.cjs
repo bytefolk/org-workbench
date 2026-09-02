@@ -29,6 +29,11 @@ module.exports = {
   win: {
     signExecutable: false,
   },
+  // No publish provider here, deliberately. A provider makes electron-builder
+  // write `app-update.yml` into the packaged resources, and that file would then
+  // appear in the staging tree, which asserts its contents byte-exact against
+  // source. The update feed is declared on the dist commands instead -- the only
+  // ones that produce an artifact anybody updates from.
   nsis: {
     // Strictly per-user install. Assisted mode exposes an all-users choice and
     // can elevate; one-click mode with perMachine=false keeps this unsigned lane

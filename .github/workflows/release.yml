@@ -1,0 +1,198 @@
+name: release
+
+on:
+  push:
+    tags: ["v*.*.*"]
+  workflow_dispatch:
+    inputs:
+      draft:
+        description: "Create the release as a draft"
+        required: false
+        default: true
+        type: boolean
+
+# Read by default. Only the publish job is granted write, and only to contents.
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  preflight:
+    name: Release preflight
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      version: ${{ steps.version.outputs.value }}
+    steps:
+      - name: Check out org-workbench
+        uses: actions/checkout@v6
+
+      - name: Read packaged version
+        id: version
+        shell: bash
+        run: echo "value=$(node -p "require('./package.json').version")" >> "$GITHUB_OUTPUT"
+
+      # A tag that disagrees with the packaged version produces artifacts whose
+      # filenames contradict the release they are attached to, and an updater
+      # that compares the wrong things. Fail before anything is built.
+      - name: Refuse a tag that disagrees with the packaged version
+        if: github.event_name == 'push'
+        shell: bash
+        run: |
+          expected="v${{ steps.version.outputs.value }}"
+          if [ "${GITHUB_REF_NAME}" != "$expected" ]; then
+            echo "::error::tag ${GITHUB_REF_NAME} does not match the packaged version ${expected}"
+            exit 1
+          fi
+
+      # A published release is a thing people may already have downloaded and a
+      # thing clients may already be updating from. Replacing its assets is not
+      # a release, it is a substitution.
+      - name: Refuse to overwrite a published release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag="v${{ steps.version.outputs.value }}"
+          state="$(gh release view "$tag" --json isDraft --jq .isDraft 2>/dev/null || echo absent)"
+          case "$state" in
+            absent) echo "no existing release for $tag" ;;
+            true)   echo "::warning::draft release $tag exists and will be replaced" ;;
+            false)  echo "::error::release $tag is already published; bump the version instead"; exit 1 ;;
+          esac
+
+      # This lane publishes unsigned artifacts. Saying so here means a run cannot
+      # quietly imply a guarantee it does not carry.
+      - name: State the unsigned limitation
+        run: |
+          echo "::warning::This release is unsigned. macOS artifacts are install-only (Gatekeeper blocks first launch, in-app update is unavailable per #135). Windows installs and updates but draws a SmartScreen prompt until #136 lands."
+
+  build:
+    name: Build (${{ matrix.label }})
+    needs: preflight
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - label: macOS-arm64
+            runs-on: macos-15
+            package: package:dist:macos
+            verify: verify:dist:macos
+          - label: Windows-x64
+            runs-on: windows-latest
+            package: package:dist:windows
+            verify: verify:dist:windows
+    runs-on: ${{ matrix.runs-on }}
+    timeout-minutes: 45
+    steps:
+      - name: Check out org-workbench
+        uses: actions/checkout@v6
+        with:
+          path: org-workbench
+
+      - name: Check out pinned design system
+        uses: actions/checkout@v6
+        with:
+          repository: ${{ github.repository_owner }}/design-system
+          ref: 9d048faaabe0429a6a8720bfbb31418544237b6b
+          path: design-system
+
+      - name: Set up Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: |
+            design-system/package-lock.json
+            org-workbench/package-lock.json
+
+      - name: Build pinned design system
+        working-directory: design-system
+        run: |
+          npm ci
+          npm run build:package
+
+      - name: Install workbench
+        working-directory: org-workbench
+        run: npm ci
+
+      - name: Build unsigned installers
+        working-directory: org-workbench
+        run: npm run ${{ matrix.package }}
+
+      - name: Verify installer asset set
+        working-directory: org-workbench
+        run: npm run ${{ matrix.verify }}
+
+      # Every leg writes latest*.yml. Uploaded under one name they would
+      # overwrite each other and the surviving file would describe one platform
+      # while claiming to describe the release.
+      - name: Namespace update metadata
+        working-directory: org-workbench/release/dist
+        shell: bash
+        run: |
+          shopt -s nullglob
+          for file in latest*.yml; do
+            mv "$file" "${file%.yml}--${{ matrix.label }}.yml"
+          done
+
+      - name: Upload release artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-${{ matrix.label }}
+          if-no-files-found: error
+          path: |
+            org-workbench/release/dist/*.dmg
+            org-workbench/release/dist/*.zip
+            org-workbench/release/dist/*.exe
+            org-workbench/release/dist/*.blockmap
+            org-workbench/release/dist/latest*.yml
+
+  publish:
+    name: Publish release
+    needs: [preflight, build]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    # The only elevated grant in this workflow, and the narrowest one that can
+    # create a release.
+    permissions:
+      contents: write
+    steps:
+      - name: Download every leg's artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: incoming
+          pattern: release-*
+          merge-multiple: true
+
+      # Restore the per-platform names electron-updater expects. The namespacing
+      # existed to survive the upload, not to reach the release.
+      - name: Restore update metadata names
+        shell: bash
+        working-directory: incoming
+        run: |
+          shopt -s nullglob
+          for file in latest*--*.yml; do
+            mv "$file" "$(printf '%s' "$file" | sed -E 's/--[^.]+\.yml$/.yml/')"
+          done
+          ls -la
+
+      - name: Publish
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag="v${{ needs.preflight.outputs.version }}"
+          draft=""
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ inputs.draft }}" = "true" ]; then
+            draft="--draft"
+          fi
+          gh release create "$tag" \
+            --repo "${{ github.repository }}" \
+            --title "$tag" \
+            --notes "Unsigned build. macOS artifacts are install-only; in-app update requires a Developer ID build (#135). Windows installs and updates, and draws a SmartScreen prompt until #136 lands." \
+            $draft \
+            incoming/*
