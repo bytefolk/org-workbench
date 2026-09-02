@@ -279,6 +279,28 @@ export function classifyMacSignature({ verification, details, codeResourcesExist
   return "unsealed-linker-adhoc";
 }
 
+export const WINDOWS_SIGNATURE_TARGET_ENV = "VERIFY_SIGNATURE_TARGET";
+
+/**
+ * Builds the Authenticode inspection call. The target path travels through the
+ * environment rather than argv: with `-Command`, PowerShell appends trailing argv
+ * entries to the script text instead of binding them to a `param()` block, so an
+ * inline path is parsed as source and breaks on the first space — and the packaged
+ * executable is named "Org Workbench.exe".
+ */
+export function windowsSignatureInspection(executable, baseEnv = process.env) {
+  return {
+    command: "powershell.exe",
+    args: [
+      "-NoProfile",
+      "-NonInteractive",
+      "-Command",
+      `(Get-AuthenticodeSignature -LiteralPath $env:${WINDOWS_SIGNATURE_TARGET_ENV}).Status.ToString()`,
+    ],
+    env: { ...baseEnv, [WINDOWS_SIGNATURE_TARGET_ENV]: executable },
+  };
+}
+
 function assertNoProductSignature(platform, appPath, executable) {
   if (platform === "macos") {
     const verification = spawnSync("/usr/bin/codesign", ["--verify", "--deep", "--strict", appPath], {
@@ -294,17 +316,8 @@ function assertNoProductSignature(platform, appPath, executable) {
     });
   }
 
-  const inspection = spawnSync(
-    "powershell.exe",
-    [
-      "-NoProfile",
-      "-NonInteractive",
-      "-Command",
-      "param([string]$target) (Get-AuthenticodeSignature -LiteralPath $target).Status.ToString()",
-      executable,
-    ],
-    { encoding: "utf8", windowsHide: true },
-  );
+  const { command, args, env } = windowsSignatureInspection(executable);
+  const inspection = spawnSync(command, args, { encoding: "utf8", windowsHide: true, env });
   assert.equal(inspection.error ?? null, null, "Authenticode inspection could not be executed");
   assert.equal(inspection.status, 0, inspection.stderr || "Authenticode inspection failed");
   assert.equal(inspection.stdout.trim(), "NotSigned", "staging executable unexpectedly carries Authenticode");

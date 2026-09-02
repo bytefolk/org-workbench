@@ -6,8 +6,10 @@ import path from "node:path";
 import test from "node:test";
 import { cleanPackageOutput } from "../clean-package-output.mjs";
 import {
+  WINDOWS_SIGNATURE_TARGET_ENV,
   classifyMacSignature,
   validateResourceCandidate,
+  windowsSignatureInspection,
 } from "../verify-packaged-app.mjs";
 
 function makeResourceFixture(t) {
@@ -148,6 +150,23 @@ test("package cleaner deletes stale output but refuses a symlink escape", (t) =>
 
   assert.throws(() => cleanPackageOutput(guardedRoot), /symbolic link or junction/);
   assert.equal(fs.readFileSync(sentinel, "utf8"), "preserve\n");
+});
+
+test("windows signature inspection keeps the target path out of the PowerShell script text", () => {
+  const executable = "D:\\a\\org-workbench\\release\\staging\\win-unpacked\\Org Workbench.exe";
+  const { command, args, env } = windowsSignatureInspection(executable, { PATH: "C:\\Windows" });
+
+  assert.equal(command, "powershell.exe");
+  assert.equal(env[WINDOWS_SIGNATURE_TARGET_ENV], executable);
+  assert.equal(env.PATH, "C:\\Windows");
+
+  // A path carried in argv would either be appended to the `-Command` script text
+  // or need shell quoting; both broke on the space in "Org Workbench.exe".
+  for (const argument of args) {
+    assert.ok(!argument.includes(executable), `argv leaked the target path: ${argument}`);
+    assert.ok(!argument.includes("param("), "`-Command` cannot bind a param() block");
+  }
+  assert.ok(args.at(-1).includes(`$env:${WINDOWS_SIGNATURE_TARGET_ENV}`));
 });
 
 test("mac signature classifier accepts only the observed unsealed linker ad-hoc state", () => {
