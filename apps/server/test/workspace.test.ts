@@ -40,9 +40,34 @@ test("workspace: open example, org-tree.v1 snapshot, invalid skeleton rejected",
 
     const position = await api(server.baseUrl, "/positions/repo-owner", { token: server.token });
     assert.equal(position.status, 200);
-    const card = position.body as { position: { budget: unknown; contextScope: string } };
+    const card = position.body as {
+      position: {
+        budget: unknown;
+        contextScope: string;
+        contextSources: Array<{
+          kind: string;
+          name: string;
+          locator: string;
+          binding: string;
+          state: string;
+          itemCount?: number;
+        }>;
+      };
+    };
     assert.ok(card.position.budget);
     assert.equal(typeof card.position.contextScope, "string");
+    assert.deepEqual(
+      card.position.contextSources.map((source) => source.kind),
+      ["workspace_docs", "mem_drive", "context_provider"],
+    );
+    assert.equal(card.position.contextSources[0]?.name, "岗位知识库");
+    assert.equal(card.position.contextSources[0]?.binding, "bound");
+    assert.equal(card.position.contextSources[0]?.state, "ready");
+    assert.ok((card.position.contextSources[0]?.itemCount ?? 0) > 0);
+    assert.equal(card.position.contextSources[1]?.name, "统一网盘");
+    assert.equal(card.position.contextSources[1]?.binding, "available");
+    assert.ok(["ready", "not_configured"].includes(card.position.contextSources[1]?.state ?? ""));
+    assert.equal(card.position.contextSources[2]?.locator, "context://position/repo-owner");
 
     const missing = await api(server.baseUrl, "/positions/does-not-exist", { token: server.token });
     assert.equal(missing.status, 404);

@@ -53,6 +53,15 @@ function installBridge(overrides: Partial<OwbBridge> = {}): OwbBridge {
     orgUndo: vi.fn().mockResolvedValue({ status: 404, body: { code: "not_found", message: "nothing undoable" } }),
     reports: vi.fn().mockResolvedValue({ status: 200, body: emptyReports() }),
     position: vi.fn().mockResolvedValue({ status: 404, body: { code: "position_missing" } }),
+    drive: {
+      list: vi.fn().mockResolvedValue({
+        status: 200,
+        body: { schemaVersion: "drive-object-list.v1", objects: [], mocked: true },
+      }),
+      detail: vi.fn().mockResolvedValue({ status: 404, body: { code: "asset_not_found" } }),
+      upload: vi.fn().mockResolvedValue({ status: 202, body: { stub: true, filePath: "", message: "stub" } }),
+      pickAndUpload: vi.fn().mockResolvedValue({ canceled: true }),
+    },
     createTurn: vi.fn().mockResolvedValue({ status: 500, body: { code: "internal", message: "unexpected" } }),
     turnHistory: vi.fn().mockResolvedValue({
       status: 200,
@@ -639,6 +648,41 @@ describe("App runtime bridge", () => {
     expect(screen.getByLabelText("Turn / 审计时间线")).toBeInTheDocument();
     expect(screen.getByText("共 3 条")).toBeInTheDocument();
     expect(screen.getByText("turn-1")).toBeInTheDocument();
+  });
+});
+
+describe("App drive module wiring", () => {
+  it("uses the current Workbench mem bridge instead of opening an external client", async () => {
+    const list = vi.fn().mockResolvedValue({
+      status: 200,
+      body: {
+        schemaVersion: "drive-object-list.v1",
+        mocked: true,
+        objects: [{
+          id: "mem-001",
+          name: "会议纪要.md",
+          size: 120,
+          mime: "text/markdown",
+          createdAt: "2026-08-30T09:14:22.000Z",
+        }],
+      },
+    });
+    const bridge = openedBridge({
+      drive: {
+        list,
+        detail: vi.fn(),
+        upload: vi.fn(),
+        pickAndUpload: vi.fn(),
+      },
+    });
+
+    render(<App />);
+    fireEvent.click(await screen.findByRole("button", { name: "网盘" }));
+    expect(await screen.findByRole("heading", { name: "统一网盘" })).toBeInTheDocument();
+    expect(await screen.findByText("会议纪要.md")).toBeInTheDocument();
+    expect(list).toHaveBeenCalledWith("");
+    expect(screen.queryByText(/Obsidian/)).not.toBeInTheDocument();
+    expect(bridge.position).toHaveBeenCalled();
   });
 });
 
