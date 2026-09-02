@@ -12,6 +12,7 @@ import { OrgTree, PositionCard } from "@org-workbench/ui";
 import type { OrgDropPosition, PositionCardData } from "@org-workbench/ui";
 import type {
   ChangeManifest,
+  GroupTimeline,
   HealthResponse,
   OrgBackupEntry,
   OrgBackupsResponse,
@@ -36,6 +37,7 @@ import {
   beginGroupRun,
   beginPendingTurn,
   cancelPendingTurn,
+  reconcileGroupTimeline,
   resetStreamSeq,
   settlePendingTurn,
 } from "./turns";
@@ -471,6 +473,7 @@ export function App() {
   const spawnGroupRuns = useCallback(
     (
       groupRef: string,
+      messageId: string,
       spawns: Array<{ turnId: string; positionId: string }>,
       input: string,
       engine: TurnEngine,
@@ -478,13 +481,24 @@ export function App() {
       setTurnStream((current) =>
         spawns.reduce(
           (state, spawn) =>
-            beginGroupRun(state, { groupRef, turnId: spawn.turnId, positionId: spawn.positionId, engine, input }),
+            beginGroupRun(state, {
+              groupRef,
+              messageId,
+              turnId: spawn.turnId,
+              positionId: spawn.positionId,
+              engine,
+              input,
+            }),
           current,
         ),
       );
     },
     [],
   );
+
+  const reconcileGroup = useCallback((timeline: GroupTimeline) => {
+    setTurnStream((current) => reconcileGroupTimeline(current, timeline));
+  }, []);
 
   /** Operator cancel (issue #25 Slice A): the control plane settles the turn
    * as indeterminate/turn_cancelled; the in-flight POST readback and the
@@ -1003,6 +1017,7 @@ export function App() {
             liveRuns={turnStream.runs}
             onSelectEngine={setTurnEngine}
             onSpawnRuns={spawnGroupRuns}
+            onReconcileTimeline={reconcileGroup}
           />
         ) : activeModule === "docs" ? (
           <DocsModule

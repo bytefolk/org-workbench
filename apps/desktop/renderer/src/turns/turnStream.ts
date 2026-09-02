@@ -1,3 +1,4 @@
+import type { GroupTimeline, TurnRecord } from "@org-workbench/shared";
 import type { TurnEngine } from "./types";
 
 /**
@@ -16,6 +17,11 @@ export interface PendingTurnRequestState {
 }
 
 export interface LiveRunState {
+  /** Stable group dispatch identity. The map key may be re-keyed to runId. */
+  turnId?: string;
+  messageId?: string;
+  /** Engine runId, null until the first attributed engine event. */
+  engineRunId?: string | null;
   positionId: string;
   engine: TurnEngine;
   input: string;
@@ -32,9 +38,28 @@ export interface TurnStreamState {
   seq: number;
   pending: PendingTurnRequestState | null;
   runs: Record<string, LiveRunState>;
+  /** Bounded exact terminal facts observed before a 202 spawn can be seeded. */
+  settledGroupRuns: Record<string, SettledGroupRunState>;
 }
 
-export const EMPTY_TURN_STREAM: TurnStreamState = { seq: 0, pending: null, runs: {} };
+interface GroupRunIdentity {
+  groupRef: string;
+  messageId: string;
+  turnId: string;
+  positionId: string;
+  engine: TurnEngine;
+}
+
+interface SettledGroupRunState extends GroupRunIdentity {
+  seq: number;
+}
+
+export const EMPTY_TURN_STREAM: TurnStreamState = {
+  seq: 0,
+  pending: null,
+  runs: {},
+  settledGroupRuns: {},
+};
 
 export interface TurnStreamEnvelope {
   seq?: unknown;
@@ -44,6 +69,8 @@ export interface TurnStreamEnvelope {
 }
 
 const LIVE_RUNS_CAP = 32;
+const SETTLED_GROUP_RUNS_CAP = 64;
+const GROUP_ENGINES = new Set<TurnEngine>(["qoder", "claude-code", "claude-local"]);
 
 function payloadRecord(payload: unknown): Record<string, unknown> | null {
   return payload !== null && typeof payload === "object" && !Array.isArray(payload)
@@ -63,6 +90,60 @@ function evictIfOverCap(runs: Record<string, LiveRunState>): Record<string, Live
   return Object.fromEntries(entries.slice(entries.length - LIVE_RUNS_CAP));
 }
 
+function groupIdentity(payload: Record<string, unknown> | null): GroupRunIdentity | null {
+  const groupRef = stringField(payload, "groupRef") ?? stringField(payload, "conversationRef");
+  const messageId = stringField(payload, "messageId");
+  const turnId = stringField(payload, "turnId");
+  const positionId = stringField(payload, "positionId");
+  const engine = stringField(payload, "engine");
+  if (
+    groupRef === null || messageId === null || turnId === null || positionId === null ||
+    engine === null || !GROUP_ENGINES.has(engine as TurnEngine)
+  ) return null;
+  return { groupRef, messageId, turnId, positionId, engine: engine as TurnEngine };
+}
+
+function hasGroupAttribution(payload: Record<string, unknown> | null): boolean {
+  return stringField(payload, "groupRef") !== null ||
+    stringField(payload, "messageId") !== null;
+}
+
+function sameGroupRun(left: GroupRunIdentity, right: GroupRunIdentity): boolean {
+  return left.groupRef === right.groupRef &&
+    left.messageId === right.messageId &&
+    left.turnId === right.turnId &&
+    left.positionId === right.positionId &&
+    left.engine === right.engine;
+}
+
+function liveIdentity(run: LiveRunState): GroupRunIdentity | null {
+  return run.groupRef !== undefined && run.messageId !== undefined && run.turnId !== undefined
+    ? {
+        groupRef: run.groupRef,
+        messageId: run.messageId,
+        turnId: run.turnId,
+        positionId: run.positionId,
+        engine: run.engine,
+      }
+    : null;
+}
+
+function rememberSettledGroupRun(
+  settled: Record<string, SettledGroupRunState>,
+  identity: GroupRunIdentity,
+  seq: number,
+): Record<string, SettledGroupRunState> {
+  const next = { ...settled, [identity.turnId]: { ...identity, seq } };
+  const entries = Object.entries(next);
+  if (entries.length <= SETTLED_GROUP_RUNS_CAP) return next;
+  entries.sort((left, right) => left[1].seq - right[1].seq || left[0].localeCompare(right[0], "en"));
+  return Object.fromEntries(entries.slice(entries.length - SETTLED_GROUP_RUNS_CAP));
+}
+
+function terminalRecord(turn: TurnRecord): boolean {
+  return turn.status === "completed" || turn.status === "failed" || turn.status === "indeterminate";
+}
+
 export function beginPendingTurn(
   state: TurnStreamState,
   request: { positionId: string; engine: TurnEngine; input: string },
@@ -78,6 +159,7 @@ export function beginGroupRun(
   state: TurnStreamState,
   spawn: {
     groupRef: string;
+    messageId: string;
     turnId: string;
     positionId: string;
     engine: TurnEngine;
@@ -85,11 +167,16 @@ export function beginGroupRun(
   },
 ): TurnStreamState {
   if (state.runs[spawn.turnId] !== undefined) return state;
+  const settled = state.settledGroupRuns[spawn.turnId];
+  if (settled !== undefined && sameGroupRun(settled, spawn)) return state;
   return {
     ...state,
     runs: evictIfOverCap({
       ...state.runs,
       [spawn.turnId]: {
+        turnId: spawn.turnId,
+        messageId: spawn.messageId,
+        engineRunId: null,
         positionId: spawn.positionId,
         engine: spawn.engine,
         input: spawn.input,
@@ -100,6 +187,57 @@ export function beginGroupRun(
       },
     }),
   };
+}
+
+/**
+ * Reconcile a dropped/late SSE channel from the bounded group timeline. A
+ * live marker is removed only when both its exact user message and exact
+ * terminal turn are present; unrelated group/member/engine facts cannot
+ * settle it. The caller controls polling bounds.
+ */
+export function reconcileGroupTimeline(
+  state: TurnStreamState,
+  timeline: GroupTimeline,
+): TurnStreamState {
+  const messages = new Map(
+    timeline.items
+      .filter((item) => item.kind === "user")
+      .map((message) => [message.messageId, message] as const),
+  );
+  const turns = new Map<string, TurnRecord>();
+  for (const item of timeline.items) {
+    if (item.kind === "member" && terminalRecord(item.turn)) {
+      turns.set(item.turn.turnId, item.turn);
+    }
+  }
+  let changed = false;
+  let settledGroupRuns = state.settledGroupRuns;
+  const runs: Record<string, LiveRunState> = {};
+  for (const [runKey, run] of Object.entries(state.runs)) {
+    const identity = liveIdentity(run);
+    if (identity === null || identity.groupRef !== timeline.conversationRef) {
+      runs[runKey] = run;
+      continue;
+    }
+    const message = messages.get(identity.messageId);
+    const turn = turns.get(identity.turnId);
+    const exactMessage = message !== undefined &&
+      message.conversationRef === identity.groupRef &&
+      message.input === run.input &&
+      message.mentions.includes(identity.positionId);
+    const exactTurn = turn !== undefined &&
+      (turn.conversationRef === identity.groupRef || turn.groupRef === identity.groupRef) &&
+      turn.positionId === identity.positionId &&
+      turn.engine === identity.engine &&
+      turn.input === run.input;
+    if (!exactMessage || !exactTurn) {
+      runs[runKey] = run;
+      continue;
+    }
+    changed = true;
+    settledGroupRuns = rememberSettledGroupRun(settledGroupRuns, identity, state.seq);
+  }
+  return changed ? { ...state, runs, settledGroupRuns } : state;
 }
 
 /** The in-flight POST failed before any engine attribution; drop the pending marker only. */
@@ -147,6 +285,14 @@ export function applyTurnEvent(
       const existing = state.runs[runId];
       const delta = envelope.type === "turn.model.delta" ? (stringField(payload, "text") ?? "") : "";
       if (existing) {
+        const currentIdentity = liveIdentity(existing);
+        if (currentIdentity !== null) {
+          const identity = groupIdentity(payload);
+          if (
+            identity === null || !sameGroupRun(currentIdentity, identity) ||
+            (existing.engineRunId !== null && existing.engineRunId !== undefined && existing.engineRunId !== runId)
+          ) return { ...state, seq: nextSeq };
+        }
         return {
           ...state,
           seq: nextSeq,
@@ -166,7 +312,12 @@ export function applyTurnEvent(
         stringField(payload, "groupRef") ??
         (seeded !== undefined ? stringField(payload, "conversationRef") : null);
       if (groupingRef !== null) {
-        if (seeded === undefined || runId === null) return { ...state, seq: nextSeq };
+        const identity = groupIdentity(payload);
+        const seededIdentity = seeded === undefined ? null : liveIdentity(seeded);
+        if (
+          seeded === undefined || runId === null || identity === null || seededIdentity === null ||
+          !sameGroupRun(identity, seededIdentity)
+        ) return { ...state, seq: nextSeq };
         const runs = { ...state.runs };
         if (seedId !== null && seedId !== runId) delete runs[seedId];
         return {
@@ -174,7 +325,12 @@ export function applyTurnEvent(
           seq: nextSeq,
           runs: evictIfOverCap({
             ...runs,
-            [runId]: { ...seeded, groupRef: groupingRef, text: seeded.text + delta },
+            [runId]: {
+              ...seeded,
+              groupRef: groupingRef,
+              engineRunId: runId,
+              text: seeded.text + delta,
+            },
           }),
         };
       }
@@ -206,6 +362,13 @@ export function applyTurnEvent(
       if (runId === null) return { ...state, seq: nextSeq };
       const existing = state.runs[runId];
       if (existing === undefined) return { ...state, seq: nextSeq };
+      const currentIdentity = liveIdentity(existing);
+      if (currentIdentity !== null) {
+        const identity = groupIdentity(payload);
+        if (identity === null || !sameGroupRun(currentIdentity, identity)) {
+          return { ...state, seq: nextSeq };
+        }
+      }
       const rawTotal = payload?.totalTokens;
       const totalTokens = typeof rawTotal === "number" && Number.isFinite(rawTotal) ? rawTotal : existing.totalTokens;
       return {
@@ -216,33 +379,65 @@ export function applyTurnEvent(
     }
     case "turn.completed":
     case "turn.failed": {
+      const identity = groupIdentity(payload);
+      if (identity !== null) {
+        if (runId === null) return { ...state, seq: nextSeq };
+        const runs: Record<string, LiveRunState> = {};
+        for (const [runKey, run] of Object.entries(state.runs)) {
+          const currentIdentity = liveIdentity(run);
+          const exact = currentIdentity !== null && sameGroupRun(currentIdentity, identity) &&
+            (run.engineRunId === null || run.engineRunId === undefined || run.engineRunId === runId);
+          if (!exact) runs[runKey] = run;
+        }
+        return {
+          ...state,
+          seq: nextSeq,
+          runs,
+          settledGroupRuns: rememberSettledGroupRun(state.settledGroupRuns, identity, nextSeq),
+        };
+      }
+      if (hasGroupAttribution(payload)) return { ...state, seq: nextSeq };
+      // A group buffer must never fall through to the personal runId path:
+      // missing attribution is not evidence that the exact group turn ended.
+      const terminalRun = runId === null ? undefined : state.runs[runId];
+      if (terminalRun !== undefined && liveIdentity(terminalRun) !== null) {
+        return { ...state, seq: nextSeq };
+      }
       if (runId === null || state.runs[runId] === undefined) return { ...state, seq: nextSeq };
       const runs = { ...state.runs };
       delete runs[runId];
       return { ...state, seq: nextSeq, runs };
     }
     case "turn.indeterminate": {
-      // No runId is carried. 1:1 cleanup stays position-scoped (the run buffer
-      // is keyed by the engine runId). Group spawn failures (#52) carry
-      // groupRef + the pre-assigned turnId (seed key) or match the re-keyed
-      // buffer by groupRef+positionId.
-      const indeterminateTurnId = stringField(payload, "turnId");
-      const indeterminateGroupRef = stringField(payload, "groupRef");
+      // No runId is carried. Exact group attribution clears only its spawn;
+      // partial group metadata is ignored and left to persisted reconciliation.
+      // Personal cleanup remains position-scoped.
       const positionId = stringField(payload, "positionId");
+      const identity = groupIdentity(payload);
+      if (identity === null && hasGroupAttribution(payload)) {
+        return { ...state, seq: nextSeq };
+      }
       const pendingRunId = state.pending?.runId ?? null;
       const runs: Record<string, LiveRunState> = {};
       for (const [runId, run] of Object.entries(state.runs)) {
-        const scoped = indeterminateGroupRef !== null && indeterminateTurnId !== null
-          ? runId === indeterminateTurnId ||
-            (positionId !== null &&
-              run.groupRef === indeterminateGroupRef &&
-              run.positionId === positionId)
+        const currentIdentity = liveIdentity(run);
+        const scoped = identity !== null
+          ? currentIdentity !== null && sameGroupRun(currentIdentity, identity)
+          : currentIdentity !== null
+            ? false
           : positionId !== null
             ? run.positionId === positionId
             : runId === pendingRunId;
         if (!scoped) runs[runId] = run;
       }
-      return { ...state, seq: nextSeq, runs };
+      return {
+        ...state,
+        seq: nextSeq,
+        runs,
+        ...(identity !== null
+          ? { settledGroupRuns: rememberSettledGroupRun(state.settledGroupRuns, identity, nextSeq) }
+          : {}),
+      };
     }
     default:
       return { ...state, seq: nextSeq };

@@ -30,10 +30,13 @@ export interface GroupsPanelProps {
   /** 202 spawn list, reported upward so the shared stream seeds live buffers. */
   onSpawnRuns: (
     groupRef: string,
+    messageId: string,
     spawns: Array<{ turnId: string; positionId: string }>,
     input: string,
     engine: TurnEngine,
   ) => void;
+  /** Persisted timeline reconciliation clears missed/late SSE live markers. */
+  onReconcileTimeline: (timeline: GroupTimeline) => void;
 }
 
 function groupLabel(group: GroupConversation, names: Record<string, string>): string {
@@ -42,6 +45,8 @@ function groupLabel(group: GroupConversation, names: Record<string, string>): st
 }
 
 const GROUP_ENGINES: TurnEngine[] = ["qoder", "claude-code", "claude-local"];
+const GROUP_RECONCILE_INTERVAL_MS = 1_000;
+const GROUP_RECONCILE_MAX_READS = 180;
 
 /** @mention highlight inside operator bubble text (spec §1/§6). */
 function renderMentionText(input: string) {
@@ -93,11 +98,14 @@ export function GroupsPanel({
   liveRuns,
   onSelectEngine,
   onSpawnRuns,
+  onReconcileTimeline,
 }: GroupsPanelProps) {
   const [groups, setGroups] = useState<GroupConversation[]>([]);
   const [groupsError, setGroupsError] = useState<string | null>(null);
   const [selectedRef, setSelectedRef] = useState<string | null>(null);
   const selectedRefRef = useRef<string | null>(null);
+  const timelineRequestRef = useRef(0);
+  const foregroundTimelineRequestRef = useRef(0);
   const [timeline, setTimeline] = useState<GroupTimeline | null>(null);
   const [timelineLoading, setTimelineLoading] = useState(false);
   const [creating, setCreating] = useState(false);
@@ -138,26 +146,37 @@ export function GroupsPanel({
     }
   }, [workspaceOpen]);
 
-  const loadTimeline = useCallback(async (conversationRef: string) => {
-    setTimelineLoading(true);
+  const loadTimeline = useCallback(async (conversationRef: string, background = false) => {
+    const request = ++timelineRequestRef.current;
+    if (!background) {
+      foregroundTimelineRequestRef.current = request;
+      setTimelineLoading(true);
+    }
     try {
       const res = await window.owb.groupTimeline(conversationRef);
-      if (selectedRefRef.current !== conversationRef) return;
+      if (selectedRefRef.current !== conversationRef || request !== timelineRequestRef.current) return;
       if (res.status !== 200) {
         setTimeline(null);
         setPanelError(apiErrorMessage(res.body, "群时间线读取失败"));
         return;
       }
-      setTimeline(res.body as GroupTimeline);
+      const next = res.body as GroupTimeline;
+      setTimeline(next);
+      onReconcileTimeline(next);
       setPanelError(null);
     } catch {
-      if (selectedRefRef.current === conversationRef) {
+      if (selectedRefRef.current === conversationRef && request === timelineRequestRef.current) {
         setPanelError("群时间线读取失败：控制面不可达");
       }
     } finally {
-      setTimelineLoading(false);
+      if (
+        !background && selectedRefRef.current === conversationRef &&
+        request === foregroundTimelineRequestRef.current
+      ) {
+        setTimelineLoading(false);
+      }
     }
-  }, []);
+  }, [onReconcileTimeline]);
 
   useEffect(() => {
     void loadGroups();
@@ -193,13 +212,45 @@ export function GroupsPanel({
       const groupRef = typeof payload?.groupRef === "string" ? payload.groupRef : null;
       if (groupRef === null || groupRef !== selectedRefRef.current) return;
       if (timer !== null) clearTimeout(timer);
-      timer = setTimeout(() => void loadTimeline(groupRef), 100);
+      timer = setTimeout(() => void loadTimeline(groupRef, true), 100);
     });
     return () => {
       if (timer !== null) clearTimeout(timer);
       off();
     };
   }, [loadTimeline]);
+
+  const selectedLiveSignature = useMemo(() =>
+    Object.values(liveRuns)
+      .filter((run) => run.groupRef === selectedRef)
+      .map((run) => [run.messageId ?? "", run.turnId ?? "", run.positionId, run.engine].join(":"))
+      .sort((left, right) => left.localeCompare(right, "en"))
+      .join("|"),
+  [liveRuns, selectedRef]);
+
+  // SSE is a hint, not the source of truth. While this exact dispatch still
+  // has live markers, retry a bounded number of authoritative timeline reads
+  // so a dropped or late listener cannot leave the group permanently busy.
+  useEffect(() => {
+    if (selectedRef === null || selectedLiveSignature === "") return;
+    const conversationRef = selectedRef;
+    let cancelled = false;
+    let reads = 0;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const poll = async () => {
+      if (cancelled || reads >= GROUP_RECONCILE_MAX_READS) return;
+      reads += 1;
+      await loadTimeline(conversationRef, true);
+      if (!cancelled && reads < GROUP_RECONCILE_MAX_READS) {
+        timer = setTimeout(() => void poll(), GROUP_RECONCILE_INTERVAL_MS);
+      }
+    };
+    timer = setTimeout(() => void poll(), GROUP_RECONCILE_INTERVAL_MS);
+    return () => {
+      cancelled = true;
+      if (timer !== null) clearTimeout(timer);
+    };
+  }, [loadTimeline, selectedLiveSignature, selectedRef]);
 
   const selectedGroup = groups.find((group) => group.conversationRef === selectedRef) ?? null;
 
@@ -262,7 +313,7 @@ export function GroupsPanel({
         return;
       }
       const body = res.body as { conversationRef: string; messageId: string; spawns: Array<{ turnId: string; positionId: string }> };
-      onSpawnRuns(ref, body.spawns, trimmed, engine);
+      onSpawnRuns(ref, body.messageId, body.spawns, trimmed, engine);
       setInput("");
       setMentions(new Set());
       void loadTimeline(ref);
@@ -280,7 +331,9 @@ export function GroupsPanel({
       timeline?.items.filter((item) => item.kind === "member").map((item) => item.turn.turnId) ?? [],
     );
     const live = Object.entries(liveRuns)
-      .filter(([runId, run]) => run.groupRef === selectedRef && !persistedTurnIds.has(runId))
+      .filter(([runId, run]) =>
+        run.groupRef === selectedRef && !persistedTurnIds.has(run.turnId ?? runId),
+      )
       .map(([runId, run]) => ({
         key: `live-${runId}`,
         turn: {
@@ -302,12 +355,22 @@ export function GroupsPanel({
   /** Members with an in-flight run in this group — drives the roster LED and
    * the header 状态灯 (设计稿 .roster .rdot / .src)。 */
   const runningMembers = useMemo(() => {
+    const persistedTurnIds = new Set(
+      timeline?.items.filter((item) => item.kind === "member").map((item) => item.turn.turnId) ?? [],
+    );
     const ids = new Set<string>();
-    for (const run of Object.values(liveRuns)) {
-      if (run.groupRef === selectedRef) ids.add(run.positionId);
+    for (const item of timeline?.items ?? []) {
+      if (item.kind === "member" && item.turn.status === "running") {
+        ids.add(item.turn.positionId);
+      }
+    }
+    for (const [runId, run] of Object.entries(liveRuns)) {
+      if (run.groupRef === selectedRef && !persistedTurnIds.has(run.turnId ?? runId)) {
+        ids.add(run.positionId);
+      }
     }
     return ids;
-  }, [liveRuns, selectedRef]);
+  }, [liveRuns, selectedRef, timeline]);
 
   const nonMembers = positions.filter(
     (position) => selectedGroup !== null && !selectedGroup.members.includes(position.id),

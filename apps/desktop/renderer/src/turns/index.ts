@@ -9,6 +9,7 @@ export {
   beginGroupRun,
   beginPendingTurn,
   cancelPendingTurn,
+  reconcileGroupTimeline,
   resetStreamSeq,
   settlePendingTurn,
   type LiveRunState,

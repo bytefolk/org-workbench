@@ -2,7 +2,8 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { GroupsPanel } from "../src/groups/GroupsPanel";
 import type { OwbBridge } from "../src/owb";
-import type { GroupConversation } from "@org-workbench/shared";
+import type { GroupConversation, GroupTimeline, TurnRecord } from "@org-workbench/shared";
+import type { LiveRunState } from "../src/turns/turnStream";
 import type { TurnEngineAvailability } from "../src/turns/types";
 
 /** #53 S3 collaboration visuals: the avatar stack and member roster consume
@@ -28,33 +29,48 @@ const positionNames = Object.fromEntries(positions.map((position) => [position.i
 const readyAvailability: TurnEngineAvailability = { configured: true, ready: true };
 
 function installBridge(
-  groups: GroupConversation[] = [group],
-  createGroup?: () => Promise<{ status: number; body: unknown }>,
-): void {
+  options: {
+    groups?: GroupConversation[];
+    timeline?: ReturnType<typeof vi.fn>;
+    createGroup?: () => Promise<{ status: number; body: unknown }>;
+  } = {},
+): OwbBridge {
   const bridge = {
     groups: vi.fn().mockResolvedValue({
       status: 200,
-      body: { schemaVersion: "conversation-group-list.v1", groups },
+      body: { schemaVersion: "conversation-group-list.v1", groups: options.groups ?? [group] },
     }),
-    groupTimeline: vi.fn().mockResolvedValue({
-      status: 200,
-      body: { schemaVersion: "group-timeline.v1", conversationRef: group.conversationRef, items: [] },
-    }),
-    ...(createGroup ? { createGroup: vi.fn(createGroup) } : {}),
+    groupTimeline:
+      options.timeline ??
+      vi.fn().mockResolvedValue({
+        status: 200,
+        body: { schemaVersion: "group-timeline.v1", conversationRef: group.conversationRef, items: [] },
+      }),
+    ...(options.createGroup ? { createGroup: vi.fn(options.createGroup) } : {}),
     onEvent: vi.fn().mockReturnValue(() => {}),
   };
   window.owb = bridge as unknown as OwbBridge;
+  return window.owb;
 }
 
 function renderPanel(
   extra: {
     draftSeed?: { members: string[]; nonce: number } | null;
     groups?: GroupConversation[];
+    liveRuns?: Record<string, LiveRunState>;
+    timeline?: ReturnType<typeof vi.fn>;
     createGroup?: () => Promise<{ status: number; body: unknown }>;
+    onReconcileTimeline?: (timeline: GroupTimeline) => void;
   } = {},
 ) {
-  installBridge(extra.groups ?? [group], extra.createGroup);
-  return render(
+  const bridge = installBridge({
+    groups: extra.groups ?? [group],
+    timeline: extra.timeline,
+    createGroup: extra.createGroup,
+  });
+  return {
+    bridge,
+    ...render(
     <GroupsPanel
       workspaceOpen
       positions={positions}
@@ -66,12 +82,64 @@ function renderPanel(
         "claude-code": readyAvailability,
         "claude-local": readyAvailability,
       }}
-      liveRuns={{}}
+      liveRuns={extra.liveRuns ?? {}}
       onSelectEngine={() => {}}
       onSpawnRuns={() => {}}
+      onReconcileTimeline={extra.onReconcileTimeline ?? (() => {})}
       draftSeed={extra.draftSeed ?? null}
     />,
-  );
+    ),
+  };
+}
+
+function completedTurn(): TurnRecord {
+  return {
+    schemaVersion: "turn-record.v1",
+    conversationId: "repo-owner",
+    conversationRef: group.conversationRef,
+    groupRef: group.conversationRef,
+    turnId: "turn-owner",
+    positionId: "repo-owner",
+    engine: "qoder",
+    status: "completed",
+    input: "@Repo Owner 检查",
+    envelopeDigest: "sha256:owner",
+    createdAt: "2026-09-01T00:00:01.000Z",
+    updatedAt: "2026-09-01T00:00:02.000Z",
+    events: [],
+    output: "OWNER_DONE",
+  };
+}
+
+const liveOwner: LiveRunState = {
+  groupRef: group.conversationRef,
+  messageId: "message-1",
+  turnId: "turn-owner",
+  positionId: "repo-owner",
+  engine: "qoder",
+  input: "@Repo Owner 检查",
+  text: "working",
+  startedAt: "2026-09-01T00:00:01.000Z",
+  totalTokens: null,
+};
+
+function completedTimeline(): GroupTimeline {
+  return {
+    schemaVersion: "group-timeline.v1",
+    conversationRef: group.conversationRef,
+    items: [
+      {
+        kind: "user",
+        schemaVersion: "group-message.v1",
+        conversationRef: group.conversationRef,
+        messageId: "message-1",
+        input: "@Repo Owner 检查",
+        mentions: ["repo-owner"],
+        createdAt: "2026-09-01T00:00:00.000Z",
+      },
+      { kind: "member", turn: completedTurn() },
+    ],
+  };
 }
 
 describe("GroupsPanel collaboration visuals (#53)", () => {
@@ -125,6 +193,44 @@ describe("GroupsPanel collaboration visuals (#53)", () => {
     });
     const details = container.querySelector("details.owb-groups__create");
     expect(details).not.toHaveAttribute("open");
+  });
+
+  it("reconciles persisted terminal facts after a dropped SSE stream without duplicate bubbles (#114)", async () => {
+    const timeline = vi.fn()
+      .mockResolvedValueOnce({
+        status: 200,
+        body: { schemaVersion: "group-timeline.v1", conversationRef: group.conversationRef, items: [] },
+      })
+      .mockResolvedValue({ status: 200, body: completedTimeline() });
+    const onReconcileTimeline = vi.fn();
+    const { container } = renderPanel({
+      liveRuns: { "engine-run-owner": liveOwner },
+      timeline,
+      onReconcileTimeline,
+    });
+
+    await waitFor(() => expect(timeline.mock.calls.length).toBeGreaterThanOrEqual(2), { timeout: 2500 });
+    await waitFor(() => expect(screen.getByText("OWNER_DONE")).toBeInTheDocument());
+    expect(onReconcileTimeline).toHaveBeenCalledWith(completedTimeline());
+    expect(container.querySelectorAll(".owb-bubble-row--employee")).toHaveLength(1);
+    expect(container.querySelectorAll(".is-running")).toHaveLength(0);
+    expect(screen.queryByText("working")).not.toBeInTheDocument();
+  });
+
+  it("keeps a persisted running member busy while deduplicating its live buffer (#114)", async () => {
+    const running = { ...completedTurn(), status: "running" as const, output: undefined };
+    const timelineBody: GroupTimeline = {
+      ...completedTimeline(),
+      items: [completedTimeline().items[0]!, { kind: "member", turn: running }],
+    };
+    const timeline = vi.fn().mockResolvedValue({ status: 200, body: timelineBody });
+    const { container } = renderPanel({
+      liveRuns: { "engine-run-owner": liveOwner },
+      timeline,
+    });
+
+    await waitFor(() => expect(screen.getByText("1 运行中")).toBeInTheDocument());
+    expect(container.querySelectorAll(".owb-bubble-row--employee")).toHaveLength(1);
   });
 });
 

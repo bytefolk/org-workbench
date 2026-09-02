@@ -100,8 +100,10 @@ export function assertPositionExists(ctx: ControlPlaneContext, positionId: strin
  * the renderer can split one SSE channel by turn and aggregate per group. */
 export interface GroupEventAttribution {
   groupRef: string;
+  messageId: string;
   turnId: string;
   positionId: string;
+  engine: TurnEngine;
 }
 
 function groupTag(event: EngineEvent, group?: GroupEventAttribution): EngineEvent | (EngineEvent & GroupEventAttribution) {

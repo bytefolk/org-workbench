@@ -267,9 +267,13 @@ test("group turn answers 202 with pre-assigned spawns and persists per-member re
     const spawned = await sse.waitForEvent("group.turn.spawned");
     const spawnedPayload = (JSON.parse(spawned.data) as { payload: Record<string, unknown> }).payload;
     assert.equal(spawnedPayload.groupRef, group.conversationRef);
+    assert.equal(spawnedPayload.messageId, acceptedBody.messageId);
+    assert.equal(spawnedPayload.engine, "qoder");
     const completed = await sse.waitForEvent("turn.completed", 10000);
     const completedPayload = (JSON.parse(completed.data) as { payload: Record<string, unknown> }).payload;
     assert.equal(completedPayload.groupRef, group.conversationRef);
+    assert.equal(completedPayload.messageId, acceptedBody.messageId);
+    assert.equal(completedPayload.engine, "qoder");
     assert.ok(typeof completedPayload.turnId === "string" && completedPayload.turnId.length > 0);
     assert.ok(typeof completedPayload.positionId === "string");
 
