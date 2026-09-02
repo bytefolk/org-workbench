@@ -112,22 +112,24 @@ describe("orgChartBudgetLabel（预算徽标口径：与 perTaskBudgetLabel 同�
     Object.defineProperty(body, "scrollLeft", { writable: true, value: 0 });
     Object.defineProperty(body, "scrollTop", { writable: true, value: 0 });
 
-    fireEvent.pointerDown(body, { button: 0, pointerId: 7, clientX: 120, clientY: 80 });
-    fireEvent.pointerMove(body, { pointerId: 7, clientX: 80, clientY: 80 });
+    // jsdom 没有 PointerEvent 构造器，fireEvent.pointerDown 会落成字段全
+    // undefined 的裸事件；用 MouseEvent 携带 button/clientX 才能驱动 pan。
+    fireEvent(body, new MouseEvent("pointerdown", { button: 0, clientX: 120, clientY: 80, bubbles: true }));
+    fireEvent(body, new MouseEvent("pointermove", { button: 0, clientX: 80, clientY: 80, bubbles: true }));
     expect(body.scrollLeft).toBe(40);
     expect(body.className).toContain("is-panning");
-    fireEvent.pointerUp(body, { pointerId: 7 });
+    fireEvent(body, new MouseEvent("pointerup", { button: 0, bubbles: true }));
     expect(body.className).not.toContain("is-panning");
   });
 
   it("点击阈值：小于 4px 的移动不进入 pan，节点点击不受拖拽影响 (#137 review)", () => {
     const { container } = render(<OrgChart snapshot={snapshot} />);
     const body = container.querySelector("#owb-org-chart-body") as HTMLElement;
-    fireEvent.pointerDown(body, { button: 0, pointerId: 8, clientX: 120, clientY: 80 });
-    fireEvent.pointerMove(body, { pointerId: 8, clientX: 118, clientY: 80 });
+    fireEvent(body, new MouseEvent("pointerdown", { button: 0, clientX: 120, clientY: 80, bubbles: true }));
+    fireEvent(body, new MouseEvent("pointermove", { button: 0, clientX: 118, clientY: 80, bubbles: true }));
     expect(body.scrollLeft).toBe(0);
     expect(body.className).not.toContain("is-panning");
-    fireEvent.pointerUp(body, { pointerId: 8 });
+    fireEvent(body, new MouseEvent("pointerup", { button: 0, bubbles: true }));
   });
 
   it("捏合缩放：ctrl+wheel 缩放且头部百分比同步，普通 wheel 不触发 (#137 review)", () => {
