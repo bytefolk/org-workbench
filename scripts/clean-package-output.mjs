@@ -6,6 +6,12 @@ const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "
 
 export const CLEAN_RELATIVE_PATHS = Object.freeze([
   "release/staging",
+  // Installable artifacts land here, kept out of release/staging because the
+  // staging verifier walks that tree and rejects linked directories -- which a
+  // DMG build produces. Cleaning is all-or-nothing on purpose: every package
+  // command starts from the same empty tree, so an artifact can never be a
+  // leftover from a previous run.
+  "release/dist",
   "apps/desktop/dist/renderer",
   "apps/server/dist",
   "apps/server/tsconfig.tsbuildinfo",
