@@ -27,7 +27,6 @@ export function DismissPositionDialog({
         className="owb-dismiss"
         onClick={() => setOpen(true)}
         disabled={busy}
-        aria-label={`裁撤 ${positionName}（需二次确认，目录保留在恢复区）`}
         title="裁撤该岗位：二次确认后移出组织树，目录保留在恢复区可恢复"
       >
         <Trash2 aria-hidden="true" size={13} />
