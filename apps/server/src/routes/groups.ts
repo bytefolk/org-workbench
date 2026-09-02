@@ -120,8 +120,10 @@ export async function handleGroupCreate(
   const workspace = ctx.workspace.requireOpen();
   const now = new Date().toISOString();
   // AC-004 dual-form recall: a group conversation is a real #14 session,
-  // anchored on the first member's position lifecycle.
-  const session = await ctx.sessionStore.create(workspace.dir, members[0]!);
+  // anchored on the first member's position lifecycle. #116: when that member
+  // already has an active session — the common case after a personal turn —
+  // the group adopts it instead of failing with 409 session_conflict.
+  const session = await ctx.sessionStore.reuseOrCreateActive(workspace.dir, members[0]!);
   const group = await ctx.groupStore.create({
     workspace: workspace.dir,
     sessionId: session.sessionId,

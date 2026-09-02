@@ -420,31 +420,60 @@ export class SessionStore {
       if (existing?.activeSessionId !== null && existing?.activeSessionId !== undefined) {
         throw sessionConflict("position already has an active session; rotate it explicitly");
       }
-      if ((existing?.sessions.length ?? 0) >= MAX_SESSIONS_PER_POSITION) {
-        throw sessionError("position session history reached its bounded record count");
-      }
-      const session: WorkbenchSession = {
-        schemaVersion: WORKBENCH_SESSION_SCHEMA_VERSION,
-        sessionId: crypto.randomUUID(),
-        workspaceInstanceId: identity.workspaceInstanceId,
-        positionId,
-        principal: `position.${positionId}`,
-        status: "active",
-        rotatedFrom: null,
-        rotatedTo: null,
-        createdAt: now,
-        rotatedAt: null,
-      };
-      const state: PositionSessionState = {
-        schemaVersion: POSITION_SCHEMA_VERSION,
-        workspaceInstanceId: identity.workspaceInstanceId,
-        positionId,
-        activeSessionId: session.sessionId,
-        sessions: [...(existing?.sessions ?? []), session],
-      };
-      await atomicWriteJson(positionFile(workspace, positionId), state, MAX_POSITION_RECORD_BYTES);
-      return session;
+      return this.createSessionRecord(workspace, positionId, identity.workspaceInstanceId, existing, now);
     });
+  }
+
+  /** #116: an eager anchor (group create) adopts the position's active session
+   * when one already exists and writes nothing, so the member's personal
+   * lifecycle stays intact; it creates a session only where none is active. */
+  async reuseOrCreateActive(
+    workspace: string,
+    positionId: string,
+    now = new Date().toISOString(),
+  ): Promise<WorkbenchSession> {
+    assertPositionId(positionId);
+    return this.exclusive(`position\0${path.resolve(workspace)}\0${positionId}`, async () => {
+      const identity = await this.workspaceIdentity(workspace, now);
+      const existing = await this.readPositionStateIfPresent(workspace, positionId, identity.workspaceInstanceId);
+      const active = existing?.sessions.find((session) => session.status === "active");
+      if (active) return active;
+      return this.createSessionRecord(workspace, positionId, identity.workspaceInstanceId, existing, now);
+    });
+  }
+
+  /** Runs under the position lock with the current state already read. */
+  private async createSessionRecord(
+    workspace: string,
+    positionId: string,
+    workspaceInstanceId: string,
+    existing: PositionSessionState | null,
+    now: string,
+  ): Promise<WorkbenchSession> {
+    if ((existing?.sessions.length ?? 0) >= MAX_SESSIONS_PER_POSITION) {
+      throw sessionError("position session history reached its bounded record count");
+    }
+    const session: WorkbenchSession = {
+      schemaVersion: WORKBENCH_SESSION_SCHEMA_VERSION,
+      sessionId: crypto.randomUUID(),
+      workspaceInstanceId,
+      positionId,
+      principal: `position.${positionId}`,
+      status: "active",
+      rotatedFrom: null,
+      rotatedTo: null,
+      createdAt: now,
+      rotatedAt: null,
+    };
+    const state: PositionSessionState = {
+      schemaVersion: POSITION_SCHEMA_VERSION,
+      workspaceInstanceId,
+      positionId,
+      activeSessionId: session.sessionId,
+      sessions: [...(existing?.sessions ?? []), session],
+    };
+    await atomicWriteJson(positionFile(workspace, positionId), state, MAX_POSITION_RECORD_BYTES);
+    return session;
   }
 
   async list(workspace: string, positionId: string): Promise<WorkbenchSessionList> {
