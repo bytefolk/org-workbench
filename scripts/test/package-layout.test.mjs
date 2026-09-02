@@ -232,3 +232,27 @@ test("native staging jobs remain read-only and separate from required checks", (
   assert.doesNotMatch(workflow, /contents: write|pull_request_target|\$\{\{\s*secrets\./);
   assert.doesNotMatch(workflow, /smoke:package:windows:behavior/);
 });
+
+test("every module the desktop entry requires is named in the runtime manifest", () => {
+  // The compiled-inventory assertion above covers the control plane's dist tree, but
+  // nothing tied the desktop allowlist to what `main.js` actually loads. main's drive
+  // feature added `src/drive-ipc.cjs` and `main.js` requires it at module scope, so an
+  // undeclared module here does not degrade a feature -- the packaged app fails to boot.
+  const { RUNTIME_FILE_SETS } = require("../../apps/desktop/packaging/runtime-layout.cjs");
+  const desktop = RUNTIME_FILE_SETS.find((set) => set.from === "apps/desktop");
+  assert.ok(desktop, "runtime file sets must carry an apps/desktop entry");
+
+  const entry = path.join(projectRoot, "apps", "desktop", "src", "main.js");
+  const source = fs.readFileSync(entry, "utf8");
+  const required = new Set(
+    [...source.matchAll(/require\("\.\/([^"]+)"\)/g)].map((match) => `src/${match[1]}`),
+  );
+  assert.ok(required.size > 0, "found no relative requires in main.js — check the pattern");
+
+  const undeclared = [...required].filter((file) => !desktop.filter.includes(file));
+  assert.deepEqual(
+    undeclared,
+    [],
+    `main.js requires modules the staging manifest does not ship: ${undeclared.join(", ")}`,
+  );
+});
