@@ -57,7 +57,42 @@ test("blockmaps and update metadata are permitted companions, nothing else is", 
   assert.equal(isPermittedCompanion("latest-mac.yml", required), true);
   // A blockmap for something that is not a required artifact is not a companion.
   assert.equal(isPermittedCompanion("something-else.exe.blockmap", required), false);
-  assert.equal(isPermittedCompanion("builder-debug.yml", required), false);
+  assert.equal(isPermittedCompanion("release-notes.md", required), false);
+});
+
+test("electron-builder's own byproducts are permitted", () => {
+  // Observed on the first macOS run: the output carried builder-debug.yml, an
+  // effective-config dump written on every build, and latest-mac.yml, written
+  // even under --publish never. Neither is a release asset; both are permitted
+  // rather than claimed.
+  const required = expectedArtifacts("macos", META);
+  assert.equal(isPermittedCompanion("builder-debug.yml", required), true);
+  assert.equal(isPermittedCompanion("latest-mac.yml", required), true);
+
+  const observed = [
+    "builder-debug.yml",
+    "latest-mac.yml",
+    "org-workbench-0.0.0-arm64.dmg",
+    "org-workbench-0.0.0-arm64.dmg.blockmap",
+    "org-workbench-0.0.0-arm64.zip",
+    "org-workbench-0.0.0-arm64.zip.blockmap",
+  ];
+  const { missing, unexpected } = classifyEntries(observed, required);
+  assert.deepEqual(missing, []);
+  assert.deepEqual(unexpected, []);
+
+  // The Windows run carried the same byproducts under different names: the NSIS
+  // target emits a single blockmap and `latest.yml` rather than `latest-mac.yml`.
+  const winRequired = expectedArtifacts("windows", META);
+  const winObserved = [
+    "builder-debug.yml",
+    "latest.yml",
+    "org-workbench-0.0.0-x64.exe",
+    "org-workbench-0.0.0-x64.exe.blockmap",
+  ];
+  const win = classifyEntries(winObserved, winRequired);
+  assert.deepEqual(win.missing, []);
+  assert.deepEqual(win.unexpected, []);
 });
 
 test("a wrong-architecture build fails rather than passing on a glob", () => {

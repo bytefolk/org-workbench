@@ -23,12 +23,22 @@ export function expectedArtifacts(platform, { name, version }) {
 }
 
 /**
- * Companions electron-builder emits alongside a required artifact. They are
- * permitted but not required: whether a target emits a blockmap depends on the
- * target, and `latest*.yml` appears only once a publish provider is configured,
- * which this lane deliberately does not do.
+ * Build byproducts. electron-builder writes its effective configuration here on
+ * every run; it is a diagnostic dump, not a release asset, and it is emitted
+ * whether or not anything is published.
+ */
+const BUILD_BYPRODUCTS = Object.freeze(["builder-debug.yml"]);
+
+/**
+ * Files electron-builder emits alongside a required artifact. Permitted but not
+ * required: whether a target emits a blockmap depends on the target. Note that
+ * `latest*.yml` is written even under `--publish never` -- observed on the first
+ * macOS run, where the output carried `latest-mac.yml` with no publish provider
+ * configured. It is permitted here rather than claimed; #133 is where update
+ * metadata becomes something this repository asserts about.
  */
 export function isPermittedCompanion(entry, required) {
+  if (BUILD_BYPRODUCTS.includes(entry)) return true;
   if (/^latest.*\.yml$/.test(entry)) return true;
   return required.some((artifact) => entry === `${artifact}.blockmap`);
 }
