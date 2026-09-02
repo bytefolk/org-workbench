@@ -86,9 +86,12 @@ function mediaMatches(params, viewport) {
           throw new Error(`mediaMatches: unsupported @media condition "${token}" — extend this matcher rather than guessing`);
         }
         const [, bound, name, rawPx] = feature;
+        if (bound === undefined) {
+          throw new Error(`mediaMatches: bare @media feature "${token}" is exact-match in MQ3, not min-width — extend this matcher rather than guessing`);
+        }
         const px = Number(rawPx);
         const size = name.toLowerCase() === "width" ? viewport.width : viewport.height;
-        return (bound ?? "min").toLowerCase() === "max" ? size <= px : size >= px;
+        return bound.toLowerCase() === "max" ? size <= px : size >= px;
       }),
   );
 }
