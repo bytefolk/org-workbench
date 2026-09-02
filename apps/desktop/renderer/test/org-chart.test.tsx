@@ -104,4 +104,55 @@ describe("orgChartBudgetLabel（预算徽标口径：与 perTaskBudgetLabel 同�
     expect(orgChartBudgetLabel({ perTask: {}, perDay: {} })).toBeNull();
     expect(orgChartBudgetLabel(null)).toBeNull();
   });
+  it("画布平移：光标按住拖拽即平移组织图，松手退出 pan 态 (#137 review)", () => {
+    const { container } = render(<OrgChart snapshot={snapshot} />);
+    const body = container.querySelector("#owb-org-chart-body") as HTMLElement;
+    expect(body).not.toBeNull();
+    // jsdom 没有布局盒，scrollLeft 恒为 0；用数据属性覆写让平移可观测。
+    Object.defineProperty(body, "scrollLeft", { writable: true, value: 0 });
+    Object.defineProperty(body, "scrollTop", { writable: true, value: 0 });
+
+    // jsdom 没有 PointerEvent 构造器，fireEvent.pointerDown 会落成字段全
+    // undefined 的裸事件；用 MouseEvent 携带 button/clientX 才能驱动 pan。
+    fireEvent(body, new MouseEvent("pointerdown", { button: 0, clientX: 120, clientY: 80, bubbles: true }));
+    fireEvent(body, new MouseEvent("pointermove", { button: 0, clientX: 80, clientY: 80, bubbles: true }));
+    expect(body.scrollLeft).toBe(40);
+    expect(body.className).toContain("is-panning");
+    fireEvent(body, new MouseEvent("pointerup", { button: 0, bubbles: true }));
+    expect(body.className).not.toContain("is-panning");
+  });
+
+  it("点击阈值：小于 4px 的移动不进入 pan，节点点击不受拖拽影响 (#137 review)", () => {
+    const { container } = render(<OrgChart snapshot={snapshot} />);
+    const body = container.querySelector("#owb-org-chart-body") as HTMLElement;
+    fireEvent(body, new MouseEvent("pointerdown", { button: 0, clientX: 120, clientY: 80, bubbles: true }));
+    fireEvent(body, new MouseEvent("pointermove", { button: 0, clientX: 118, clientY: 80, bubbles: true }));
+    expect(body.scrollLeft).toBe(0);
+    expect(body.className).not.toContain("is-panning");
+    fireEvent(body, new MouseEvent("pointerup", { button: 0, bubbles: true }));
+  });
+
+  it("捏合缩放：ctrl+wheel 缩放且头部百分比同步，普通 wheel 不触发 (#137 review)", () => {
+    const { container } = render(<OrgChart snapshot={snapshot} />);
+    const body = container.querySelector("#owb-org-chart-body") as HTMLElement;
+    expect(screen.getByRole("button", { name: "重置缩放到 100%" }).textContent).toBe("100%");
+
+    fireEvent.wheel(body, { ctrlKey: true, deltaY: -100, clientX: 10, clientY: 10 });
+    expect(screen.getByRole("button", { name: "重置缩放到 100%" }).textContent).toBe("110%");
+
+    fireEvent.wheel(body, { deltaY: -100 });
+    expect(screen.getByRole("button", { name: "重置缩放到 100%" }).textContent).toBe("110%");
+
+    fireEvent.click(screen.getByRole("button", { name: "重置缩放到 100%" }));
+    expect(screen.getByRole("button", { name: "重置缩放到 100%" }).textContent).toBe("100%");
+  });
+
+  it("缩放边界：连续捏合封顶 200%，连续捏开封底 50% (#137 review)", () => {
+    const { container } = render(<OrgChart snapshot={snapshot} />);
+    const body = container.querySelector("#owb-org-chart-body") as HTMLElement;
+    for (let i = 0; i < 12; i += 1) fireEvent.wheel(body, { ctrlKey: true, deltaY: -100 });
+    expect(screen.getByRole("button", { name: "重置缩放到 100%" }).textContent).toBe("200%");
+    for (let i = 0; i < 20; i += 1) fireEvent.wheel(body, { ctrlKey: true, deltaY: 100 });
+    expect(screen.getByRole("button", { name: "重置缩放到 100%" }).textContent).toBe("50%");
+  });
 });

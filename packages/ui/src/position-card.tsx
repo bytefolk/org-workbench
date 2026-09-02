@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import { Button, Empty, Skeleton } from "antd";
 import { cn } from "@fullstack-ai-infra/ui";
 import { ChartNoAxesColumn, Crosshair, Info, RefreshCw, ShieldCheck, Zap } from "lucide-react";
@@ -14,6 +15,9 @@ export interface PositionCardProps {
   consumption?: number | null;
   /** Live turn in flight for this position: header status light breathes. */
   running?: boolean;
+  /** #137 review: operator actions (e.g. the dismiss dialog) render inside
+   * the card header's right cluster instead of floating outside the card. */
+  actions?: ReactNode;
   className?: string;
 }
 
@@ -36,6 +40,7 @@ export function PositionCard({
   onRefresh,
   consumption = null,
   running = false,
+  actions,
   className,
 }: PositionCardProps) {
   if (loading) {
@@ -116,6 +121,7 @@ export function PositionCard({
           </p>
         </div>
         <div className="owb-panel-head__right">
+          {actions}
           <span className={cn("owb-badge", readOnly ? "owb-badge--read" : "owb-badge--approval")}>
             <Zap aria-hidden="true" size={11} />
             {readOnly ? "只读" : "需批准"}
