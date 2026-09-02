@@ -309,6 +309,7 @@ export const zhCatalog: Record<string, string> = {
   "docs.copyRefAria": "复制引用 {path}",
   "docs.copyRef": "复制引用",
   "docs.moduleTitle": "岗位文档",
+  "docs.tabPlane": "外部文档 (bytefolk/doc)",
   "docs.moduleSubtitle": "查看岗位说明、技能文件与知识库内容。",
   "docs.pickerTitle": "当前岗位",
   "docs.pickerHint": "选择后加载文件清单",

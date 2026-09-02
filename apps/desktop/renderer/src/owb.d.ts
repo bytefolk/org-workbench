@@ -4,6 +4,8 @@ import type {
   AssetRecord,
   AssetsCreateRequest,
   AssetsListResponse,
+  DocPlaneDetailResponse,
+  DocPlaneListResponse,
   DocRef,
   DocsCreateRequest,
   DocsCreateResponse,
@@ -61,6 +63,10 @@ export interface OwbBridge {
   positionDocFile(positionId: string, filePath: string): Promise<OwbApiResponse<DocsFileResponse>>;
   createPositionDoc(request: DocsCreateRequest): Promise<OwbApiResponse<DocsCreateResponse>>;
   resolveDocRef(ref: DocRef): Promise<OwbApiResponse<DocsResolveResponse>>;
+  /** #35 R2 MVP: external doc-plane list proxy (bytefolk/doc bridge). */
+  docPlaneList(query?: string): Promise<OwbApiResponse<DocPlaneListResponse>>;
+  /** #35 R2 MVP: external doc-plane detail proxy (flattened markdown body). */
+  docPlaneDetail(id: string): Promise<OwbApiResponse<DocPlaneDetailResponse>>;
   assetsList(): Promise<OwbApiResponse<AssetsListResponse>>;
   assetsRead(assetId: string): Promise<OwbApiResponse<AssetRecord>>;
   assetsCreate(request: AssetsCreateRequest): Promise<OwbApiResponse<AssetRecord>>;

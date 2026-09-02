@@ -34,6 +34,14 @@ export const routes = {
   /** Additive create/resolve surface (#35 S4, DS-35-001 rev-1 §3/§5). */
   docsCreate: "/docs/create",
   docsResolve: "/docs/resolve",
+  /**
+   * Additive external doc-plane bridge (#35 R2 MVP): list + detail proxied to
+   * an external `bytefolk/doc` server pinned by `ORG_WORKBENCH_DOC_URL`. This
+   * is a control-plane read proxy — it never mirrors the position-scoped file
+   * surface above and is opt-in per env.
+   */
+  docPlaneList: "/doc-plane/list",
+  docPlaneDetail: "/doc-plane/detail",
   /** Additive asset-layer foundation (#36 S1, DS-36-001 rev-1 §5). */
   assetsList: "/assets/list",
   assetsRead: "/assets/read",

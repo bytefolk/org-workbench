@@ -306,6 +306,7 @@ export const enCatalog: Record<string, string> = {
   "docs.copyRefAria": "Copy reference {path}",
   "docs.copyRef": "Copy reference",
   "docs.moduleTitle": "Position Documents",
+  "docs.tabPlane": "External docs (bytefolk/doc)",
   "docs.moduleSubtitle": "Browse position notes, skill files and knowledge-base content.",
   "docs.pickerTitle": "Current position",
   "docs.pickerHint": "The file list loads once one is picked",

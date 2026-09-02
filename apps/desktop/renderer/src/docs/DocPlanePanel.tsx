@@ -1,0 +1,177 @@
+import { useCallback, useEffect, useState } from "react";
+import { Alert, Button, Input, List, Space, Spin, Tag } from "antd";
+import type {
+  DocPlaneDetailResponse,
+  DocPlaneListEntry,
+  DocPlaneListResponse,
+} from "@org-workbench/shared";
+import { DocViewer } from "./DocViewer";
+
+/**
+ * External doc-plane surface (#35 R2 MVP): browses documents from an
+ * upstream `bytefolk/doc` deployment through the shell-owned proxy.
+ *
+ * The renderer never touches bytefolk/doc directly — the shell owns the
+ * origin, the PAT and the CORS boundary. When the shell has no upstream
+ * configured the proxy returns `doc_plane_unconfigured` (503) and this
+ * panel surfaces the configuration guide inline (env-var reference + one
+ * runnable example) instead of a generic error.
+ */
+
+export interface DocPlanePanelProps {
+  /** Loader for the list surface; injected so tests can stub the bridge. */
+  listDocs(query: string): Promise<DocPlaneListLoadResult>;
+  /** Loader for the detail surface; injected so tests can stub the bridge. */
+  readDoc(id: string): Promise<DocPlaneDetailLoadResult>;
+}
+
+export type DocPlaneListLoadResult =
+  | { kind: "ok"; response: DocPlaneListResponse }
+  | { kind: "unconfigured"; message: string }
+  | { kind: "error"; message: string };
+
+export type DocPlaneDetailLoadResult =
+  | { kind: "ok"; response: DocPlaneDetailResponse }
+  | { kind: "error"; message: string };
+
+const CONFIG_HINT = [
+  "在运行 org-workbench 前设置环境变量：",
+  "  ORG_WORKBENCH_DOC_URL=http://localhost:3100    # bytefolk/doc 服务地址",
+  "  ORG_WORKBENCH_DOC_TOKEN=doc_pat_XXXXXXXXXXXX   # 用户设置里生成的 PAT",
+  "如果仅想端到端联调，可用 ORG_WORKBENCH_DOC_MOCK=1 载入内置样例。",
+].join("\n");
+
+export function DocPlanePanel({ listDocs, readDoc }: DocPlanePanelProps) {
+  const [query, setQuery] = useState("");
+  const [entries, setEntries] = useState<DocPlaneListEntry[]>([]);
+  const [source, setSource] = useState<"upstream" | "mock" | null>(null);
+  const [listing, setListing] = useState(false);
+  const [listStatus, setListStatus] = useState<
+    | { kind: "idle" }
+    | { kind: "unconfigured"; message: string }
+    | { kind: "error"; message: string }
+  >({ kind: "idle" });
+
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [detail, setDetail] = useState<DocPlaneDetailResponse | null>(null);
+  const [reading, setReading] = useState(false);
+  const [readError, setReadError] = useState<string | null>(null);
+
+  const runList = useCallback(
+    async (search: string) => {
+      setListing(true);
+      setListStatus({ kind: "idle" });
+      try {
+        const result = await listDocs(search);
+        if (result.kind === "ok") {
+          setEntries(result.response.entries);
+          setSource(result.response.source);
+        } else if (result.kind === "unconfigured") {
+          setEntries([]);
+          setSource(null);
+          setListStatus({ kind: "unconfigured", message: result.message });
+        } else {
+          setEntries([]);
+          setSource(null);
+          setListStatus({ kind: "error", message: result.message });
+        }
+      } finally {
+        setListing(false);
+      }
+    },
+    [listDocs],
+  );
+
+  useEffect(() => {
+    void runList("");
+  }, [runList]);
+
+  const openEntry = (id: string) => {
+    setSelectedId(id);
+    setDetail(null);
+    setReadError(null);
+    setReading(true);
+    readDoc(id)
+      .then((result) => {
+        if (result.kind === "ok") setDetail(result.response);
+        else setReadError(result.message);
+      })
+      .finally(() => setReading(false));
+  };
+
+  return (
+    <section className="owb-doc-plane" aria-label="外部文档平面">
+      <Space.Compact style={{ width: "100%", maxWidth: 480 }}>
+        <Input
+          aria-label="搜索外部文档"
+          placeholder="按标题搜索"
+          value={query}
+          onChange={(event) => setQuery(event.target.value)}
+          onPressEnter={() => runList(query.trim())}
+          allowClear
+          onClear={() => {
+            setQuery("");
+            void runList("");
+          }}
+        />
+        <Button onClick={() => runList(query.trim())} loading={listing}>
+          搜索
+        </Button>
+      </Space.Compact>
+      {source !== null ? (
+        <div className="owb-doc-plane__source" role="status">
+          数据来源：
+          <Tag color={source === "upstream" ? "green" : "gold"}>
+            {source === "upstream" ? "真实 bytefolk/doc" : "内置样例 (mock)"}
+          </Tag>
+        </div>
+      ) : null}
+      {listStatus.kind === "unconfigured" ? (
+        <Alert
+          type="info"
+          message="尚未配置外部 doc 服务器"
+          description={<pre className="owb-doc-plane__config">{CONFIG_HINT}</pre>}
+        />
+      ) : null}
+      {listStatus.kind === "error" ? (
+        <Alert type="error" message={listStatus.message} />
+      ) : null}
+      {listing ? <Spin aria-label="外部文档列表加载中" /> : null}
+      {!listing && listStatus.kind === "idle" ? (
+        <List
+          size="small"
+          dataSource={entries}
+          locale={{ emptyText: "未找到文档" }}
+          renderItem={(entry) => (
+            <List.Item
+              key={entry.id}
+              actions={
+                entry.starred
+                  ? [
+                      <Tag key="starred" color="gold">
+                        已收藏
+                      </Tag>,
+                    ]
+                  : []
+              }
+            >
+              <button
+                type="button"
+                className="owb-doc-plane__entry"
+                aria-pressed={selectedId === entry.id}
+                onClick={() => openEntry(entry.id)}
+              >
+                <span aria-hidden="true">{entry.icon ?? "📄"}</span> {entry.title}
+              </button>
+            </List.Item>
+          )}
+        />
+      ) : null}
+      {reading ? <Spin aria-label="外部文档加载中" /> : null}
+      {readError !== null ? <Alert type="error" message={readError} /> : null}
+      {detail !== null ? (
+        <DocViewer source={detail.content} version={detail.updatedAt} title={detail.title} />
+      ) : null}
+    </section>
+  );
+}
