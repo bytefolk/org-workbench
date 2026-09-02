@@ -349,6 +349,7 @@ export function TurnPanel({
       <TurnThread
         turns={turns}
         retrying={busy || sending}
+        emptyPrompt={disabledReason ?? "从一个明确任务开始"}
         canRetry={(turn) => workspaceOpen && engineAvailability[turn.engine].ready && (!sessionMode || selectedSession?.status === "active")}
         onRetry={(turn) => void retry(turn)}
         onVerdict={onVerdictTurn === undefined ? undefined : (turn, decision, reason) => void onVerdictTurn(turn, decision, reason)}
@@ -367,6 +368,14 @@ export function TurnPanel({
             onChange={(event) => setInput(event.target.value)}
             onKeyDown={(event) => {
               // ⌘↵ / Ctrl+↵ 发送（提示条声明了这个快捷键，就必须真的能用）。
+              //
+              // #128 AC-003 / #127 AC-003: while a Chinese IME is composing,
+              // pressing Enter commits the candidate — never a message. React
+              // exposes `nativeEvent.isComposing`; older WebKit/Firefox
+              // fall back to `keyCode === 229` while composing. Guard on
+              // both so ⌘↵ during composition is a no-op, not a send.
+              const native = event.nativeEvent as KeyboardEvent;
+              if (native.isComposing || native.keyCode === 229) return;
               if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
                 event.preventDefault();
                 void dispatchTurn();

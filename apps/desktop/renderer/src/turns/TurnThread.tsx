@@ -8,6 +8,11 @@ import type { TurnRecord, TurnStatus } from "./types";
 export interface TurnThreadProps {
   turns: TurnRecord[];
   retrying?: boolean;
+  /** #128 AC-002: when no turns exist, the empty-state heading is driven by
+   * the caller so it can name the concrete prerequisite (e.g. "先从组织树
+   * 或 @ 选择器选择岗位") rather than a generic "start from a clear task"
+   * that contradicts the disabled composer hint below. */
+  emptyPrompt?: string;
   canRetry?: (turn: TurnRecord) => boolean;
   onRetry?: (turn: TurnRecord) => void;
   /** Operator verdict for a turn settled as engine.approval_required. */
@@ -229,7 +234,7 @@ function ApprovalCard({
  * It never infers recall or delegation, and never upgrades an indeterminate
  * terminal state. (Supersedes the #61 bubble layout for this panel; the
  * `.owb-bubble*` classes stay in use by the group-chat timeline.) */
-export function TurnThread({ turns, retrying = false, canRetry, onRetry, onVerdict, decidedApprovalIds }: TurnThreadProps) {
+export function TurnThread({ turns, retrying = false, emptyPrompt, canRetry, onRetry, onVerdict, decidedApprovalIds }: TurnThreadProps) {
   if (turns.length === 0) {
     return (
       <div className="owb-turn-thread owb-turn-thread--empty">
@@ -237,7 +242,7 @@ export function TurnThread({ turns, retrying = false, canRetry, onRetry, onVerdi
           image={Empty.PRESENTED_IMAGE_SIMPLE}
           description={
             <>
-              <strong>从一个明确任务开始</strong>
+              <strong>{emptyPrompt ?? "从一个明确任务开始"}</strong>
               <p>消息会发送给当前选择的岗位；这里仅展示本地保存的回合。</p>
             </>
           }

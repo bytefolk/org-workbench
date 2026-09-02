@@ -93,6 +93,54 @@ describe("TurnPanel Issue #5 D3 behavior", () => {
     expect(screen.getByRole("status").textContent).toContain("⌘↵ 发送");
   });
 
+  it("#128 AC-003: ignores ⌘↵ while a Chinese IME is composing (keyCode 229) then sends after composition ends", async () => {
+    const createTurn = vi.fn();
+    render(<ControlledPanel onCreateTurn={createTurn} />);
+
+    const input = screen.getByLabelText("下达任务");
+    fireEvent.change(input, { target: { value: "你好" } });
+
+    // Legacy WebKit / Firefox report keyCode 229 while an IME is composing,
+    // and modern browsers set nativeEvent.isComposing. Either signal must
+    // suppress the ⌘↵ shortcut so committing a Chinese candidate never
+    // dispatches a turn.
+    fireEvent.keyDown(input, { key: "Enter", metaKey: true, keyCode: 229 });
+    expect(createTurn).not.toHaveBeenCalled();
+
+    // Composition ended: the very next ⌘↵ must fire.
+    fireEvent.keyDown(input, { key: "Enter", metaKey: true });
+    await waitFor(() => {
+      expect(createTurn).toHaveBeenCalledWith({
+        positionId: "repo-owner",
+        engine: "qoder",
+        input: "你好",
+      });
+    });
+  });
+
+  it("#128 AC-002: empty state names the concrete prerequisite instead of a disconnected 'start from a clear task'", () => {
+    render(
+      <TurnPanel
+        workspaceOpen={false}
+        positions={positions}
+        selectedPositionId={null}
+        engine="qoder"
+        engineAvailability={availability}
+        turns={[]}
+        onSelectPosition={vi.fn()}
+        onSelectEngine={vi.fn()}
+        onCreateTurn={vi.fn()}
+      />,
+    );
+
+    // Previously the empty state read "从一个明确任务开始" while the composer
+    // hint below simultaneously forbade any input — the two lines
+    // contradicted each other. The empty state must now surface the same
+    // concrete precondition as `disabledReason`.
+    expect(screen.queryByText("从一个明确任务开始")).not.toBeInTheDocument();
+    expect(screen.getAllByText("打开工作区后才能开始对话").length).toBeGreaterThan(0);
+  });
+
   it("honestly disables idle states when the workspace or selected Host is unavailable", () => {
     const { rerender } = render(
       <TurnPanel
@@ -108,7 +156,7 @@ describe("TurnPanel Issue #5 D3 behavior", () => {
       />,
     );
 
-    expect(screen.getByText("打开工作区后才能开始对话")).toBeInTheDocument();
+    expect(screen.getAllByText("打开工作区后才能开始对话").length).toBeGreaterThan(0);
     expect(screen.getByLabelText("下达任务")).toBeDisabled();
 
     rerender(
@@ -125,7 +173,7 @@ describe("TurnPanel Issue #5 D3 behavior", () => {
       />,
     );
 
-    expect(screen.getByText("先从组织树或 @ 选择器选择岗位")).toBeInTheDocument();
+    expect(screen.getAllByText("先从组织树或 @ 选择器选择岗位").length).toBeGreaterThan(0);
     expect(screen.getByLabelText("下达任务")).toBeDisabled();
 
     rerender(
@@ -145,7 +193,7 @@ describe("TurnPanel Issue #5 D3 behavior", () => {
       />,
     );
 
-    expect(screen.getByText("Qoder 凭据未配置")).toBeInTheDocument();
+    expect(screen.getAllByText("Qoder 凭据未配置").length).toBeGreaterThan(0);
     expect(screen.getByLabelText("下达任务")).toBeDisabled();
   });
 
