@@ -89,7 +89,7 @@ test("the full check to install sequence reports every state in order", async ()
   updater.emit("update-available", { version: "0.0.1" });
   assert.equal(service.state, "available");
 
-  await service.download();
+  await service.download({ confirmedByUser: true });
   updater.emit("download-progress", { percent: 41.7 });
   assert.equal(service.state, "downloading");
   assert.equal(states.at(-1).percent, 42);
@@ -97,7 +97,7 @@ test("the full check to install sequence reports every state in order", async ()
   updater.emit("update-downloaded", { version: "0.0.1" });
   assert.equal(service.state, "downloaded");
 
-  const installed = await service.install();
+  const installed = await service.install({ confirmedByUser: true });
   assert.equal(installed.installing, true);
   assert.deepEqual(updater.calls, ["checkForUpdates", "downloadUpdate", "quitAndInstall"]);
   assert.deepEqual(states.map((event) => event.state), [
@@ -137,9 +137,9 @@ test("download and install refuse out of order rather than acting", async () => 
   const updater = fakeUpdater();
   const service = createUpdaterService({ updater, platform: "win32" });
 
-  const early = await service.download();
+  const early = await service.download({ confirmedByUser: true });
   assert.match(early.reason, /no update is available/);
-  const premature = await service.install();
+  const premature = await service.install({ confirmedByUser: true });
   assert.match(premature.reason, /no downloaded update is ready/);
   assert.deepEqual(updater.calls, []);
 });
@@ -154,4 +154,61 @@ test("every state the service publishes is a declared one", async () => {
   }
   updater.emit("error", new Error("x"));
   for (const state of states) assert.ok(UPDATE_STATES.includes(state), `undeclared state: ${state}`);
+});
+
+test("neither download nor install proceeds without explicit confirmation", async () => {
+  // #110 R3, verbatim: an unsigned platform "must not silently download, apply,
+  // or restart into that update". The refusal lives here rather than in a UI,
+  // because #134's UI does not exist yet and a later one must not be able to
+  // skip the prompt by forgetting to ask.
+  const updater = fakeUpdater();
+  const service = createUpdaterService({ updater, platform: "win32" });
+  assert.equal(service.availability.requiresConfirmation, true);
+
+  await service.check();
+  updater.emit("update-available", { version: "0.0.1" });
+
+  for (const call of [
+    () => service.download(),
+    () => service.download({}),
+    () => service.download({ confirmedByUser: false }),
+    // A truthy value that is not exactly true must not pass either.
+    () => service.download({ confirmedByUser: "yes" }),
+    () => service.download({ confirmedByUser: 1 }),
+  ]) {
+    const result = await call();
+    assert.match(result.reason, /requires explicit confirmation/);
+  }
+  assert.deepEqual(updater.calls, ["checkForUpdates"], "nothing was downloaded");
+
+  await service.download({ confirmedByUser: true });
+  updater.emit("update-downloaded", { version: "0.0.1" });
+
+  for (const call of [
+    () => service.install(),
+    () => service.install({ confirmedByUser: false }),
+    () => service.install({ confirmedByUser: "yes" }),
+  ]) {
+    const result = await call();
+    assert.match(result.reason, /requires explicit confirmation/);
+  }
+  assert.deepEqual(
+    updater.calls,
+    ["checkForUpdates", "downloadUpdate"],
+    "quitAndInstall must not have run without confirmation",
+  );
+
+  const installed = await service.install({ confirmedByUser: true });
+  assert.equal(installed.installing, true);
+  assert.deepEqual(updater.calls, ["checkForUpdates", "downloadUpdate", "quitAndInstall"]);
+});
+
+test("checking needs no confirmation, because checking changes nothing", async () => {
+  // The decision permits check-and-notify outright. Requiring a prompt to look
+  // would make the feature useless without protecting anything.
+  const updater = fakeUpdater();
+  const service = createUpdaterService({ updater, platform: "win32" });
+  const result = await service.check();
+  assert.notEqual(result.state, "unavailable");
+  assert.deepEqual(updater.calls, ["checkForUpdates"]);
 });

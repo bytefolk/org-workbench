@@ -28,14 +28,36 @@ test("write access is granted to exactly one job, and only to contents", () => {
   assert.doesNotMatch(source, /packages: write|id-token: write|actions: write/);
 });
 
-test("no signing credential is referenced, because this lane does not sign", () => {
+test("credentials may be checked for presence but never used to sign", () => {
   const source = workflow();
-  for (const pattern of [/CSC_LINK/, /CSC_KEY_PASSWORD/, /WIN_CSC/, /APPLE_ID/, /APPLE_APP_SPECIFIC_PASSWORD/, /notarytool/, /SIGNPATH/]) {
+
+  // Nothing here signs. The credentials are read to decide whether a release may
+  // be published, which is a different act from consuming them.
+  for (const pattern of [/notarytool/, /stapler/, /codesign/, /signtool/, /SIGNPATH/, /CSC_LINK/, /CSC_KEY_PASSWORD/]) {
     assert.doesNotMatch(source, pattern, `signing belongs to #135/#136, not here: ${pattern}`);
   }
-  // github.token is the only credential this workflow may use.
-  const secrets = [...source.matchAll(/\$\{\{\s*secrets\.([A-Za-z_]+)/g)].map((m) => m[1]);
-  assert.deepEqual(secrets, [], "the built-in token is sufficient to publish; no repository secret is needed");
+
+  // Every secret reference must sit in the signing-status step. A secret reaching
+  // a build leg would mean this lane had started signing without saying so.
+  const signingStep = (() => {
+    const start = source.indexOf("- name: Determine signing status");
+    assert.notEqual(start, -1, "the signing-status step must exist");
+    const rest = source.slice(start);
+    const end = rest.indexOf("      - name: ", 1);
+    return end === -1 ? rest : rest.slice(0, end);
+  })();
+
+  const all = [...source.matchAll(/\$\{\{\s*secrets\.([A-Za-z_]+)/g)].map((m) => m[0]);
+  const inStep = [...signingStep.matchAll(/\$\{\{\s*secrets\.([A-Za-z_]+)/g)].map((m) => m[0]);
+  assert.deepEqual(
+    all.length,
+    inStep.length,
+    `every secret reference must sit in the signing-status step; found ${all.length} overall and ${inStep.length} there`,
+  );
+
+  // Publishing itself needs only the built-in token, which is what makes this
+  // slice deliverable without any credential being configured.
+  assert.match(source, /GH_TOKEN: \$\{\{ github\.token \}\}/);
 });
 
 test("a tag is refused unless it matches the packaged version", () => {
@@ -66,9 +88,47 @@ test("update metadata is namespaced per leg and restored before publishing", () 
   );
 });
 
+test("an unsigned build cannot reach a published release", () => {
+  const source = workflow();
+
+  // This is the whole boundary. electron-updater reads GitHub's /releases/latest,
+  // which excludes drafts, so keeping an unsigned build in draft is also what
+  // stops a client discovering it. And discovery is the only thing standing in
+  // the way: NsisUpdater skips signature verification entirely when the installed
+  // app carries no publisherName, which an unsigned build does not.
+  assert.match(source, /Refusing to publish a non-draft release without signing credentials/);
+  assert.match(source, /if: steps\.signing\.outputs\.signed != 'true'/);
+
+  // Draft is the default, not the exception. A tag push previously published
+  // outright, which would have put an unsigned build behind /releases/latest.
+  assert.match(source, /draft="--draft"/);
+  const publishStep = source.slice(source.indexOf("- name: Publish"));
+  assert.match(
+    publishStep,
+    /if \[ "\$\{\{ needs\.preflight\.outputs\.signed \}\}" = "true" \]/,
+    "clearing the draft flag must be conditional on signing",
+  );
+});
+
+test("signing status is derived from credentials, not from a constant", () => {
+  const source = workflow();
+  // A hand-maintained flag drifts: someone adds signing and forgets to flip it,
+  // or flips it without adding signing. Deriving it means the gate opens itself.
+  assert.match(source, /secrets\.MACOS_CERTIFICATE/);
+  assert.match(source, /secrets\.WINDOWS_SIGNING_TOKEN/);
+  assert.match(source, /echo "signed=true" >> "\$GITHUB_OUTPUT"/);
+  assert.match(source, /echo "signed=false" >> "\$GITHUB_OUTPUT"/);
+  assert.doesNotMatch(source, /signed: *(true|false)\b/, "signed status must not be hard-coded");
+});
+
 test("the unsigned limitation is stated in the run and in the release notes", () => {
   const source = workflow();
-  assert.match(source, /::warning::This release is unsigned/);
+  // Named consequences, not a bare "unsigned": what a person actually hits, and
+  // why a client is not offered the update.
+  assert.match(source, /::warning::No signing credentials configured/);
+  assert.match(source, /Gatekeeper blocks first launch/);
+  assert.match(source, /SmartScreen prompt/);
+  assert.match(source, /electron-updater skips signature checks entirely/);
   assert.match(source, /--notes "Unsigned build\./);
   // Both mention where the gap is tracked rather than leaving it implicit.
   assert.match(source, /#135/);

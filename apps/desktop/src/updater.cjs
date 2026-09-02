@@ -1,15 +1,30 @@
 /**
- * In-app update, gated by what each platform can actually deliver.
+ * In-app update, gated by what each platform can actually deliver and by the
+ * requirement-decision on #110.
  *
  * The platforms are not symmetric. Squirrel.Mac refuses an update whose
  * signature does not match the installed app, and Gatekeeper blocks an unsigned
  * first launch, so macOS in-app update requires a Developer ID build (#135).
- * Windows has no such precondition: electron-updater verifies the downloaded
- * installer against the SHA512 in `latest.yml` fetched over HTTPS, and publisher
- * pinning is an additional check rather than a prerequisite.
+ * Windows has no such precondition.
  *
- * So Windows gets a working update path now and macOS gets an honest refusal,
- * rather than a control that cannot succeed.
+ * The #110 R3 decision reads, verbatim: "An unsigned platform may check and
+ * notify about an update, but it must not silently download, apply, or restart
+ * into that update." Every step here is therefore explicitly requested --
+ * `download` and `install` refuse without a caller-supplied confirmation, and
+ * electron-updater's own automatic paths are turned off. Enforcement lives in
+ * this service rather than in a UI, because the UI (#134) does not exist yet and
+ * a later one must not be able to skip the confirmation by forgetting to ask.
+ *
+ * What unsigned costs, measured from electron-updater 6.8.9: `NsisUpdater`
+ * skips signature verification entirely when `publisherName` is absent from
+ * `app-update.yml`, which it is for an unsigned build -- `verifySignature`
+ * returns null and the caller treats null as a pass. So the only integrity
+ * guarantee on an unsigned update is the SHA512 in `latest.yml` fetched over
+ * HTTPS; there is no publisher pinning. The release lane keeps unsigned builds
+ * on draft or prerelease channels, so the set of people who can receive such an
+ * update is the set who could tamper with the release in the first place. Once
+ * #136 signs Windows, `publisherName` appears and NsisUpdater enforces the
+ * pinning itself.
  */
 
 const UNAVAILABLE_REASONS = Object.freeze({
@@ -25,7 +40,10 @@ const UNAVAILABLE_REASONS = Object.freeze({
  * bare capability flag.
  */
 function updateChannelAvailability(platform = process.platform) {
-  if (platform === "win32") return { available: true };
+  // `requiresConfirmation` is not advice to the caller, it is a statement about
+  // what this service will refuse. It exists so a UI can render the prompt
+  // rather than discover the refusal.
+  if (platform === "win32") return { available: true, requiresConfirmation: true };
   const reason = UNAVAILABLE_REASONS[platform]
     ?? "In-app update is not available for this platform.";
   return { available: false, reason };
@@ -79,6 +97,9 @@ function createUpdaterService({
       async install() {
         return { state: "unavailable", reason: availability.reason };
       },
+      async download() {
+        return { state: "unavailable", reason: availability.reason };
+      },
     };
   }
 
@@ -118,7 +139,11 @@ function createUpdaterService({
       }
     },
 
-    async download() {
+    async download({ confirmedByUser = false } = {}) {
+      // #110 R3: nothing may happen without an explicit request.
+      if (confirmedByUser !== true) {
+        return { state, reason: "downloading an update requires explicit confirmation" };
+      }
       if (state !== "available") {
         return { state, reason: "no update is available to download" };
       }
@@ -131,7 +156,12 @@ function createUpdaterService({
       }
     },
 
-    async install() {
+    async install({ confirmedByUser = false } = {}) {
+      // Installing restarts the app, so this is the step most likely to lose
+      // someone's work if it happens without being asked for.
+      if (confirmedByUser !== true) {
+        return { state, reason: "installing an update requires explicit confirmation" };
+      }
       if (state !== "downloaded") {
         return { state, reason: "no downloaded update is ready to install" };
       }
