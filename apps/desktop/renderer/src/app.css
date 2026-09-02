@@ -575,18 +575,13 @@
   font-size: var(--ui-text-sm, 13px);
 }
 
-.owb-workspace-grid {
-  min-height: 0;
-  display: grid;
-  grid-template-columns: minmax(280px, 0.72fr) minmax(420px, 1.28fr);
-  gap: var(--ui-space-3, 12px);
-  align-items: start;
-}
-
-.owb-workspace-grid > .owb-turn-panel {
-  height: calc(100vh - 116px);
-  min-height: 520px;
-}
+/* #127 AC-001: `.owb-workspace-grid` and `.owb-workspace-grid > .owb-turn-panel`
+ * were previously declared here with `align-items: start` and a viewport-
+ * driven `height: calc(100vh - 116px)`, and again a few thousand lines below
+ * with `align-items: stretch` and `height: auto`. The later block won in the
+ * cascade, but the earlier rules stayed in the stylesheet as dead code that
+ * misled reviewers about the effective layout. Layout intent is now single-
+ * sourced in the "主区：14px padding + 两栏" block below. */
 
 /* D3 position conversation — a compact, evidence-first operations console.
    处方3：网格内内容卡不带阴影，1px hairline + 亮度阶即分层。 */
@@ -2422,13 +2417,16 @@
   min-height: 0;
 }
 
-/* 不跟对话面板拉伸到同一高度——岗位卡内容（简介/预算声明/权限摘要/Context
- * Scope）没有一段是为撑满剩余空间设计的（不像对话面板的证据流有 1fr 空态兜
- * 底），硬拉伸只会在卡片底部留一片没有意义的空白。按内容高度显示，多出来的
- * 高度还给对话面板一栏，而不是留在卡片里晾着。 */
+/* #127 AC-001: previously `align-self: start` on this column left the
+ * position card visibly shorter than the turn panel (~50% delta in the
+ * empty state), producing a broken-looking layout even though both cards
+ * share the same `.owb-panel` shell. Stretching to match the turn panel
+ * pairs the two visually — the PositionCard empty state centers `暂无
+ * 数据 / 从左侧选择岗位查看档案` in the added space, and the loaded
+ * state scrolls its own body via `.owb-pos-body { overflow: auto }`. */
 .owb-position-column {
   min-height: 0;
-  align-self: start;
+  align-self: stretch;
   grid-template-rows: auto auto;
 }
 
@@ -3098,13 +3096,10 @@
   min-height: 0;
 }
 
-.owb-workspace-grid {
-  align-items: stretch;
-}
-
-.owb-position-column {
-  gap: var(--ui-space-2, 8px);
-}
+/* #127 AC-001: `.owb-workspace-grid { align-items: stretch }` and
+ * `.owb-position-column { gap }` used to be re-declared here, duplicating
+ * the definitive blocks near "主区：14px padding + 两栏". Merged into the
+ * canonical location; only truly scoped/specific rules remain below. */
 
 .owb-position-column > .ui-org-position-card {
   min-height: 0;
