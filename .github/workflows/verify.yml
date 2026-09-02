@@ -11,6 +11,10 @@ permissions:
 jobs:
   check:
     name: Node 24 / ${{ matrix.os }}
+    # The staging jobs have always been bounded; this one was not, which only
+    # mattered once windows-latest joined the matrix and a hang could run to the
+    # six-hour default. Per-test bounds live in the node --test invocations.
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
