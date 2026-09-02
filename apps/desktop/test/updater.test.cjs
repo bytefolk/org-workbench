@@ -23,7 +23,7 @@ function fakeUpdater() {
 }
 
 test("Windows has an update channel; macOS and Linux say why they do not", () => {
-  assert.deepEqual(updateChannelAvailability("win32"), { available: true });
+  assert.deepEqual(updateChannelAvailability("win32"), { available: true, requiresConfirmation: true });
 
   const mac = updateChannelAvailability("darwin");
   assert.equal(mac.available, false);
@@ -82,6 +82,7 @@ test("the full check to install sequence reports every state in order", async ()
   const service = createUpdaterService({
     updater,
     platform: "win32",
+    signature: { signed: true },
     onState: (event) => states.push(event),
   });
 
@@ -107,7 +108,7 @@ test("the full check to install sequence reports every state in order", async ()
 
 test("already current is a distinct state from an error", async () => {
   const updater = fakeUpdater();
-  const service = createUpdaterService({ updater, platform: "win32" });
+  const service = createUpdaterService({ updater, platform: "win32", signature: { signed: true } });
   await service.check();
   updater.emit("update-not-available");
   assert.equal(service.state, "current");
@@ -116,7 +117,7 @@ test("already current is a distinct state from an error", async () => {
 test("a failed check surfaces the reason instead of hanging in checking", async () => {
   const updater = fakeUpdater();
   updater.checkForUpdates = async () => { throw new Error("ENOTFOUND api.github.com"); };
-  const service = createUpdaterService({ updater, platform: "win32" });
+  const service = createUpdaterService({ updater, platform: "win32", signature: { signed: true } });
 
   const result = await service.check();
   assert.equal(result.state, "error");
@@ -135,7 +136,7 @@ test("an updater error event is reported even when no call is in flight", async 
 
 test("download and install refuse out of order rather than acting", async () => {
   const updater = fakeUpdater();
-  const service = createUpdaterService({ updater, platform: "win32" });
+  const service = createUpdaterService({ updater, platform: "win32", signature: { signed: true } });
 
   const early = await service.download({ confirmedByUser: true });
   assert.match(early.reason, /no update is available/);
@@ -162,7 +163,7 @@ test("neither download nor install proceeds without explicit confirmation", asyn
   // because #134's UI does not exist yet and a later one must not be able to
   // skip the prompt by forgetting to ask.
   const updater = fakeUpdater();
-  const service = createUpdaterService({ updater, platform: "win32" });
+  const service = createUpdaterService({ updater, platform: "win32", signature: { signed: true } });
   assert.equal(service.availability.requiresConfirmation, true);
 
   await service.check();
@@ -207,8 +208,130 @@ test("checking needs no confirmation, because checking changes nothing", async (
   // The decision permits check-and-notify outright. Requiring a prompt to look
   // would make the feature useless without protecting anything.
   const updater = fakeUpdater();
-  const service = createUpdaterService({ updater, platform: "win32" });
+  const service = createUpdaterService({ updater, platform: "win32", signature: { signed: true } });
   const result = await service.check();
   assert.notEqual(result.state, "unavailable");
   assert.deepEqual(updater.calls, ["checkForUpdates"]);
+});
+
+const fs = require("node:fs");
+const os = require("node:os");
+const path = require("node:path");
+const { UNSIGNED_REFUSAL, readBuildSignature } = require("../src/updater.cjs");
+
+/** A packaged resources directory, with or without the file electron-builder writes. */
+function resources(t, contents = null) {
+  const dir = fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), "owb-update-signature-"));
+  t.after(() => fs.rmSync(dir, { force: true, recursive: true }));
+  if (contents !== null) fs.writeFileSync(path.join(dir, "app-update.yml"), contents);
+  return dir;
+}
+
+test("signedness comes from the same key NsisUpdater reads", (t) => {
+  // NsisUpdater skips verification entirely when publisherName is absent, so
+  // its presence is the only honest signal that an update can be verified.
+  const signed = readBuildSignature({
+    resourcesPath: resources(t, "provider: github\npublisherName: Example Org\n"),
+  });
+  assert.deepEqual(signed, { signed: true });
+
+  const unsigned = readBuildSignature({
+    resourcesPath: resources(t, "provider: github\nowner: bytefolk\n"),
+  });
+  assert.equal(unsigned.signed, false);
+  assert.match(unsigned.reason, /unsigned/);
+
+  // A declared-but-empty key is not an identity.
+  assert.equal(
+    readBuildSignature({ resourcesPath: resources(t, "publisherName:\n") }).signed,
+    false,
+  );
+
+  // A block list is a valid identity; NsisUpdater accepts an array.
+  assert.equal(
+    readBuildSignature({ resourcesPath: resources(t, "publisherName:\n  - Example Org\n") }).signed,
+    true,
+  );
+
+  // An empty key followed by another key must not read that key's value as its
+  // own -- the failure a newline-crossing pattern would have introduced.
+  assert.equal(
+    readBuildSignature({ resourcesPath: resources(t, "publisherName:\nprovider: github\n") }).signed,
+    false,
+  );
+  assert.equal(
+    readBuildSignature({ resourcesPath: resources(t, "publisherName: [Example Org]\n") }).signed,
+    true,
+  );
+});
+
+test("a build with no update configuration is treated as unsigned", (t) => {
+  const missing = readBuildSignature({ resourcesPath: resources(t) });
+  assert.equal(missing.signed, false);
+  assert.match(missing.reason, /no update configuration/);
+
+  const sourceTree = readBuildSignature({ resourcesPath: "" });
+  assert.equal(sourceTree.signed, false);
+  assert.match(sourceTree.reason, /source-tree run/);
+});
+
+test("an unsigned build may check for updates but not apply one", async () => {
+  const updater = fakeUpdater();
+  const service = createUpdaterService({
+    updater,
+    platform: "win32",
+    signature: { signed: false, reason: "unsigned" },
+  });
+
+  // Knowing a new version exists is still useful, so check stays open.
+  await service.check();
+  updater.emit("update-available", { version: "0.2.0" });
+  assert.equal(service.state, "available");
+
+  const downloaded = await service.download({ confirmedByUser: true });
+  assert.equal(downloaded.unsigned, true);
+  assert.equal(downloaded.reason, UNSIGNED_REFUSAL);
+
+  const installed = await service.install({ confirmedByUser: true });
+  assert.equal(installed.unsigned, true);
+
+  // Confirmation does not buy past the gate, and nothing was asked of the updater.
+  assert.deepEqual(updater.calls, ["checkForUpdates"]);
+});
+
+test("the gate opens on its own once the build carries a publisher", async () => {
+  const updater = fakeUpdater();
+  const service = createUpdaterService({
+    updater,
+    platform: "win32",
+    signature: { signed: true },
+  });
+
+  await service.check();
+  updater.emit("update-available", { version: "0.2.0" });
+  await service.download({ confirmedByUser: true });
+  updater.emit("update-downloaded", { version: "0.2.0" });
+  const installed = await service.install({ confirmedByUser: true });
+
+  assert.equal(installed.installing, true);
+  assert.deepEqual(updater.calls, ["checkForUpdates", "downloadUpdate", "quitAndInstall"]);
+  // No flag was flipped by hand: the same file that turns NsisUpdater's own
+  // verification on is what opened this.
+  assert.equal(service.build.signed, true);
+});
+
+test("both gates hold independently: confirmation without signing, signing without confirmation", async () => {
+  const unsignedButConfirmed = createUpdaterService({
+    updater: fakeUpdater(), platform: "win32", signature: { signed: false, reason: "x" },
+  });
+  await unsignedButConfirmed.check();
+  assert.equal((await unsignedButConfirmed.download({ confirmedByUser: true })).unsigned, true);
+
+  const signedButUnconfirmed = createUpdaterService({
+    updater: fakeUpdater(), platform: "win32", signature: { signed: true },
+  });
+  await signedButUnconfirmed.check();
+  const unconfirmed = await signedButUnconfirmed.download();
+  assert.match(unconfirmed.reason, /requires explicit confirmation/);
+  assert.notEqual(unconfirmed.unsigned, true);
 });

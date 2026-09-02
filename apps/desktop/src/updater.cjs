@@ -27,6 +27,53 @@
  * pinning itself.
  */
 
+const fs = require("node:fs");
+const path = require("node:path");
+
+/**
+ * Whether this build carries a publisher identity, read from the same file
+ * electron-updater reads: `app-update.yml`, which electron-builder writes from
+ * the signing configuration.
+ *
+ * This is deliberately not a build-time constant. NsisUpdater skips signature
+ * verification entirely when `publisherName` is absent -- it returns null, and
+ * the caller treats null as a pass -- so an unsigned build will install an
+ * unsigned update without checking anything. Reading the same key means the
+ * gate below and NsisUpdater's own check can never disagree, which a
+ * hand-maintained flag would eventually do.
+ */
+function readBuildSignature({ resourcesPath = process.resourcesPath } = {}) {
+  if (typeof resourcesPath !== "string" || resourcesPath.length === 0) {
+    return { signed: false, reason: "no packaged resources path; this is a source-tree run" };
+  }
+  const configPath = path.join(resourcesPath, "app-update.yml");
+  let contents;
+  try {
+    contents = fs.readFileSync(configPath, "utf8");
+  } catch {
+    return { signed: false, reason: "this build carries no update configuration" };
+  }
+  // A targeted read rather than a YAML parse. electron-builder writes the key
+  // either inline or as a block list, and both are valid identities; an empty
+  // key is not. `\s*` would cross the newline and read the following key's value
+  // as this one's, so the two forms are distinguished explicitly.
+  const unsigned = {
+    signed: false,
+    reason: "this build is unsigned, so a downloaded update could not be verified",
+  };
+  const declaration = /^publisherName:[ \t]*(.*)$/m.exec(contents);
+  if (declaration === null) return unsigned;
+  if (declaration[1].trim().length > 0) return { signed: true };
+  const following = contents
+    .slice(declaration.index + declaration[0].length)
+    .split("\n")
+    .find((line) => line.trim().length > 0);
+  return /^[ \t]+-/.test(following ?? "") ? { signed: true } : unsigned;
+}
+
+const UNSIGNED_REFUSAL =
+  "Updates are download-only once this build is signed. This build carries no publisher identity, so an update cannot be verified before it replaces the app. Download the new version from the release page instead. Tracked in #135 (macOS) and #136 (Windows).";
+
 const UNAVAILABLE_REASONS = Object.freeze({
   darwin:
     "In-app update needs a Developer ID signed build. Squirrel.Mac refuses an update whose signature does not match the installed app. Tracked in #135.",
@@ -75,10 +122,14 @@ function normalizedError(error) {
 function createUpdaterService({
   updater,
   platform = process.platform,
+  signature = null,
   onState = () => {},
   logger = null,
 } = {}) {
   const availability = updateChannelAvailability(platform);
+  // Read rather than defaulted, so a caller cannot forget to pass it and
+  // silently get the permissive behaviour.
+  const build = signature ?? readBuildSignature();
   let state = availability.available ? "idle" : "unavailable";
 
   const publish = (next, detail = {}) => {
@@ -107,6 +158,12 @@ function createUpdaterService({
     throw new Error("an available update channel requires an updater instance");
   }
 
+  // Explicit confirmation is a user gesture, not a verification. Without a
+  // publisher identity neither NsisUpdater nor the person clicking can tell a
+  // legitimate installer from a substituted one, so the apply paths stay closed
+  // while check stays open -- knowing a new version exists is still useful.
+  const refuseUnsigned = () => ({ state, reason: UNSIGNED_REFUSAL, unsigned: true });
+
   // Nothing is downloaded or installed without an explicit request. An update
   // that installs itself while someone is mid-turn is a data-loss risk, not a
   // convenience.
@@ -125,6 +182,7 @@ function createUpdaterService({
   return {
     get state() { return state; },
     availability,
+    build,
 
     async check() {
       publish("checking");
@@ -140,6 +198,7 @@ function createUpdaterService({
     },
 
     async download({ confirmedByUser = false } = {}) {
+      if (!build.signed) return refuseUnsigned();
       // #110 R3: nothing may happen without an explicit request.
       if (confirmedByUser !== true) {
         return { state, reason: "downloading an update requires explicit confirmation" };
@@ -157,6 +216,7 @@ function createUpdaterService({
     },
 
     async install({ confirmedByUser = false } = {}) {
+      if (!build.signed) return refuseUnsigned();
       // Installing restarts the app, so this is the step most likely to lose
       // someone's work if it happens without being asked for.
       if (confirmedByUser !== true) {
@@ -172,7 +232,9 @@ function createUpdaterService({
 }
 
 module.exports = {
+  UNSIGNED_REFUSAL,
   UPDATE_STATES,
   createUpdaterService,
+  readBuildSignature,
   updateChannelAvailability,
 };

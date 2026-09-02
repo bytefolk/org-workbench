@@ -129,7 +129,12 @@ test("the unsigned limitation is stated in the run and in the release notes", ()
   assert.match(source, /Gatekeeper blocks first launch/);
   assert.match(source, /SmartScreen prompt/);
   assert.match(source, /electron-updater skips signature checks entirely/);
-  assert.match(source, /--notes "Unsigned build\./);
+  assert.match(source, /--notes "Unsigned build, install-only on both platforms\./);
+  // The notes must state the refusal, not just the word "unsigned". Someone
+  // downloading from the release page needs to know the app will not update
+  // itself and why, or they will read silence as "it works".
+  assert.match(source, /In-app update is refused/);
+  assert.match(source, /skips signature verification entirely/);
   // Both mention where the gap is tracked rather than leaving it implicit.
   assert.match(source, /#135/);
   assert.match(source, /#136/);
