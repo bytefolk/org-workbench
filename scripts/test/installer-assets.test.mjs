@@ -4,6 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import {
+  assertCanonicalOutputDirectory,
   classifyEntries,
   expectedArtifacts,
   isPermittedCompanion,
@@ -109,4 +110,23 @@ test("the fixture helper keeps these cases honest about real directory reads", (
   const { missing, unexpected } = classifyEntries(entries, required);
   assert.deepEqual(missing, []);
   assert.deepEqual(unexpected, []);
+});
+
+test("the installer verifier rejects a symlinked output root", (t) => {
+  if (process.platform === "win32") {
+    t.skip("creating symlinks may require elevated privileges on Windows");
+    return;
+  }
+
+  const parent = fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), "owb-installer-root-"));
+  const target = path.join(parent, "target");
+  const linkedRoot = path.join(parent, "linked-dist");
+  fs.mkdirSync(target);
+  fs.symlinkSync(target, linkedRoot, "dir");
+  t.after(() => fs.rmSync(parent, { force: true, recursive: true }));
+
+  assert.throws(
+    () => assertCanonicalOutputDirectory(linkedRoot),
+    /symlink or junction/,
+  );
 });

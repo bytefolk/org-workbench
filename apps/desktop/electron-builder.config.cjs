@@ -30,11 +30,11 @@ module.exports = {
     signExecutable: false,
   },
   nsis: {
-    // Per-user install. A machine-wide install needs elevation, and an unsigned
-    // installer asking for elevation is exactly the prompt SmartScreen already
-    // makes worse. Per-user keeps the unsigned lane testable without UAC.
-    oneClick: false,
+    // Strictly per-user install. Assisted mode exposes an all-users choice and
+    // can elevate; one-click mode with perMachine=false keeps this unsigned lane
+    // out of that path. Installation-directory choice is intentionally disabled
+    // because electron-builder only supports it for assisted installers.
+    oneClick: true,
     perMachine: false,
-    allowToChangeInstallationDirectory: true,
   },
 };

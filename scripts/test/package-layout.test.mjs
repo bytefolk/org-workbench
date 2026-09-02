@@ -38,6 +38,9 @@ test("staging config is unpacked-only and cannot sign or publish", () => {
   assert.deepEqual(config.files, RUNTIME_FILE_SETS);
   assert.equal(config.mac.identity, null);
   assert.equal(config.win.signExecutable, false);
+  assert.equal(config.nsis.oneClick, true);
+  assert.equal(config.nsis.perMachine, false);
+  assert.equal("allowToChangeInstallationDirectory" in config.nsis, false);
   assert.equal("target" in config.mac, false);
   assert.equal("target" in config.win, false);
   assert.equal("publish" in config, false);

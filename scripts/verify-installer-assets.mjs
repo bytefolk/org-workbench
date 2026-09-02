@@ -71,6 +71,55 @@ function readOutputEntries(root) {
   return found.sort();
 }
 
+function samePath(left, right) {
+  const normalize = (value) => path.normalize(value).replace(/[\\/]$/, "");
+  const normalizedLeft = normalize(left);
+  const normalizedRight = normalize(right);
+  return process.platform === "win32"
+    ? normalizedLeft.toLowerCase() === normalizedRight.toLowerCase()
+    : normalizedLeft === normalizedRight;
+}
+
+function sameFileIdentity(left, right) {
+  return left.dev === right.dev && left.ino === right.ino;
+}
+
+/**
+ * Verify that the output root is a real, canonical directory. Following a
+ * symlink here would let an external directory satisfy the asset-set check.
+ */
+export function assertCanonicalOutputDirectory(root) {
+  const resolvedRoot = path.resolve(root);
+  let rootStat;
+  try {
+    rootStat = fs.lstatSync(resolvedRoot);
+  } catch (error) {
+    if (error?.code === "ENOENT") {
+      throw new Error(`installer output is missing: ${resolvedRoot}`);
+    }
+    throw error;
+  }
+
+  assert.equal(
+    rootStat.isSymbolicLink(),
+    false,
+    `installer output must not be a symlink or junction: ${resolvedRoot}`,
+  );
+  assert.equal(rootStat.isDirectory(), true, `installer output must be a directory: ${resolvedRoot}`);
+  assert.equal(
+    samePath(fs.realpathSync(resolvedRoot), resolvedRoot),
+    true,
+    `installer output must be canonical: ${resolvedRoot}`,
+  );
+  const finalRootStat = fs.lstatSync(resolvedRoot);
+  assert.equal(
+    sameFileIdentity(rootStat, finalRootStat),
+    true,
+    "installer output identity changed during validation",
+  );
+  return resolvedRoot;
+}
+
 function sha256(file) {
   return crypto.createHash("sha256").update(fs.readFileSync(file)).digest("hex");
 }
@@ -83,11 +132,11 @@ export function verifyInstallerAssets(platform, root = outputRoot) {
     expectedHost,
     `${platform} installer verification must run on its native host`,
   );
-  assert.equal(fs.existsSync(root), true, `installer output is missing: ${root}`);
+  const canonicalRoot = assertCanonicalOutputDirectory(root);
 
   const metadata = JSON.parse(fs.readFileSync(path.join(projectRoot, "package.json"), "utf8"));
   const required = expectedArtifacts(platform, metadata);
-  const entries = readOutputEntries(root);
+  const entries = readOutputEntries(canonicalRoot);
   const { missing, unexpected } = classifyEntries(entries, required);
 
   assert.deepEqual(
@@ -108,7 +157,7 @@ export function verifyInstallerAssets(platform, root = outputRoot) {
     version: metadata.version,
     unsigned: true,
     artifacts: required.map((artifact) => {
-      const file = path.join(root, artifact);
+      const file = path.join(canonicalRoot, artifact);
       return { name: artifact, bytes: fs.statSync(file).size, sha256: sha256(file) };
     }),
   };
