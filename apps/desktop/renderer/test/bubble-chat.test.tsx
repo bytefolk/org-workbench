@@ -40,8 +40,9 @@ describe("TurnThread evidence timeline (#73)", () => {
     // 端点身份：岗位名 + 引擎标签在卡头
     expect(card?.querySelector(".owb-tc-head__who")?.textContent).toBe("发布负责人");
     expect(card?.querySelector(".owb-tc-head")?.textContent).toContain("Qoder");
-    // 下达任务与引擎输出都必须可见（不因换布局而丢掉任一侧）
-    expect(card?.querySelector(".owb-tc__task")?.textContent).toContain("检查发布门禁");
+    // 下达任务与引擎输出都必须可见（不因换布局而丢掉任一侧）。
+    // #248 R2 ④: 下达任务在操作员气泡（右），输出在岗位气泡（左）。
+    expect(item?.querySelector(".owb-bubble--operator")?.textContent).toContain("检查发布门禁");
     expect(card?.querySelector(".owb-tc__out")?.textContent).toContain("门禁已检查。");
     // 状态行给出可信终态词，settled 回合不再显示 running
     const statusline = card?.querySelector(".owb-turn__statusline");

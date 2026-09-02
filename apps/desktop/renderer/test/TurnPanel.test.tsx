@@ -53,6 +53,9 @@ describe("TurnPanel Issue #5 D3 behavior", () => {
     const createTurn = vi.fn();
     render(<ControlledPanel onCreateTurn={createTurn} />);
 
+    // #248 R2 ③：对话岗位 / Agent Host 已降级进默认收起的「会话设置」，先展开。
+    fireEvent.click(screen.getByText("会话设置"));
+
     pickSelectOption("选择对话岗位", "发布负责人");
     // #73: 面板标题改为设计稿的「本地对话 · <岗位 id>」，仍然唯一标定收件岗位。
     expect(screen.getByRole("heading", { name: /本地对话 · release-manager/ })).toBeInTheDocument();

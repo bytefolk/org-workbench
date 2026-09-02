@@ -265,8 +265,15 @@ export function TurnThread({ turns, retrying = false, emptyPrompt, canRetry, onR
                 : "";
         return (
           <li className={`owb-turn ${stateClass}`} key={turn.id} data-turn-id={turn.id}>
+            {/* #248 R2 ④：D3 升级为对话界面——操作员下达（右）与岗位回复（左）成对成线程。 */}
+            <div className="owb-bubble-row owb-bubble-row--operator">
+              <article className="owb-bubble owb-bubble--operator">
+                <p className="owb-bubble__text owb-clamp-2" title={turn.input}>{turn.input}</p>
+              </article>
+            </div>
+            <div className="owb-bubble-row owb-bubble-row--employee">
             <article
-              className={`owb-tc ${stateClass}`}
+              className={`owb-bubble owb-bubble--employee owb-tc ${stateClass}`}
               aria-live={turn.status === "running" ? "polite" : undefined}
             >
               <header className="owb-tc-head">
@@ -285,11 +292,6 @@ export function TurnThread({ turns, retrying = false, emptyPrompt, canRetry, onR
                   {new Date(turn.createdAt).toLocaleTimeString()}
                 </time>
               </header>
-
-              <p className="owb-tc__task">
-                <span className="owb-tc__task-key" aria-hidden="true">task</span>
-                <span className="owb-clamp-2" title={turn.input}>{turn.input}</span>
-              </p>
 
               {turn.output ? (
                 <p className="owb-tc__out owb-clamp-2" title={turn.output}>{turn.output}</p>
@@ -333,6 +335,7 @@ export function TurnThread({ turns, retrying = false, emptyPrompt, canRetry, onR
                 </div>
               ) : null}
             </article>
+            </div>
           </li>
         );
       })}

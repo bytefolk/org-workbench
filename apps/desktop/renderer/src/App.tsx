@@ -390,6 +390,34 @@ export function App() {
     }
   }, [loadSessions]);
 
+  /** #248 R2 ② 点人即聊：挂载该岗位的 active 会话，没有就自动创建，输入立即可用。 */
+  const ensureActiveSession = useCallback(async (positionId: string) => {
+    setSessionBusy(true);
+    setTurnError(null);
+    try {
+      const ok = await loadSessions(positionId);
+      if (ok && selectedSessionIdRef.current === null) {
+        const res = await window.owb.createSession({ positionId });
+        if (res.status === 201) {
+          const session = res.body as WorkbenchSession;
+          selectedSessionIdRef.current = session.sessionId;
+          setSelectedSessionId(session.sessionId);
+          await loadSessions(positionId);
+        }
+      }
+    } catch {
+      // 会话自动挂载失败不阻断：操作员仍可在「会话设置」里手动新建。
+    } finally {
+      setSessionBusy(false);
+    }
+  }, [loadSessions]);
+
+  /** #248 R2 ②：组织树点某人 = 直接打开与他的对话（一键）。 */
+  const openConversation = useCallback((positionId: string) => {
+    selectPosition(positionId);
+    void ensureActiveSession(positionId);
+  }, [selectPosition, ensureActiveSession]);
+
   const rotateSession = useCallback(async (sessionId: string) => {
     const positionId = selectedIdRef.current;
     if (positionId === null) return;
@@ -1036,7 +1064,7 @@ export function App() {
             displayModes={positionModes}
             avatarColors={positionColors}
             selectedId={selectedId}
-            onSelect={selectPosition}
+            onSelect={openConversation}
           />
           <div className="owb-workspace-grid">
           <div className="owb-position-column">
