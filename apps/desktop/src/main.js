@@ -22,7 +22,16 @@ const path = require("node:path");
 const { pathToFileURL } = require("node:url");
 const { rendererEntryPath } = require("./runtime-paths.cjs");
 const { recoverMacGuiPath } = require("./macos-login-path.cjs");
-const { packagedSmokeReportPath, runPackagedSmoke } = require("./packaged-smoke.cjs");
+const {
+  reservePackagedSmokeRequests,
+  runPackagedBehaviorSmoke,
+} = require("./packaged-behavior-smoke.cjs");
+const {
+  awaitHarnessRelease,
+  packagedSmokeLoadOptions,
+  runPackagedSmoke,
+  startPackagedSmokeLifecycle,
+} = require("./packaged-smoke.cjs");
 const { isAllowedNavigationTarget, isTrustedWindowSender } = require("./window-ipc.cjs");
 const { validateRestoreRequest, validateOrgApply } = require("./org-ipc.cjs");
 const {
@@ -527,7 +536,22 @@ ipcMain.handle("owb:sse-status:get", async () => currentSseStatus);
 // (WM edge drag) and the bar carries -webkit-app-region: drag for moving.
 function createWindow() {
   const entryPath = rendererEntryPath(__dirname);
-  trustedRendererUrl = pathToFileURL(entryPath).toString();
+  // This request remains null in source-tree development and for every normal
+  // packaged launch. Only the external clean-staging harness owns all three
+  // controls and a create-exclusive report inode.
+  // Family conflict detection is deliberately side-effect-free and precedes
+  // every O_EXCL reservation, including partial/mixed-case Windows controls.
+  const smokeRequests = reservePackagedSmokeRequests(process.env, {
+    isPackaged: app.isPackaged,
+  });
+  if (smokeRequests.conflict) {
+    process.stderr.write("static and behavior packaged smoke modes are mutually exclusive\n");
+    app.exit(1);
+    return;
+  }
+  const { smokeRequest, behaviorSmokeRequest } = smokeRequests;
+  const smokeLoad = smokeRequest === null ? null : packagedSmokeLoadOptions(entryPath, smokeRequest);
+  trustedRendererUrl = smokeLoad?.trustedRendererUrl ?? pathToFileURL(entryPath).toString();
   mainWindow = new BrowserWindow({
     width: 1240,
     height: 800,
@@ -555,19 +579,85 @@ function createWindow() {
     },
   });
   mainWindow.setMenuBarVisibility(false);
-  const smokeReportPath = packagedSmokeReportPath(process.env);
-  if (smokeReportPath !== null) {
-    mainWindow.webContents.once("did-finish-load", () => {
-      void runPackagedSmoke({
-        reportPath: smokeReportPath,
+  // Lane A staging harness: static, opt-in, packaged-only, and confined to the
+  // caller's freshly created OS-temp root. Source-tree dev behavior is not
+  // reachable through this seam.
+  if (smokeRequest !== null) {
+    startPackagedSmokeLifecycle({
+      browserWindow: mainWindow,
+      reportRequest: smokeRequest,
+      failureReport: () => ({
+        schemaVersion: "org-workbench-packaged-smoke.v1",
+        appPid: process.pid,
+        serverPid: Number.isInteger(controlPlane?.child?.pid)
+          ? controlPlane.child.pid
+          : null,
+        resourcesPath: process.resourcesPath,
+      }),
+      onUnexpected: (error) => {
+        process.stderr.write(`${error.message}\n`);
+        process.exitCode = 1;
+        app.exit(1);
+      },
+      load: () => mainWindow.loadFile(entryPath, smokeLoad.loadOptions),
+      run: (lifecycle) => runPackagedSmoke({
+        reportRequest: smokeRequest,
+        webContents: mainWindow.webContents,
+        appPid: process.pid,
+        serverPid: controlPlane?.child?.pid,
+        serverPort: controlPlane?.port,
+        resourcesPath: process.resourcesPath,
+        onReportWritten: () => lifecycle.markReportWritten(),
+        // Stay up while the harness still holds its lease, so the external native
+        // oracle can finish snapshotting descendants. Its cost is milliseconds on
+        // macOS and seconds on Windows, so a fixed delay here races on one platform
+        // or wastes time on the other; the harness releases when it is actually done.
+        close: () => {
+          void awaitHarnessRelease(smokeRequest.report).then(() => {
+            lifecycle.beginIntentionalClose();
+            mainWindow?.close();
+          });
+        },
+      }),
+    });
+  } else if (behaviorSmokeRequest !== null) {
+    // #111 behavior qualification remains a separate, explicitly requested
+    // path. Unlike the Lane A static smoke it may exercise the local Qoder/MCP
+    // fixture and a business turn, so the two reports and commands never mix.
+    startPackagedSmokeLifecycle({
+      browserWindow: mainWindow,
+      reportRequest: behaviorSmokeRequest,
+      failureReport: () => ({
+        schemaVersion: "org-workbench-packaged-behavior-smoke.v1",
+        serverPid: Number.isInteger(controlPlane?.child?.pid)
+          ? controlPlane.child.pid
+          : null,
+        resourcesPath: process.resourcesPath,
+      }),
+      onUnexpected: (error) => {
+        process.stderr.write(`${error.message}\n`);
+        process.exitCode = 1;
+        app.exit(1);
+      },
+      load: () => mainWindow.loadFile(entryPath),
+      run: (lifecycle) => runPackagedBehaviorSmoke({
+        reportRequest: behaviorSmokeRequest,
         webContents: mainWindow.webContents,
         serverPid: controlPlane?.child?.pid,
+        serverPort: controlPlane?.port,
         resourcesPath: process.resourcesPath,
-        quit: () => app.quit(),
-      });
+        onReportWritten: () => lifecycle.markReportWritten(),
+        // Keep the behavior-qualified tree alive long enough for the same
+        // identity-bound external oracle used by static staging to snapshot it.
+        quit: () => setTimeout(() => {
+          lifecycle.beginIntentionalClose();
+          app.quit();
+        }, 2500),
+      }),
     });
+  } else {
+    void mainWindow.loadFile(entryPath);
   }
-  void mainWindow.loadFile(entryPath);
   // #77 review item 2: this shell never legitimately navigates away from the
   // packaged renderer or opens child windows; deny both explicitly rather
   // than relying on Electron's defaults.

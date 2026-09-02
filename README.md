@@ -17,7 +17,7 @@ org-workbench 是 [digital-employee](https://github.com/bytefolk/digital-employe
 - 显式 Workbench session：每个岗位可新建、选择和轮换 `workbench-session.v1`；轮换产生新的稳定 sessionId 和空白本地回合目录，旧 session 保持只读可查询。它只是本地控制面边界，不是 Host resume、授权或长期记忆。
 - Context 导出接缝：显式 session 的可信 `completed` 回合在终态记录落盘后异步导出为两条 `context-occurrence.v1`；导出状态可跨重启恢复，失败不改变回合结果、也不重跑 Host。当前钉定 provider 为 [`context@f63f57f`](https://github.com/bytefolk/context/commit/f63f57f7b4cb7071309561f0383683017ae79eb2)，只走公共 CLI/stdio adapter，不直连 vault SQLite。
 - 里程碑：D0 骨架 → D1 组织树只读 → D2 拖拽/预算/裁撤恢复闭环 → D3 @岗位对话 → D4 本地上报中心。Qoder 的 bundled adapter 已有单机 E4 证据；委派链、长期 Context 与 Claude live E4 仍不在“已验证”范围。
-- 当前仓库尚无 tag、Release 或签名安装包；快速开始面向源码开发者，不代表已发布客户端。
+- #110 Lane A 已提供 macOS arm64 与 Windows x64 的**未签名、解包 staging**基础和 clean-staging smoke 编排；它只用于原生验证，不是可安装或已发布客户端。当前仓库仍无 tag、GitHub Release、签名安装包或应用内更新。
 
 ## 快速开始
 
@@ -73,18 +73,28 @@ export CONTEXT_RUNTIME_TOKEN='<redacted-runtime-token>'
 
 桌面壳默认的 bundled `qoder-engine` 与 `/health` 共用同一个无 shell 的本机 Qoder 解析器：非空 `ORG_WORKBENCH_QODER_BIN` 优先且无效时 fail closed；否则按 PATH 的 `qodercli` / `qoder`，再按 macOS 已支持的用户安装位置解析到可执行普通文件。当前支持窗口为 1.1.x；`/health` 只运行有超时和输出上限的 `--version`，不会读取登录态或凭据存储，也不代表远端 entitlement 可用。turn adapter 直接 spawn 同一个绝对路径并原样继承父进程 PATH。Finder/LaunchServices 启动的桌面进程会用固定 argv、有界输出和不可忽略的硬超时从登录 shell **只恢复 PATH**；输出不满足单行 marker 与绝对路径规则时保留原 PATH，其他 shell 环境和凭据一律不导入。Electron 的 `ELECTRON_RUN_AS_NODE=1` 只跨到桌面默认 bundled adapter；普通 CLI override 的 health/hire/org 使用非凭据运行时 allowlist，turn 只携所选 Host 的明确授权。bundled adapter 接收 Qoder binary 与 permission mode，并在单一校验点拒绝不受支持的 mode；真实 Qoder/MCP 后代只接收 Qoder 所需运行时、代理/证书和凭据 allowlist，不接收 Electron flag、Workbench adapter 配置、boot/internal/Context authority 或任意 secret。是否真正可执行仍以一次真实回合的可信终态为准。普通 `digital-employee` 的 Qoder model port 不走这个例外，仍由 `QODER_PERSONAL_ACCESS_TOKEN` 门禁。
 
-### macOS unsigned 本地候选包
+### 无产品签名的 unpacked staging（#110 Lane A）
 
-下面的流程只生成供开发验收使用的 arm64 `.app` 目录；不会安装到 `/Applications`，不会签名、公证、上传或发布。前置仍是干净 checkout、Node 24，以及同级钉版 design-system 已构建：
+这些命令只生成并验证原生平台的解包目录；输出位于已忽略的 `release/staging/`。Lane A canonical smoke 会把应用复制到源码树外、名称含空格的临时目录，启动控制面与静态 renderer marker，再关闭应用并检查可验证的当前 root/descendant、已绑定进程身份，以及 POSIX 上来源代际未歧义的预期 detached group 归零，最后删除临时目录。命令文本或 staging 路径永不授予 signal/owned-residual 权限；Windows 无已绑定 root 时 fail closed，且尚未原生验证。它不调用 health、Host 或业务回合，也不声称能约束主动脱离该边界的恶意进程。
 
 ```bash
-(cd ../design-system && npm ci && npm run build:package)
-npm ci
-npm run package:macos:unsigned  # 构建并验证 release/mac-arm64/Org Workbench.app
-npm run smoke:package:macos     # 复制到系统临时目录做 clean-staging 启动/E2E/进程清理
+# 必须在 macOS arm64 原生主机运行
+npm run package:staging:macos
+npm run verify:package:macos
+npm run smoke:package:macos
+
+# 独立的 #111 行为资格验证；不属于 Lane A static smoke 结论
+npm run smoke:package:macos:behavior
+
+# 必须在 Windows x64 原生主机运行
+npm run package:staging:windows
+npm run verify:package:windows
+npm run smoke:package:windows
 ```
 
-`verify:package:macos` 会检查 arm64、未密封/无开发者签名、精确运行时文件清单与源文件哈希，并拒绝把 server tests 带进产物；smoke 会在最小 LaunchServices 风格 PATH 下验证 renderer、preload、localStorage、控制面、bundled Qoder readiness、真实 fixture 回合与历史 readback，并确认 Workbench server/Qoder 进程退出。`asar: false` 便于逐文件审计和运行 Node 子进程，不构成防篡改边界；该产物仍只是本地 unsigned 候选。回滚只需删除被忽略的 `release/` 目录；无系统安装状态需要清理。
+`smoke:package:macos:behavior` 保留 #111 已合入的另一条边界：它使用本地确定性 Qoder/MCP fixture，验证 Finder 登录 PATH 恢复、renderer/preload、health，并通过 #119 的 durable session 路径创建 session、完成一次 fixture 回合及 session-history readback；session/turn store 的生产 import 会实际加载打包内显式列出的 `stable-read.js`。static/behavior 使用互斥且按 Windows 规则大小写无关的 control family，任何报告文件预留前先检测冲突；两族 controls 都从实际控制面 child env 剥离。两种模式共享 `loadFile`/renderer/window lifecycle fail-closed gate，但报告 schema 和结论仍独立。它不读取外部凭据，不证明真实账号 entitlement，也不能被写成 Lane A static smoke 或发布能力。Windows 没有对应 behavior claim。
+
+唯一打包配置是 `apps/desktop/electron-builder.config.cjs`；原 YAML 骨架已移除，避免两份配置漂移。脚本固定使用 `electron-builder@26.15.3`、原生架构参数、`--dir` 和 `--publish never`；macOS 明确不选择产品身份（主 executable 保留上游 linker ad-hoc 状态），Windows 明确 `signExecutable: false`，因此不会消费 CSC 环境去签 staging。`package:macos:unsigned` 与 `package:macos` 保持为兼容入口，并委托 canonical staging 命令。它们不生成 DMG、ZIP、NSIS 或其他安装器，不提供产品/分发签名或公证，不发布 GitHub Release，不实现自动更新，也不证明 Intel Mac 或跨平台运行结果。旧候选及旧集成 SHA 的 E3 不自动适用于当前修复；基于 `main@ff878d8` 的 current-main code head `4f9a983` 已在 macOS arm64 重新通过 focused 71/71、renderer guard 2/2、完整 `npm run check`、含 `stable-read.js` 的 34-entry/189-file 精确核验、static smoke 与独立 durable-session behavior smoke，完整 authority chain 见 [`docs/evidence/issue-110/lane-a/README.md`](docs/evidence/issue-110/lane-a/README.md)。Windows x64 仍需 `windows-latest` 原生运行，不能由本机 macOS 推断。源码开发入口 `npm run dev:desktop` 保持不变。
 
 **design-system 依赖说明**：`@fullstack-ai-infra/ui` 目前以开发期 `file:` 链接指向同级 `design-system` 克隆（骨架定稿方案 A：开发期 file: 链接，CI/正式包只认钉版）。链接要求该克隆已 `npm run build:package`（产出 dist，含 `--ui-sidebar-wide` 等 tokens）；设计系统发布 npm 后改钉版依赖。
 

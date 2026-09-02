@@ -17,7 +17,7 @@ import {
   type ContextOccurrence,
 } from "../src/context-export/exporter.js";
 import { ContextCliAdapterClient } from "../src/context-export/adapter-cli.js";
-import { api, copyExampleWorkspace, startTestServer } from "./helpers.js";
+import { api, assertPosixMode, copyExampleWorkspace, startTestServer } from "./helpers.js";
 
 function session(): WorkbenchSession {
   return {
@@ -138,8 +138,8 @@ test("completed durable session turn exports exactly two idempotent scoped occur
     sourceSession.sessionId,
     `${turn.turnId}.json`,
   );
-  assert.equal((await fs.stat(stateFile)).mode & 0o777, 0o600);
-  assert.equal((await fs.stat(path.dirname(stateFile))).mode & 0o777, 0o700);
+  await assertPosixMode(stateFile, 0o600);
+  await assertPosixMode(path.dirname(stateFile), 0o700);
 });
 
 test("restart retries only a failed export and never requires another Host turn", async () => {

@@ -78,6 +78,10 @@ export function probeQoderLocalBinary(
     return { installed: false, version: null, supported: false, failure: "unavailable" };
   }
   let probe: ReturnType<typeof spawnSync>;
+  // Node refuses to exec Windows .bat/.cmd launcher scripts without a shell
+  // (CVE-2024-27980 hardening). Route exactly those resolved targets through
+  // cmd.exe; every other target keeps the shell-free probe.
+  const needsWindowsShell = platform === "win32" && /\.(bat|cmd)$/i.test(command);
   try {
     probe = spawnSync(command, ["--version"], {
       encoding: "utf8",
@@ -90,7 +94,7 @@ export function probeQoderLocalBinary(
       // SIGTERM is catchable and makes spawnSync wait past its timeout. The
       // local-only version probe must have a hard process-lifetime bound.
       killSignal: "SIGKILL",
-      shell: false,
+      shell: needsWindowsShell,
       windowsHide: true,
     });
   } catch {

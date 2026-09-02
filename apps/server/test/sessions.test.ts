@@ -3,7 +3,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import test from "node:test";
 import type { TurnRunDriver, TurnRunRequest, TurnRunResult, WorkbenchSession } from "@org-workbench/shared";
-import { api, copyExampleWorkspace, startTestServer } from "./helpers.js";
+import { api, assertPosixMode, copyExampleWorkspace, startTestServer } from "./helpers.js";
 import { SessionStore } from "../src/sessions/store.js";
 import { TurnStore } from "../src/turns/store.js";
 
@@ -35,9 +35,9 @@ test("explicit session create, turn, rotate, and restart preserve an empty succe
     assert.equal(first.status, "active");
     assert.doesNotMatch(JSON.stringify(created.body), /owb-workspace-|Authorization|Bearer|TOKEN|API_KEY/);
     const sessionRoot = path.join(workspace, ".digital-employee", "workbench", "sessions");
-    assert.equal((await fs.stat(sessionRoot)).mode & 0o777, 0o700);
-    assert.equal((await fs.stat(path.join(sessionRoot, "workspace-instance.json"))).mode & 0o777, 0o600);
-    assert.equal((await fs.stat(path.join(sessionRoot, "positions", "repo-owner.json"))).mode & 0o777, 0o600);
+    await assertPosixMode(sessionRoot, 0o700);
+    await assertPosixMode(path.join(sessionRoot, "workspace-instance.json"), 0o600);
+    await assertPosixMode(path.join(sessionRoot, "positions", "repo-owner.json"), 0o600);
 
     const turn = await api(before.baseUrl, `/sessions/${first.sessionId}/turns`, {
       method: "POST",

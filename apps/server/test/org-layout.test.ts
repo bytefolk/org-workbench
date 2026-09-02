@@ -3,7 +3,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import test from "node:test";
 import type { OrgApplySuccess, OrgTreeSnapshot, OrgUndoSuccess, OrganizationFile } from "@org-workbench/shared";
-import { FakeDriver, api, connectSse, copyExampleWorkspace, startTestServer } from "./helpers.js";
+import { FakeDriver, api, assertPosixMode, connectSse, copyExampleWorkspace, startTestServer } from "./helpers.js";
 
 const LAYOUT_FILE = path.join(".digital-employee", "org-layout.v1.json");
 const UNDO_FILE = path.join(".digital-employee", "org-undo.v1.json");
@@ -137,7 +137,7 @@ test("org reorder: overlay persists without engine, snapshot reorders, org.updat
     );
     assert.equal(overlay.schemaVersion, "org-layout.v1");
     assert.deepEqual(overlay.order["repo-owner"], ["release-engineer", "community-operator", "issue-researcher"]);
-    assert.equal((await fs.stat(path.join(dir, LAYOUT_FILE))).mode & 0o777, 0o600);
+    await assertPosixMode(path.join(dir, LAYOUT_FILE), 0o600);
 
     const after = await treeSnapshot(server.baseUrl, server.token);
     assert.deepEqual(treeChildIds(after, "repo-owner"), ["release-engineer", "community-operator", "issue-researcher"]);

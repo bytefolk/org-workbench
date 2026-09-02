@@ -8,7 +8,7 @@ import {
   routes,
 } from "@org-workbench/shared";
 import type { AssetRecord, AssetsListResponse } from "@org-workbench/shared";
-import { api, copyExampleWorkspace, startTestServer } from "./helpers.js";
+import { api, assertPosixMode, copyExampleWorkspace, startTestServer } from "./helpers.js";
 
 const DRIVE = path.join(".digital-employee", "workbench", "drive", "assets");
 
@@ -51,8 +51,7 @@ test("assets create lands non-document kinds as exactKeys asset-record.v1 record
     assert.equal("docRef" in record, false, "non-doc records carry no docRef key");
 
     const file = path.join(dir, DRIVE, record.assetId, "record.json");
-    const stat = await fs.stat(file);
-    assert.equal(stat.mode & 0o777, 0o600, "asset records land at 0600");
+    await assertPosixMode(file, 0o600);
     const raw = JSON.parse(await fs.readFile(file, "utf8")) as Record<string, unknown>;
     assert.deepEqual(
       Object.keys(raw).sort(),
