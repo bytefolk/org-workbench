@@ -100,8 +100,10 @@ export function assertPositionExists(ctx: ControlPlaneContext, positionId: strin
  * the renderer can split one SSE channel by turn and aggregate per group. */
 export interface GroupEventAttribution {
   groupRef: string;
+  messageId: string;
   turnId: string;
   positionId: string;
+  engine: TurnEngine;
 }
 
 function groupTag(event: EngineEvent, group?: GroupEventAttribution): EngineEvent | (EngineEvent & GroupEventAttribution) {
@@ -283,8 +285,8 @@ export async function executeTurn(
       positionId: body.positionId,
       code: record.error?.code ?? "turn_protocol_invalid",
       envelopeDigest: envelope.envelopeDigest,
-      ...(group !== undefined ? { groupRef: group.groupRef } : {}),
-      ...(conversationRef !== undefined ? { conversationRef } : {}),
+      ...(group !== undefined ? { ...group, conversationRef: group.groupRef } : {}),
+      ...(group === undefined && conversationRef !== undefined ? { conversationRef } : {}),
     });
   } else {
     const terminal = result.events[result.events.length - 1];

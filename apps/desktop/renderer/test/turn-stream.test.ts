@@ -5,8 +5,11 @@ import {
   beginGroupRun,
   beginPendingTurn,
   cancelPendingTurn,
+  clearPersonalTurnState,
+  reconcileGroupTimeline,
   settlePendingTurn,
 } from "../src/turns/turnStream";
+import type { GroupTimeline, TurnRecord } from "@org-workbench/shared";
 
 const pending = { positionId: "repo-owner", engine: "qoder" as const, input: "检查发布" };
 
@@ -108,6 +111,27 @@ describe("turn stream reducer", () => {
     expect(byPosition.runs).toEqual({});
   });
 
+  it("personal settle/reset preserve same-position group runs and settled tombstones", () => {
+    let state = beginPendingTurn(EMPTY_TURN_STREAM, pending);
+    state = applyTurnEvent(state, started(1, "run-personal"));
+    state = beginGroupRun(state, groupSpawn("repo-owner", "turn-owner"));
+    state = applyTurnEvent(
+      state,
+      groupTerminal(2, "run-settled", "turn-settled", "release-engineer"),
+    );
+
+    const settled = settlePendingTurn(state, { runId: null, positionId: "repo-owner" });
+    expect(settled.runs["run-personal"]).toBeUndefined();
+    expect(settled.runs["turn-owner"]?.turnId).toBe("turn-owner");
+    expect(settled.settledGroupRuns["turn-settled"]?.turnId).toBe("turn-settled");
+
+    const reset = clearPersonalTurnState(state);
+    expect(reset.pending).toBeNull();
+    expect(reset.runs["run-personal"]).toBeUndefined();
+    expect(reset.runs["turn-owner"]?.turnId).toBe("turn-owner");
+    expect(reset.settledGroupRuns["turn-settled"]?.turnId).toBe("turn-settled");
+  });
+
   it("cancel clears only the pending marker", () => {
     const state = beginPendingTurn(EMPTY_TURN_STREAM, pending);
     expect(cancelPendingTurn(state).pending).toBeNull();
@@ -146,6 +170,223 @@ describe("turn stream reducer", () => {
       payload: { runId: "run-1", timestamp: "2026-08-24T05:00:01.500Z", type: "usage", totalTokens: "many" },
     });
     expect(invalid.runs["run-1"]?.totalTokens).toBeNull();
+  });
+});
+
+function groupSpawn(positionId: string, turnId: string) {
+  return {
+    groupRef: "conv-1",
+    messageId: "message-1",
+    turnId,
+    positionId,
+    engine: "qoder" as const,
+    input: "@两位成员 核对状态",
+  };
+}
+
+function groupTerminal(
+  seq: number,
+  runId: string,
+  turnId: string,
+  positionId: string,
+  extra: Record<string, unknown> = {},
+) {
+  return {
+    seq,
+    type: "turn.completed",
+    payload: {
+      runId,
+      timestamp: `2026-09-01T00:00:0${seq}.000Z`,
+      type: "run.completed",
+      output: `${positionId}-done`,
+      terminalReason: "goal_met",
+      groupRef: "conv-1",
+      messageId: "message-1",
+      turnId,
+      positionId,
+      engine: "qoder",
+      ...extra,
+    },
+  };
+}
+
+function persistedGroupTurn(turnId: string, positionId: string, output: string): TurnRecord {
+  return {
+    schemaVersion: "turn-record.v1",
+    conversationId: positionId,
+    conversationRef: "conv-1",
+    groupRef: "conv-1",
+    turnId,
+    positionId,
+    engine: "qoder",
+    status: "completed",
+    input: "@两位成员 核对状态",
+    envelopeDigest: `sha256:${turnId}`,
+    createdAt: "2026-09-01T00:00:00.000Z",
+    updatedAt: "2026-09-01T00:00:05.000Z",
+    events: [],
+    output,
+  };
+}
+
+describe("group live-state convergence (#114)", () => {
+  it("does not resurrect a spawn whose exact terminal arrived before the 202 response", () => {
+    let state = applyTurnEvent(
+      EMPTY_TURN_STREAM,
+      groupTerminal(1, "run-owner", "turn-owner", "repo-owner"),
+    );
+    state = beginGroupRun(state, groupSpawn("repo-owner", "turn-owner"));
+
+    expect(state.runs).toEqual({});
+  });
+
+  it("settles two mentioned members independently when terminals arrive out of order", () => {
+    let state = beginGroupRun(EMPTY_TURN_STREAM, groupSpawn("repo-owner", "turn-owner"));
+    state = beginGroupRun(state, groupSpawn("release-engineer", "turn-release"));
+
+    state = applyTurnEvent(
+      state,
+      groupTerminal(1, "run-release", "turn-release", "release-engineer"),
+    );
+    expect(Object.values(state.runs).map((run) => run.turnId)).toEqual(["turn-owner"]);
+
+    const wrongEngine = applyTurnEvent(
+      state,
+      groupTerminal(2, "run-owner", "turn-owner", "repo-owner", { engine: "claude-code" }),
+    );
+    expect(Object.values(wrongEngine.runs).map((run) => run.turnId)).toEqual(["turn-owner"]);
+
+    const missingRunId = groupTerminal(3, "run-owner", "turn-owner", "repo-owner");
+    delete (missingRunId.payload as Record<string, unknown>).runId;
+    const malformed = applyTurnEvent(wrongEngine, missingRunId);
+    expect(Object.values(malformed.runs).map((run) => run.turnId)).toEqual(["turn-owner"]);
+
+    state = applyTurnEvent(
+      malformed,
+      groupTerminal(4, "run-owner", "turn-owner", "repo-owner"),
+    );
+    expect(state.runs).toEqual({});
+  });
+
+  it("ignores partially attributed group events instead of leaking text or settling another run", () => {
+    let state = beginGroupRun(EMPTY_TURN_STREAM, groupSpawn("repo-owner", "turn-owner"));
+    state = applyTurnEvent(state, {
+      seq: 1,
+      type: "turn.model.delta",
+      payload: {
+        runId: "run-owner",
+        timestamp: "2026-09-01T00:00:01.000Z",
+        type: "model.delta",
+        text: "trusted",
+        groupRef: "conv-1",
+        messageId: "message-1",
+        turnId: "turn-owner",
+        positionId: "repo-owner",
+        engine: "qoder",
+      },
+    });
+    state = applyTurnEvent(state, {
+      seq: 2,
+      type: "turn.model.delta",
+      payload: {
+        runId: "run-owner",
+        timestamp: "2026-09-01T00:00:02.000Z",
+        type: "model.delta",
+        text: "UNRELATED_RAW_TEXT",
+        groupRef: "conv-1",
+        turnId: "turn-owner",
+        positionId: "repo-owner",
+        engine: "qoder",
+      },
+    });
+    expect(state.runs["run-owner"]?.text).toBe("trusted");
+
+    const partialTerminal = groupTerminal(3, "run-owner", "turn-owner", "repo-owner");
+    delete (partialTerminal.payload as Record<string, unknown>).messageId;
+    state = applyTurnEvent(state, partialTerminal);
+    expect(state.runs["run-owner"]?.turnId).toBe("turn-owner");
+
+    state = applyTurnEvent(state, {
+      seq: 4,
+      type: "turn.completed",
+      payload: {
+        runId: "run-owner",
+        timestamp: "2026-09-01T00:00:04.000Z",
+        type: "run.completed",
+        output: "UNATTRIBUTED_OUTPUT",
+        terminalReason: "goal_met",
+      },
+    });
+    expect(state.runs["run-owner"]?.turnId).toBe("turn-owner");
+  });
+
+  it("does not let a same-position personal indeterminate event settle a group run", () => {
+    let state = beginPendingTurn(EMPTY_TURN_STREAM, pending);
+    state = applyTurnEvent(state, started(1, "run-personal"));
+    state = beginGroupRun(state, groupSpawn("repo-owner", "turn-owner"));
+
+    state = applyTurnEvent(state, {
+      seq: 2,
+      type: "turn.indeterminate",
+      payload: {
+        turnId: "turn-personal",
+        positionId: "repo-owner",
+        code: "turn_driver_failure",
+        envelopeDigest: "sha256:x",
+      },
+    });
+
+    expect(state.runs["run-personal"]).toBeUndefined();
+    expect(state.runs["turn-owner"]?.turnId).toBe("turn-owner");
+  });
+
+  it("reconciles a dropped SSE stream only from the exact persisted message and terminal turns", () => {
+    let state = beginGroupRun(EMPTY_TURN_STREAM, groupSpawn("repo-owner", "turn-owner"));
+    state = beginGroupRun(state, groupSpawn("release-engineer", "turn-release"));
+    state = applyTurnEvent(state, {
+      seq: 1,
+      type: "turn.model.delta",
+      payload: {
+        runId: "run-owner",
+        timestamp: "2026-09-01T00:00:01.000Z",
+        type: "model.delta",
+        text: "working",
+        groupRef: "conv-1",
+        messageId: "message-1",
+        turnId: "turn-owner",
+        positionId: "repo-owner",
+        engine: "qoder",
+      },
+    });
+
+    const wrongMessage: GroupTimeline = {
+      schemaVersion: "group-timeline.v1",
+      conversationRef: "conv-1",
+      items: [
+        {
+          kind: "user",
+          schemaVersion: "group-message.v1",
+          conversationRef: "conv-1",
+          messageId: "message-other",
+          input: "@两位成员 核对状态",
+          mentions: ["repo-owner", "release-engineer"],
+          createdAt: "2026-09-01T00:00:00.000Z",
+        },
+        { kind: "member", turn: persistedGroupTurn("turn-owner", "repo-owner", "owner-done") },
+      ],
+    };
+    expect(reconcileGroupTimeline(state, wrongMessage).runs).toEqual(state.runs);
+
+    const exact: GroupTimeline = {
+      ...wrongMessage,
+      items: [
+        { ...wrongMessage.items[0]!, messageId: "message-1" },
+        { kind: "member", turn: persistedGroupTurn("turn-owner", "repo-owner", "owner-done") },
+        { kind: "member", turn: persistedGroupTurn("turn-release", "release-engineer", "release-done") },
+      ],
+    };
+    state = reconcileGroupTimeline(state, exact);
+    expect(state.runs).toEqual({});
   });
 });
 
@@ -191,6 +432,7 @@ describe("personal dialog baseline regression (#51)", () => {
     state = applyTurnEvent(state, delta(2, "run-1", "个人前半"));
     state = beginGroupRun(state, {
       groupRef: "conv-1",
+      messageId: "message-1",
       turnId: "g-turn-1",
       positionId: "docs-writer",
       engine: "qoder",
@@ -200,7 +442,17 @@ describe("personal dialog baseline regression (#51)", () => {
     state = applyTurnEvent(state, {
       seq: 3,
       type: "turn.model.delta",
-      payload: { runId: "g-run-1", timestamp: "2026-08-24T05:00:02.000Z", type: "model.delta", text: "群成员增量", groupRef: "conv-1", turnId: "g-turn-1" },
+      payload: {
+        runId: "g-run-1",
+        timestamp: "2026-08-24T05:00:02.000Z",
+        type: "model.delta",
+        text: "群成员增量",
+        groupRef: "conv-1",
+        messageId: "message-1",
+        turnId: "g-turn-1",
+        positionId: "docs-writer",
+        engine: "qoder",
+      },
     });
     // Personal stream continues on the same channel afterwards.
     state = applyTurnEvent(state, delta(4, "run-1", "+个人后半"));
@@ -219,6 +471,7 @@ describe("personal dialog baseline regression (#51)", () => {
     state = applyTurnEvent(state, started(1, "run-1"));
     state = beginGroupRun(state, {
       groupRef: "conv-1",
+      messageId: "message-1",
       turnId: "g-turn-1",
       positionId: "docs-writer",
       engine: "qoder",
@@ -227,7 +480,15 @@ describe("personal dialog baseline regression (#51)", () => {
     state = applyTurnEvent(state, {
       seq: 2,
       type: "turn.indeterminate",
-      payload: { turnId: "g-turn-1", groupRef: "conv-1", positionId: "docs-writer", code: "turn_driver_failure", envelopeDigest: "sha256:x" },
+      payload: {
+        turnId: "g-turn-1",
+        groupRef: "conv-1",
+        messageId: "message-1",
+        positionId: "docs-writer",
+        engine: "qoder",
+        code: "turn_driver_failure",
+        envelopeDigest: "sha256:x",
+      },
     });
     expect(state.runs["g-turn-1"]).toBeUndefined();
     expect(state.runs["run-1"]?.positionId).toBe("repo-owner");
@@ -250,6 +511,7 @@ describe("conversationRef back-link grouping (#63)", () => {
   it("groups a seeded spawn via conversationRef alone and tags the run", () => {
     let state = beginGroupRun(EMPTY_TURN_STREAM, {
       groupRef: "conv-1",
+      messageId: "message-1",
       turnId: "g-turn-1",
       positionId: "docs-writer",
       engine: "qoder",
@@ -257,7 +519,13 @@ describe("conversationRef back-link grouping (#63)", () => {
     });
     state = applyTurnEvent(
       state,
-      backlinkDelta(1, "g-run-1", "群成员增量", { conversationRef: "conv-1", turnId: "g-turn-1" }),
+      backlinkDelta(1, "g-run-1", "群成员增量", {
+        conversationRef: "conv-1",
+        messageId: "message-1",
+        turnId: "g-turn-1",
+        positionId: "docs-writer",
+        engine: "qoder",
+      }),
     );
     expect(state.runs["g-run-1"]?.text).toBe("群成员增量");
     expect(state.runs["g-run-1"]?.groupRef).toBe("conv-1");
@@ -267,6 +535,7 @@ describe("conversationRef back-link grouping (#63)", () => {
   it("keeps the legacy groupRef tag authoritative when both refs ride the event", () => {
     let state = beginGroupRun(EMPTY_TURN_STREAM, {
       groupRef: "conv-1",
+      messageId: "message-1",
       turnId: "g-turn-1",
       positionId: "docs-writer",
       engine: "qoder",
@@ -277,7 +546,10 @@ describe("conversationRef back-link grouping (#63)", () => {
       backlinkDelta(1, "g-run-1", "增量", {
         conversationRef: "conv-1",
         groupRef: "conv-1",
+        messageId: "message-1",
         turnId: "g-turn-1",
+        positionId: "docs-writer",
+        engine: "qoder",
       }),
     );
     expect(state.runs["g-run-1"]?.groupRef).toBe("conv-1");

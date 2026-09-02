@@ -213,7 +213,13 @@ export async function handleGroupTurnPost(
   });
   void (async () => {
     for (const spawn of spawns) {
-      const attribution = { groupRef: ref, turnId: spawn.turnId, positionId: spawn.positionId };
+      const attribution = {
+        groupRef: ref,
+        messageId: message.messageId,
+        turnId: spawn.turnId,
+        positionId: spawn.positionId,
+        engine: body.engine,
+      };
       ctx.bus.publish("group.turn.spawned", attribution);
       try {
         await executeTurn(ctx, detachedResponse(), { ...body, positionId: spawn.positionId }, undefined, attribution);
@@ -221,6 +227,8 @@ export async function handleGroupTurnPost(
         ctx.bus.publish("turn.indeterminate", {
           turnId: spawn.turnId,
           positionId: spawn.positionId,
+          messageId: message.messageId,
+          engine: body.engine,
           code: "group_spawn_failed",
           envelopeDigest: "",
           groupRef: ref,

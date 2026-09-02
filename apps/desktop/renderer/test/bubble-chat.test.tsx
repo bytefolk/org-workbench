@@ -184,6 +184,7 @@ describe("group chat bubbles with member identity (#61)", () => {
         liveRuns={{}}
         onSelectEngine={() => {}}
         onSpawnRuns={() => {}}
+        onReconcileTimeline={() => {}}
         draftSeed={null}
       />,
     );

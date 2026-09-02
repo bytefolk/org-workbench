@@ -394,7 +394,7 @@ GET  /groups/:conversationRef/turns
 - `GET /groups` 返回 `conversation-group-list.v1`（按 `updatedAt` 倒序）；`GET /groups/:conversationRef` 返回单群；不存在 404 `group_missing`，非法 ref 400 `group_request_invalid`。
 - `POST /groups/:conversationRef/members` 追加成员（已存在 409 `group_conflict`，达到 32 上限 409），返回更新后的群记录。
 - `POST /groups/:conversationRef/turns`：先持久化 `group-message.v1` 用户消息回显，再以 202 应答 `{"conversationRef","messageId","spawns":[{"turnId","positionId"}]}`；`turnId` 由服务端预分配，spawn 在后台顺序执行，逐成员记录经既有 position conversation store 持久化，`turn-record.v1` 只增一个可选字段 `groupRef`（不影响既有记录逐字节兼容）。
-- 事件面：同一条 `/events` SSE 通道新增 `group.turn.spawned`（每个被 @ 成员一条，payload `{groupRef,turnId,positionId}`）；群内成员的 `turn.*` 事件 payload 附加 `groupRef/turnId/positionId` 供 renderer 按 turnId 分流聚合。不新增独立 SSE 通道、不新增广播语义。
+- 事件面：同一条 `/events` SSE 通道新增 `group.turn.spawned`（每个被 @ 成员一条，payload `{groupRef,messageId,turnId,positionId,engine}`）；群内成员的 `turn.*` 事件 payload 附加同一组归属字段，renderer 只按 exact message/turn/position/engine 分流和结算。终态 SSE 是刷新提示；若监听晚建或断流，renderer 会以有界轮询从群时间线的持久化事实收敛，并按持久化 `turnId` 去重。不新增独立 SSE 通道、不新增广播语义。
 - `GET /groups/:conversationRef/turns` 返回 `group-timeline.v1`：用户消息（`kind:"user"`）与成员回合（`kind:"member"`，内嵌完整 `turn-record.v1`）按 `createdAt` 归并排序。
 - 持久化位于 `<workspace>/.digital-employee/workbench/groups/<conversationRef>/`（`group.json` + `messages/<messageId>.json`）：目录 0700、文件 0600、原子替换，拒绝 symlink/路径穿越/损坏或无界记录；群数上限 64、单群消息上限 256、`input` ≤256 KiB。存储失败 500 `group_storage_failed`，不回显记录内容。
 - 1:1 面不变：legacy `/turns` 与 session turn 的请求键集校验拒绝任何 wire 侧 `groupRef`；群回合不进入 1:1 展示面，反之亦然。
