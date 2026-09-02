@@ -224,6 +224,60 @@ function closedFailure(state) {
   return new Error(`staged app exited before reporting (${state.code ?? state.signal})\n${state.output ?? ""}`);
 }
 
+/**
+ * Prove the control plane the app reported is genuinely serving.
+ *
+ * This replaces an earlier check that looked for the server PID as a handle-bound
+ * descendant of the app in the native process table. That asked a topology question
+ * to answer a liveness one, and on Windows it could only be answered inside a narrow
+ * window while the app held itself open.
+ *
+ * The health route is exempt from bearer auth (apps/server/src/server.ts) and reports
+ * the control plane's own pid, so one request establishes more than the process table
+ * could: the pid is alive, it is serving this API, and it identifies as that pid --
+ * which also rules out a recycled pid, since a reused pid does not answer here.
+ */
+export async function probeControlPlane(smoke, closed, { timeoutMs = 30000, intervalMs = 250 } = {}) {
+  const deadline = Date.now() + timeoutMs;
+  let closedState = null;
+  Promise.resolve(closed).then(
+    (state) => { closedState = normalizedClosedState(state); },
+    (error) => { closedState = { kind: "error", error, output: "" }; },
+  );
+  let lastFailure = "the control plane was never reached";
+  while (Date.now() < deadline) {
+    if (closedState !== null) {
+      throw new Error(`staged app exited before its control plane answered: ${lastFailure}`);
+    }
+    try {
+      const response = await fetch(`http://127.0.0.1:${smoke.serverPort}/health`, {
+        signal: AbortSignal.timeout(Math.max(1000, Math.min(15000, deadline - Date.now()))),
+      });
+      if (!response.ok) {
+        lastFailure = `health returned HTTP ${response.status}`;
+      } else {
+        const body = await response.json();
+        if (body?.status !== "ok") {
+          lastFailure = `health reported status ${JSON.stringify(body?.status)}`;
+        } else if (body?.server?.pid !== smoke.serverPid) {
+          // A different process answering on that port is not the control plane
+          // the app reported, whatever else it may be.
+          throw new Error(
+            `control plane on port ${smoke.serverPort} reports pid ${body?.server?.pid}, app reported ${smoke.serverPid}`,
+          );
+        } else {
+          return body;
+        }
+      }
+    } catch (error) {
+      if (error instanceof Error && error.message.startsWith("control plane on port")) throw error;
+      lastFailure = String(error?.message ?? error);
+    }
+    await delay(intervalMs);
+  }
+  throw new Error(`control plane did not answer within ${timeoutMs}ms: ${lastFailure}`);
+}
+
 export async function waitForReport(reportPath, closed, timeoutMs = 45000) {
   const deadline = Date.now() + timeoutMs;
   let closedState = null;
@@ -443,11 +497,13 @@ export async function smokePackagedApp(platform, candidate, options = {}) {
       assert.equal(Number.isInteger(qoderPid) && qoderPid > 1, true, "Qoder fixture pid was not recorded");
     }
 
+    // Liveness first, from outside the app, before anything reads the process table.
+    const health = await probeControlPlane(smoke, closed);
+    assert.equal(health.server.pid, smoke.serverPid, "control plane pid disagrees with the smoke report");
+
     const liveInventory = listNativeProcesses();
     const liveDescendants = descendantProcesses(liveInventory, appIdentity.pid);
     const liveIdentities = bindVisibleProcesses(liveDescendants);
-    const serverIdentity = liveIdentities.find(({ pid }) => pid === smoke.serverPid);
-    assert.notEqual(serverIdentity, undefined, "control plane was not bound in the staged app process tree");
     const liveQoderDescendants = liveDescendants.filter(({ command }) => /qoder(?:-engine|cli)?/i.test(command));
     assert.equal(
       liveQoderDescendants.length,

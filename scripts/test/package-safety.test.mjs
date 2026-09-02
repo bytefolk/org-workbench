@@ -3,8 +3,10 @@ import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import http from "node:http";
 import test from "node:test";
 import { cleanPackageOutput } from "../clean-package-output.mjs";
+import { probeControlPlane } from "../smoke-packaged-app.mjs";
 import {
   WINDOWS_SIGNATURE_TARGET_ENV,
   classifyMacSignature,
@@ -223,4 +225,65 @@ test("mac signature classifier accepts only the observed unsealed linker ad-hoc 
     details,
     codeResourcesExists: false,
   }), /could not be executed/);
+});
+
+test("control plane probe accepts only a live server that owns the reported pid", async () => {
+  const never = new Promise(() => {});
+  const serve = (handler) => new Promise((resolve) => {
+    const server = http.createServer(handler);
+    server.listen(0, "127.0.0.1", () => resolve(server));
+  });
+
+  const healthy = await serve((req, res) => {
+    assert.equal(req.url, "/health");
+    res.writeHead(200, { "content-type": "application/json" });
+    res.end(JSON.stringify({ status: "ok", server: { version: "0.0.0", pid: 4242 } }));
+  });
+  const healthyPort = healthy.address().port;
+  const body = await probeControlPlane(
+    { serverPort: healthyPort, serverPid: 4242 },
+    never,
+    { timeoutMs: 3000, intervalMs: 20 },
+  );
+  assert.equal(body.server.pid, 4242);
+  healthy.close();
+
+  // A different process answering that port is rejected outright, not retried:
+  // this is the case the old process-table binding existed to catch.
+  const impostor = await serve((_req, res) => {
+    res.writeHead(200, { "content-type": "application/json" });
+    res.end(JSON.stringify({ status: "ok", server: { pid: 9999 } }));
+  });
+  await assert.rejects(
+    probeControlPlane(
+      { serverPort: impostor.address().port, serverPid: 4242 },
+      never,
+      { timeoutMs: 3000, intervalMs: 20 },
+    ),
+    /reports pid 9999, app reported 4242/,
+  );
+  impostor.close();
+
+  // A degraded control plane is a timeout, not a pass.
+  const degraded = await serve((_req, res) => {
+    res.writeHead(503, { "content-type": "application/json" });
+    res.end(JSON.stringify({ status: "starting" }));
+  });
+  await assert.rejects(
+    probeControlPlane(
+      { serverPort: degraded.address().port, serverPid: 4242 },
+      never,
+      { timeoutMs: 200, intervalMs: 20 },
+    ),
+    /did not answer within 200ms: health returned HTTP 503/,
+  );
+  degraded.close();
+});
+
+test("control plane probe fails fast when the staged app has already exited", async () => {
+  const exited = Promise.resolve({ kind: "close", code: 1, output: "" });
+  await assert.rejects(
+    probeControlPlane({ serverPort: 1, serverPid: 4242 }, exited, { timeoutMs: 5000, intervalMs: 10 }),
+    /staged app exited before its control plane answered/,
+  );
 });
