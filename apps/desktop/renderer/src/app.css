@@ -266,6 +266,7 @@
 
 /* D4 evidence room — dense, local-first operations surface. */
 .owb-reports {
+  grid-template-rows: auto auto auto minmax(0, 1fr);
   display: grid;
   gap: var(--ui-space-4, 16px);
   min-height: 0;
@@ -274,18 +275,46 @@
 .owb-reports__hero {
   position: relative;
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
+  gap: var(--ui-space-6, 24px);
   overflow: hidden;
   border: 1px solid var(--ui-border-strong);
-  border-radius: var(--ui-radius-lg, 14px);
+  border-radius: var(--ui-radius-xl, 18px);
   background:
     repeating-linear-gradient(90deg, transparent 0 39px, var(--ui-border) 40px),
+    linear-gradient(105deg, color-mix(in srgb, var(--ui-primary-soft) 42%, transparent), transparent 54%),
     var(--ui-surface-inset);
-  padding: 20px 22px;
+  padding: 22px 24px;
 }
 
-.owb-reports__hero span {
+.owb-reports__hero::after {
+  position: absolute;
+  right: 142px;
+  bottom: -76px;
+  width: 220px;
+  height: 160px;
+  border: 1px solid color-mix(in srgb, var(--ui-primary) 22%, transparent);
+  border-radius: 50%;
+  content: "";
+  transform: rotate(-18deg);
+  pointer-events: none;
+}
+
+.owb-reports__hero-copy {
+  position: relative;
+  z-index: 1;
+  min-width: 0;
+}
+
+.owb-reports__eyebrow {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+
+.owb-reports__eyebrow span,
+.owb-budget-deck__eyebrow {
   color: var(--ui-primary);
   font-family: var(--ui-font-mono, monospace);
   font-size: 10px;
@@ -293,55 +322,195 @@
   letter-spacing: .14em;
 }
 
-.owb-reports__hero h1 { margin: 4px 0; color: var(--ui-foreground); font-size: 24px; }
-.owb-reports__hero p { margin: 0; color: var(--ui-foreground-muted); font-size: 12px; }
-.owb-reports__hero > svg { color: var(--ui-primary); }
+.owb-reports__eyebrow em {
+  border: 1px solid var(--ui-border-strong);
+  border-radius: var(--ui-radius-full, 999px);
+  color: var(--ui-foreground-subtle);
+  padding: 2px 7px;
+  font-family: var(--ui-font-mono, monospace);
+  font-size: 9px;
+  font-style: normal;
+  font-weight: 600;
+  letter-spacing: .08em;
+}
+
+.owb-reports__hero h1 {
+  margin: 6px 0 5px;
+  color: var(--ui-foreground);
+  font-size: 28px;
+  line-height: 1.12;
+}
+
+.owb-reports__hero p {
+  max-width: 760px;
+  margin: 0;
+  color: var(--ui-foreground-muted);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.owb-reports__hero-signal {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 10px;
+  border-left: 1px solid var(--ui-border-strong);
+  color: var(--ui-success);
+  padding: 6px 2px 6px 20px;
+}
+
+.owb-reports__hero-signal div { display: grid; gap: 3px; }
+.owb-reports__hero-signal strong { color: var(--ui-foreground); font-size: 12px; }
+.owb-reports__hero-signal small { color: var(--ui-foreground-muted); font-size: 10px; white-space: nowrap; }
 
 .owb-budget-deck {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
   gap: var(--ui-space-3, 12px);
+  border: 1px solid var(--ui-border);
+  border-radius: var(--ui-radius-lg, 14px);
+  background: color-mix(in srgb, var(--ui-surface) 74%, var(--ui-surface-inset));
+  padding: 14px;
+}
+
+.owb-budget-deck__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.owb-budget-deck__head h2 {
+  margin: 2px 0 3px;
+  color: var(--ui-foreground);
+  font-family: var(--owb-font-display);
+  font-size: 15px;
+  letter-spacing: -0.01em;
+}
+
+.owb-budget-deck__head p {
+  margin: 0;
+  color: var(--ui-foreground-muted);
+  font-size: 11px;
+}
+
+.owb-budget-deck__link {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 4px;
+  border: 1px solid var(--ui-border-strong);
+  border-radius: var(--ui-radius-sm, 6px);
+  background: var(--ui-surface-raised);
+  color: var(--ui-primary);
+  padding: 6px 9px;
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.owb-budget-deck__link:hover {
+  border-color: var(--ui-primary);
+  background: var(--ui-primary-soft);
+}
+
+.owb-budget-deck__link:focus-visible,
+.owb-report-tabs button:focus-visible {
+  outline: 2px solid var(--ui-focus);
+  outline-offset: 2px;
+}
+
+.owb-budget-deck__grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
 }
 
 .owb-budget-deck article {
   display: grid;
+  min-width: 0;
   gap: 8px;
   border: 1px solid var(--ui-border);
-  border-top: 3px solid var(--ui-foreground-muted);
+  border-top: 2px solid var(--ui-foreground-muted);
   border-radius: var(--ui-radius-md, 10px);
   background: var(--ui-surface);
-  padding: 12px;
+  padding: 11px 12px;
 }
 
 .owb-budget-deck article[data-state="within"] { border-top-color: var(--ui-success); }
 .owb-budget-deck article[data-state="exceeded"] { border-top-color: var(--ui-danger); }
+.owb-budget-deck article[data-state="unobserved"] { border-top-color: var(--ui-warning); }
 .owb-budget-deck article > header { display: flex; justify-content: space-between; gap: 8px; }
-.owb-budget-deck article strong { color: var(--ui-foreground); font-size: 12px; }
-.owb-budget-deck article span,
-.owb-budget-deck article small { color: var(--ui-foreground-muted); font-size: 11px; }
+.owb-budget-deck article strong {
+  overflow: hidden;
+  color: var(--ui-foreground);
+  font-family: var(--ui-font-mono, monospace);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.owb-budget-deck article > header span { color: var(--ui-foreground-muted); font-size: 10px; white-space: nowrap; }
+.owb-budget-deck article[data-state="within"] > header span { color: var(--ui-success); }
+.owb-budget-deck article[data-state="exceeded"] > header span { color: var(--ui-danger); }
+.owb-budget-deck article[data-state="unobserved"] > header span { color: var(--ui-warning); }
+.owb-budget-deck article .ui-org-budget { width: 100%; }
+.owb-budget-deck article .ui-org-budget__lanes { gap: 5px; }
+.owb-budget-deck article .ui-org-budget__lane { grid-template-columns: 44px minmax(24px, 1fr) auto; gap: 7px; }
+.owb-budget-deck article .ui-org-budget__lane-label { color: var(--ui-foreground-muted); font-size: 10px; }
+.owb-budget-deck article .ui-org-budget__value {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--ui-foreground);
+  font-family: var(--ui-font-mono, monospace);
+  font-size: 10px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.owb-budget-deck article small {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+  color: var(--ui-foreground-muted);
+  font-family: var(--ui-font-mono, monospace);
+  font-size: 10px;
+}
+.owb-budget-deck article small span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.owb-budget-deck__empty { margin: 0; border: 1px dashed var(--ui-border-strong); border-radius: var(--ui-radius-md, 10px); color: var(--ui-foreground-muted); padding: 18px; font-size: 12px; text-align: center; }
 
 .owb-report-tabs {
   display: flex;
+  min-width: 0;
   gap: 2px;
   border-bottom: 1px solid var(--ui-border);
+  overflow-x: auto;
+  scrollbar-width: none;
 }
+.owb-report-tabs::-webkit-scrollbar { display: none; }
 
 .owb-report-tabs button {
   display: inline-flex;
+  align-items: center;
+  flex: none;
   gap: 7px;
   border: none;
   border-bottom: 2px solid transparent;
   background: none;
   color: var(--ui-foreground-muted);
-  padding: 9px 12px;
+  padding: 9px 12px 10px;
   font: inherit;
   font-size: 12px;
+  font-weight: 600;
   cursor: pointer;
 }
 
+.owb-report-tabs button:hover { color: var(--ui-foreground); }
 .owb-report-tabs button[aria-pressed="true"] { border-bottom-color: var(--ui-primary); color: var(--ui-foreground); }
-.owb-report-tabs button span { border-radius: 999px; background: var(--ui-surface-inset); padding: 0 6px; font-size: 11px; }
+.owb-report-tabs button span { min-width: 20px; border-radius: 999px; background: var(--ui-surface-inset); color: var(--ui-foreground-muted); padding: 1px 6px; font-family: var(--ui-font-mono, monospace); font-size: 10px; text-align: center; }
+.owb-report-tabs button[aria-pressed="true"] span { background: var(--ui-primary-soft); color: var(--ui-primary); }
 
+.owb-report-stream { min-height: 0; overflow: auto; border: 1px solid var(--ui-border); border-radius: var(--ui-radius-lg, 14px); background: var(--ui-surface-inset); padding: 12px; }
 .owb-report-stream ol { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; }
 .owb-report-card { display: grid; grid-template-columns: 20px minmax(0, 1fr); gap: 10px; border: 1px solid var(--ui-border); border-radius: var(--ui-radius-md, 10px); background: var(--ui-surface); padding: 12px; }
 .owb-report-card > svg { color: var(--ui-primary); }
@@ -354,7 +523,26 @@
 .owb-report-card code { display: block; overflow-wrap: anywhere; color: var(--ui-foreground); font-size: 11px; white-space: pre-wrap; word-break: break-all; }
 .owb-report-chain { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 7px; }
 .owb-report-chain span { border-left: 1px solid var(--ui-warning); border-radius: 4px; background: var(--ui-warning-soft); color: var(--ui-foreground); padding: 3px 6px; font-size: 11px; }
-.owb-report-empty { border: 1px dashed var(--ui-border); border-radius: var(--ui-radius-md, 10px); color: var(--ui-foreground-muted); padding: 32px; text-align: center; }
+.owb-report-empty { display: grid; min-height: 170px; place-items: center; margin: 0; border: 1px dashed var(--ui-border-strong); border-radius: var(--ui-radius-md, 10px); color: var(--ui-foreground-muted); padding: 32px; text-align: center; }
+
+@media (max-width: 1220px) {
+  .owb-budget-deck__grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+
+@media (max-width: 900px) {
+  .owb-budget-deck__grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .owb-reports__hero { align-items: flex-start; }
+}
+
+@media (max-width: 620px) {
+  .owb-reports__hero { display: grid; gap: 16px; padding: 18px; }
+  .owb-reports__hero-signal { border-top: 1px solid var(--ui-border-strong); border-left: 0; padding: 12px 0 0; }
+  .owb-budget-deck { padding: 12px; }
+  .owb-budget-deck__head { display: grid; gap: 10px; }
+  .owb-budget-deck__link { justify-self: start; }
+  .owb-budget-deck__grid { grid-template-columns: minmax(0, 1fr); }
+  .owb-report-stream { padding: 8px; }
+}
 
 /* ---- ② 预算/成本看板 (BudgetDashboard / BudgetDetailDrawer) ---- */
 .owb-budget-dash { display: grid; gap: 12px; }
@@ -3598,6 +3786,7 @@
 
 .owb-main > .owb-org-module,
 .owb-main > .owb-groups,
+.owb-main > .owb-reports,
 .owb-main > .owb-docs-module {
   flex: 1;
   min-height: 0;

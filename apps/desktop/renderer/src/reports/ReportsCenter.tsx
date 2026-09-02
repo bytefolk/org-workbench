@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { BudgetBar } from "@org-workbench/ui";
 import type { AuditEntry, BudgetReport, EvidenceEntry, EscalationEntry, ReportsResponse } from "@org-workbench/shared";
-import { Activity, AlertOctagon, ClipboardList, Fingerprint } from "lucide-react";
+import { AlertOctagon, ArrowUpRight, ClipboardList, Fingerprint, ShieldCheck } from "lucide-react";
 import { BudgetDashboard } from "./BudgetDashboard";
 import { AuditTimeline, type AuditTimelineEvent } from "./AuditTimeline";
 
@@ -16,28 +16,39 @@ export interface ReportsCenterProps {
 }
 
 export function ReportsCenter({ reports, loading, positionNames, positionColors, onOpenTimeline }: ReportsCenterProps) {
-  const [tab, setTab] = useState<Tab>("escalations");
   const timelineEvents = useMemo<AuditTimelineEvent[]>(
     () => (reports ? buildTimelineEventsFromReports(reports) : []),
     [reports],
   );
+  // Prefer a stream with real facts on first open. Landing on an empty
+  // escalation tab made a healthy workspace look broken and hid the evidence
+  // that explains what this module is for.
+  const [tabOverride, setTabOverride] = useState<Tab | null>(null);
   if (loading) return <section className="owb-reports"><p className="owb-muted">正在读取本地上报事实…</p></section>;
   if (!reports) return <section className="owb-reports"><p className="owb-muted">上报数据不可用</p></section>;
+  const tab = tabOverride ?? firstReportTab(reports, timelineEvents.length);
   return (
     <section className="owb-reports" aria-label="上报中心">
       <header className="owb-reports__hero">
-        <div><span>LOCAL CONTROL PLANE</span><h1>上报中心</h1><p>只读展示审计、回合证据、失败升级与预算/成本看板；原始输入和输出默认不进入此视图。</p></div>
-        <Activity aria-hidden="true" size={28} />
+        <div className="owb-reports__hero-copy">
+          <div className="owb-reports__eyebrow"><span>LOCAL CONTROL PLANE</span><em>READ-ONLY</em></div>
+          <h1>上报中心</h1>
+          <p>把组织变更、回合结果和资源消耗汇总成可追溯的本地事实，帮助负责人先定位异常，再沿时间线复核。</p>
+        </div>
+        <div className="owb-reports__hero-signal" aria-label="报告边界：只读本地事实">
+          <ShieldCheck aria-hidden="true" size={22} />
+          <div><strong>事实视图</strong><small>不执行 · 不重试 · 不展示原文</small></div>
+        </div>
       </header>
-      <BudgetDeck budgets={reports.budgets} />
+      <BudgetDeck budgets={reports.budgets} onViewAll={() => setTabOverride("budgets")} />
       <nav className="owb-report-tabs" aria-label="上报数据流">
-        <TabButton active={tab === "budgets"} onClick={() => setTab("budgets")} label="成本看板" count={reports.budgets.length} />
-        <TabButton active={tab === "escalations"} onClick={() => setTab("escalations")} label="失败 / 升级" count={reports.streams.escalations.length} />
-        <TabButton active={tab === "audits"} onClick={() => setTab("audits")} label="组织审计" count={reports.streams.audits.length} />
-        <TabButton active={tab === "evidence"} onClick={() => setTab("evidence")} label="回合证据" count={reports.streams.evidence.length} />
-        <TabButton active={tab === "timeline"} onClick={() => setTab("timeline")} label="时间线" count={timelineEvents.length} />
+        <TabButton active={tab === "budgets"} onClick={() => setTabOverride("budgets")} label="成本看板" count={reports.budgets.length} />
+        <TabButton active={tab === "escalations"} onClick={() => setTabOverride("escalations")} label="失败 / 升级" count={reports.streams.escalations.length} />
+        <TabButton active={tab === "audits"} onClick={() => setTabOverride("audits")} label="组织审计" count={reports.streams.audits.length} />
+        <TabButton active={tab === "evidence"} onClick={() => setTabOverride("evidence")} label="回合证据" count={reports.streams.evidence.length} />
+        <TabButton active={tab === "timeline"} onClick={() => setTabOverride("timeline")} label="时间线" count={timelineEvents.length} />
       </nav>
-      <div className="owb-report-stream">
+      <div className="owb-report-stream" role="tabpanel" aria-label={`${tabLabel(tab)}数据`}>
         {tab === "budgets" ? (
           <BudgetDashboard
             budgets={reports.budgets}
@@ -65,12 +76,34 @@ export function ReportsCenter({ reports, loading, positionNames, positionColors,
   );
 }
 
-function BudgetDeck({ budgets }: { budgets: BudgetReport[] }) {
-  return <div className="owb-budget-deck" aria-label="预算仪表">{budgets.map((budget) => {
-    const limit = budget.declared.perTask.tokens;
-    const ratio = limit && budget.latestTurn ? budget.latestTurn.totalTokens / limit : null;
-    return <article key={budget.positionId} data-state={budget.state}><header><strong>{budget.positionId}</strong><span>{budget.state === "unobserved" ? "无回合事实" : budget.state === "exceeded" ? "已超出声明" : "声明内"}</span></header><BudgetBar declared={{ taskLimit: budget.declared.perTask, dailyLimit: budget.declared.perDay }} consumption={ratio} /><small>累计记录 {budget.recorded.totalTokens.toLocaleString()} tokens</small></article>;
-  })}</div>;
+function firstReportTab(reports: ReportsResponse, timelineCount: number): Tab {
+  if (reports.streams.escalations.length > 0) return "escalations";
+  if (reports.streams.evidence.length > 0) return "evidence";
+  if (reports.streams.audits.length > 0) return "audits";
+  if (timelineCount > 0) return "timeline";
+  return "budgets";
+}
+
+function tabLabel(tab: Tab): string {
+  return { budgets: "成本看板", escalations: "失败 / 升级", audits: "组织审计", evidence: "回合证据", timeline: "时间线" }[tab];
+}
+
+function BudgetDeck({ budgets, onViewAll }: { budgets: BudgetReport[]; onViewAll: () => void }) {
+  return <section className="owb-budget-deck" aria-label="预算快照">
+    <header className="owb-budget-deck__head">
+      <div><span className="owb-budget-deck__eyebrow">RESOURCE TELEMETRY</span><h2>预算快照</h2><p>快速查看最近回合的单任务和单日消耗；累计事实请进入成本看板。</p></div>
+      <button type="button" className="owb-budget-deck__link" onClick={onViewAll}>查看成本看板 <ArrowUpRight aria-hidden="true" size={13} /></button>
+    </header>
+    {budgets.length === 0 ? <p className="owb-budget-deck__empty">尚无预算事实——岗位完成招聘并产生回合后，这里会点亮。</p> : <div className="owb-budget-deck__grid">{budgets.map((budget) => {
+      const limit = budget.declared.perTask.tokens;
+      const ratio = limit && budget.latestTurn ? budget.latestTurn.totalTokens / limit : null;
+      return <article key={budget.positionId} data-state={budget.state}>
+        <header><strong>{budget.positionId}</strong><span>{budget.state === "unobserved" ? "声明期" : budget.state === "exceeded" ? "已超出" : "声明内"}</span></header>
+        <BudgetBar declared={{ taskLimit: budget.declared.perTask, dailyLimit: budget.declared.perDay }} consumption={ratio} />
+        <small><span>累计记录</span><span>{budget.recorded.totalTokens.toLocaleString()} tokens</span></small>
+      </article>;
+    })}</div>}
+  </section>;
 }
 
 /**
