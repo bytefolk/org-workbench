@@ -10,6 +10,37 @@ const POSITION: PositionCardData = {
   reportTo: null,
   mode: "read_only",
   contextScope: "/",
+  contextSources: [
+    {
+      id: "workspace-position-docs",
+      kind: "workspace_docs",
+      name: "岗位知识库",
+      locator: "positions/repo-owner",
+      binding: "bound",
+      state: "ready",
+      readOnly: true,
+      itemCount: 4,
+    },
+    {
+      id: "mem-drive",
+      kind: "mem_drive",
+      name: "统一网盘",
+      locator: "mem://workspace",
+      binding: "available",
+      state: "not_configured",
+      readOnly: true,
+    },
+    {
+      id: "context-provider",
+      kind: "context_provider",
+      name: "岗位运行上下文",
+      locator: "context://position/repo-owner",
+      binding: "bound",
+      state: "ready",
+      readOnly: true,
+      itemCount: 2,
+    },
+  ],
   permissions: { toolAllow: ["Read", "Grep", "Glob"], toolDeny: [] },
   budget: { perTask: { tokens: 40000, iterations: 12 }, perDay: { tokens: 400000, iterations: 96 } },
   metadata: {},
@@ -34,12 +65,21 @@ describe("PositionCard (D1 spec §3)", () => {
     expect(onRefresh).toHaveBeenCalled();
   });
 
-  it("renders budget declaration, permission badges and context scope", () => {
+  it("renders budget declaration, permission badges and context sources", () => {
     render(<PositionCard position={POSITION} />);
     expect(screen.getByRole("heading", { name: /预算声明/ })).toBeInTheDocument();
     expect(screen.getByRole("meter", { name: "单任务声明" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: /权限摘要/ })).toBeInTheDocument();
     expect(screen.getByText("Read")).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: /Context Scope/ })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: /上下文来源/ })).toBeInTheDocument();
+    expect(screen.getByText("岗位知识库")).toBeInTheDocument();
+    expect(screen.getByText("mem://workspace")).toBeInTheDocument();
+    expect(screen.getByText("context://position/repo-owner")).toBeInTheDocument();
+    expect(screen.getByText("未配置")).toBeInTheDocument();
+  });
+
+  it("keeps rendering the legacy scope when the additive source list is absent", () => {
+    render(<PositionCard position={{ ...POSITION, contextSources: undefined }} />);
+    expect(screen.getByText("/", { selector: "span" })).toBeInTheDocument();
   });
 });

@@ -2,6 +2,8 @@
  * (org-tree.v1 frozen minimal shape; workspace-org.v1 roles via /positions/:id);
  * the client never invents semantics. */
 
+import type { ContextSourceSummary } from "@org-workbench/shared";
+
 export type { OrgRole, OrgTreeSnapshot, OrgTreeNodeV1 } from "@org-workbench/shared";
 
 export interface BudgetCaps {
@@ -17,6 +19,8 @@ export interface PositionCardData {
   reportTo: string | null;
   mode: "read_only" | "approval_required";
   contextScope: string;
+  /** Additive source inventory; older callers may omit it during migration. */
+  contextSources?: ContextSourceSummary[];
   permissions: { toolAllow: string[]; toolDeny: string[] };
   budget: { perTask: BudgetCaps; perDay: BudgetCaps } | null;
   metadata: Record<string, string>;

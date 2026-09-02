@@ -16,6 +16,7 @@ org-workbench 是 [digital-employee](https://github.com/bytefolk/digital-employe
 - D3 本地对话闭环：Bearer 保护的 `POST /turns` 与 `GET /turns?positionId=...`，只允许 Qoder/Claude Code；工作台可从组织树或 `@岗位` 选择器加载本地历史、发送并 readback，展示密封信封 digest 与可信终态。退出码 1 不自动重试；bundled Qoder 已完成一次 macOS 本地 E4（发送 → `completed` 落盘 → 历史 readback），Claude live、委派链与长期 Context 仍明确标为未完成。
 - 显式 Workbench session：每个岗位可新建、选择和轮换 `workbench-session.v1`；轮换产生新的稳定 sessionId 和空白本地回合目录，旧 session 保持只读可查询。它只是本地控制面边界，不是 Host resume、授权或长期记忆。
 - Context 导出接缝：显式 session 的可信 `completed` 回合在终态记录落盘后异步导出为两条 `context-occurrence.v1`；导出状态可跨重启恢复，失败不改变回合结果、也不重跑 Host。当前钉定 provider 为 [`context@f63f57f`](https://github.com/bytefolk/context/commit/f63f57f7b4cb7071309561f0383683017ae79eb2)，只走公共 CLI/stdio adapter，不直连 vault SQLite。
+- 上下文来源视图：岗位卡片现在展示真实的岗位文档、统一网盘 `mem` 和岗位级 `context` 来源；左侧目录树仍是唯一的汇报关系配置入口。Workbench 只负责来源绑定与权限边界，`mem` 继续负责文件/资产/检索，`context` 继续负责带范围的回合上下文与召回，不引入 Obsidian 客户端。当前 `mem` 来源先展示为可接入，待位置级 path grant 契约落地后再绑定，避免把全局网盘误授给单个岗位。
 - 里程碑：D0 骨架 → D1 组织树只读 → D2 拖拽/预算/裁撤恢复闭环 → D3 @岗位对话 → D4 本地上报中心。Qoder 的 bundled adapter 已有单机 E4 证据；委派链、长期 Context 与 Claude live E4 仍不在“已验证”范围。
 - #110 Lane A 已提供 macOS arm64 与 Windows x64 的**未签名、解包 staging**基础和 clean-staging smoke 编排；它只用于原生验证，不是可安装或已发布客户端。当前仓库仍无 tag、GitHub Release、签名安装包或应用内更新。
 

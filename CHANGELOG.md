@@ -9,6 +9,7 @@
 
 ### Added
 
+- 上下文来源与统一网盘入口：岗位卡片展示岗位知识库、mem 统一网盘和岗位级 context 来源；新增 Workbench 内网盘模块，支持清单、搜索与详情查看，不引入 Obsidian 客户端。
 - #132：新增 macOS arm64 DMG/ZIP 与 Windows x64 NSIS 安装包构建；保持无签名、Windows per-user 和 `--publish never`。安装/启动/卸载行为验证仍待后续切片。
 - **D2 目录提案编排**：招聘直接生成嵌套岗位包与 0600 原子写 `budget.json`，调岗整目录 rename，裁撤移至树外 `.digital-employee/backup/<id>-<stamp>/`；支持移至根和 `maxDepth=8` 防御上限。
 - **引擎 org-audit 报告流**：`GET /reports` 改读 `.digital-employee/org-audit.jsonl`（org-audit.v1）。

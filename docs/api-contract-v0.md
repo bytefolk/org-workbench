@@ -178,6 +178,36 @@ reorder 语义补充（#32）：兄弟顺序是 org-workbench 自治语义，不
     "id": "repo-owner", "name": "Repo Owner", "description": "...",
     "reportTo": null, "mode": "read_only",
     "contextScope": "/",
+    "contextSources": [
+      {
+        "id": "workspace-position-docs",
+        "kind": "workspace_docs",
+        "name": "岗位知识库",
+        "locator": "positions/repo-owner/SKILL.md + knowledge/**",
+        "binding": "bound",
+        "state": "ready",
+        "readOnly": true,
+        "itemCount": 2
+      },
+      {
+        "id": "mem-drive",
+        "kind": "mem_drive",
+        "name": "统一网盘",
+        "locator": "mem://workspace",
+        "binding": "available",
+        "state": "not_configured",
+        "readOnly": true
+      },
+      {
+        "id": "context-provider",
+        "kind": "context_provider",
+        "name": "岗位运行上下文",
+        "locator": "context://position/repo-owner",
+        "binding": "bound",
+        "state": "not_configured",
+        "readOnly": true
+      }
+    ],
     "permissions": { "toolAllow": ["Read", "Grep", "Glob"], "toolDeny": [] },
     "budget": { "perTask": { "...": "..." }, "perDay": { "...": "..." } },
     "metadata": {}
@@ -186,6 +216,13 @@ reorder 语义补充（#32）：兄弟顺序是 org-workbench 自治语义，不
 ```
 
 未找到 → 404 `position_missing`。
+
+`contextSources` 是 `position-card.v1` 的加法字段。它是 Workbench 的来源摘要，
+不把 mem/context 的内部存储暴露给 renderer：`workspace_docs` 指向岗位包，
+`mem_drive` 表示统一网盘接入状态，`context_provider` 表示岗位级运行上下文。
+`binding=available` 只代表可接入，不代表该岗位已经获得访问授权；`state` 为
+`ready`、`empty`、`not_configured` 或 `error`。旧客户端可以继续使用
+`contextScope`，新客户端应优先渲染 `contextSources`。
 
 ### 2.9 `GET /reports` — 上报中心数据（只读，分页）
 

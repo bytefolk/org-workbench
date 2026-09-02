@@ -25,7 +25,7 @@ import type {
   WorkbenchSessionList,
   WorkspaceInfoResponse,
 } from "@org-workbench/shared";
-import { FileChartColumn, FolderTree, Network, Plus, ShieldAlert, UsersRound } from "lucide-react";
+import { FileChartColumn, FolderTree, HardDrive, Network, Plus, ShieldAlert, UsersRound } from "lucide-react";
 import { ThemeToggle, useThemeMode } from "./theme-toggle";
 import {
   EMPTY_TURN_STREAM,
@@ -58,6 +58,7 @@ import { DocsModule } from "./docs/DocsModule";
 import { ReportsCenter } from "./reports/ReportsCenter";
 import { ApprovalQueue, type ApprovalQueueItem } from "./approvals";
 import { decodeEscapedUnicode } from "./display-text";
+import { DriveModule } from "./drive/DriveModule";
 
 interface PositionCardState {
   loading: boolean;
@@ -67,14 +68,14 @@ interface PositionCardState {
 
 /**
  * D1 renderer: AppShell four-zone layout (spec §1) — ModuleRail (org active,
- * memory/docs placeholders), Topbar (breadcrumbs + engine status + budget
+ * drive/docs modules), Topbar (breadcrumbs + engine status + budget
  * summary), Sidebar (--ui-sidebar-wide 288px, OrgTree), main (PositionCard).
  * Data flows exclusively through the whitelisted preload bridge + SSE
  * (org.updated drives refresh; the UI never polls).
  */
 export function App() {
   const [activeModule, setActiveModule] = useState<
-    "org" | "groups" | "reports" | "approvals" | "docs"
+    "org" | "groups" | "reports" | "approvals" | "drive" | "docs"
   >("org");
   /**
    * DATA GAP (TODO, v0): v0 has no dedicated `/approvals` stream. The P0
@@ -888,14 +889,10 @@ export function App() {
               active: activeModule === "approvals",
               onSelect: () => setActiveModule("approvals"),
             },
-            // #128 AC-004: the previous `memory` rail item rendered without
-            // an `onSelect` handler and without a matching render branch, so
-            // clicking it did nothing — a dead entry that misled users into
-            // thinking the whole lower region was broken. The mem plane is
-            // still an upstream dependency (see the desktop app has no wired
-            // access yet), so the rail item is dropped rather than shown as a
-            // "coming soon" placeholder that would compete visually with the
-            // real modules. Restore the entry once mem plane wiring lands.
+            // mem remains an upstream data plane, but its management surface
+            // is rendered inside Workbench so operators do not need a second
+            // client. DriveModule only consumes the bounded bridge.
+            { id: "drive", label: "网盘", icon: <HardDrive aria-hidden="true" size={16} />, active: activeModule === "drive", onSelect: () => setActiveModule("drive") },
             { id: "docs", label: "文档", icon: <FolderTree aria-hidden="true" size={16} />, active: activeModule === "docs", onSelect: () => setActiveModule("docs") },
           ]}
         />
@@ -1057,6 +1054,8 @@ export function App() {
             onSpawnRuns={spawnGroupRuns}
             onReconcileTimeline={reconcileGroup}
           />
+        ) : activeModule === "drive" ? (
+          <DriveModule workspaceOpen={workspaceInfo?.open === true} />
         ) : activeModule === "docs" ? (
           <DocsModule
             workspaceOpen={workspaceInfo?.open === true}

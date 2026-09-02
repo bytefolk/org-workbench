@@ -1,9 +1,10 @@
 import type { ReactNode } from "react";
 import { Button, Empty, Skeleton } from "antd";
 import { cn } from "@fullstack-ai-infra/ui";
-import { ChartNoAxesColumn, Crosshair, Info, RefreshCw, ShieldCheck, Zap } from "lucide-react";
+import { ChartNoAxesColumn, Cloud, Crosshair, FileText, Info, RefreshCw, ShieldCheck, Zap } from "lucide-react";
 import { BudgetBar } from "./budget-bar";
 import type { PositionCardData } from "./types";
+import type { ContextSourceSummary } from "@org-workbench/shared";
 
 export interface PositionCardProps {
   position: PositionCardData | null;
@@ -28,7 +29,7 @@ export interface PositionCardProps {
  * docs/design/control-plane-v2-preview.html, not an antd Card: eyebrow
  * (POSITION · DEVICE RECORD) + display-font title + role sub-line, a mode
  * badge and a status light on the right, then three sections — budget gauge
- * (dual lane), permission chips, Context Scope. antd still supplies the
+ * (dual lane), permission chips, context sources. antd still supplies the
  * controls (Button/Empty/Skeleton) per DL5.
  *
  * States: empty guidance / loading skeleton / 404 after disband / record.
@@ -109,6 +110,7 @@ export function PositionCard({
   }
 
   const readOnly = position.mode === "read_only";
+  const contextSources = position.contextSources ?? legacyContextSource(position);
   return (
     <section className={cn("owb-panel", "ui-org-position-card", className)} aria-label="岗位档案">
       <header className="owb-panel-head">
@@ -179,13 +181,61 @@ export function PositionCard({
         <section className="owb-pos-section">
           <h3>
             <Crosshair aria-hidden="true" size={13} />
-            Context Scope
+            上下文来源
           </h3>
-          <p className="owb-scope-line" title={position.contextScope}>
-            {position.contextScope || "—"}
+          <div className="owb-context-sources">
+            {contextSources.map((source) => (
+              <ContextSourceRow key={source.id} source={source} />
+            ))}
+          </div>
+          <p className="owb-context-sources__hint">
+            左侧目录树只配置汇报关系；来源由 Workbench 统一绑定，mem/context 继续负责各自的数据与召回。
           </p>
         </section>
       </div>
     </section>
+  );
+}
+
+function legacyContextSource(position: PositionCardData): ContextSourceSummary[] {
+  return [{
+    id: "legacy-context-scope",
+    kind: "workspace_docs",
+    name: "岗位上下文",
+    locator: position.contextScope || "未声明",
+    binding: "bound",
+    state: position.contextScope ? "ready" : "empty",
+    readOnly: true,
+  }];
+}
+
+function ContextSourceRow({ source }: { source: ContextSourceSummary }) {
+  const SourceIcon = source.kind === "workspace_docs"
+    ? FileText
+    : source.kind === "mem_drive"
+      ? Cloud
+      : Crosshair;
+  const stateLabel = {
+    ready: source.kind === "workspace_docs" ? "已接入" : "已配置",
+    empty: "暂无内容",
+    not_configured: "未配置",
+    error: "读取失败",
+  }[source.state];
+  const bindingLabel = source.binding === "bound" ? "当前绑定" : "可接入";
+  const countLabel = source.itemCount === undefined
+    ? ""
+    : ` · ${source.itemCount} ${source.kind === "workspace_docs" ? "份文档" : "条记录"}`;
+  return (
+    <div className="owb-context-source">
+      <div className="owb-context-source__head">
+        <span className="owb-context-source__icon" aria-hidden="true"><SourceIcon size={13} /></span>
+        <div className="owb-context-source__main">
+          <strong>{source.name}</strong>
+          <span title={source.locator}>{source.locator}</span>
+        </div>
+        <span className={`owb-context-source__state is-${source.state}`}>{stateLabel}</span>
+      </div>
+      <div className="owb-context-source__meta">{bindingLabel}{countLabel}{source.readOnly ? " · 只读" : ""}</div>
+    </div>
   );
 }
