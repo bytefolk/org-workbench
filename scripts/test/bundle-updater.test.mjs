@@ -30,6 +30,28 @@ test("the manifest names the vendored bundle as one explicit entry", () => {
   assert.deepEqual(thirdParty, [], "bundling exists so no third-party node_modules set is required");
 });
 
+test("the bundled dependency is not a production dependency", () => {
+  // Bundling makes electron-updater a build-time input, and it has to be
+  // declared as one. electron-builder includes the production dependency tree
+  // from node_modules independently of the `files` sets -- those use the
+  // from/to form, which appends rather than replacing the default patterns. With
+  // electron-updater in `dependencies`, the staging verifier rejected
+  // `node_modules/builder-util-runtime/out/CancellationToken.js.map` as a
+  // forbidden packaged path: the bundle shipped and so did the tree it exists to
+  // replace.
+  const manifest = require("../../package.json");
+  const production = Object.keys(manifest.dependencies ?? {});
+  assert.deepEqual(
+    production,
+    [],
+    `a production dependency drags its tree into the package regardless of the file sets: ${production.join(", ")}`,
+  );
+  assert.ok(
+    "electron-updater" in (manifest.devDependencies ?? {}),
+    "the bundler needs the package at build time, so it must still be declared",
+  );
+});
+
 test("the bundle is reproducible from the pinned dependency", async () => {
   const first = await bundleUpdater();
   const second = await bundleUpdater();
