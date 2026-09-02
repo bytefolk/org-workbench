@@ -1,6 +1,43 @@
 const { spawnSync } = require("node:child_process");
 const path = require("node:path");
 
+// Windows PowerShell invocation is routed through this helper for three reasons,
+// each of which has produced a CI failure or is one argv entry away from doing so:
+//
+//  * `-Command` does not bind trailing argv entries to a `param()` block. It appends
+//    them to the script text, so a parameter is parsed as source — and any value with
+//    a space (a packaged path) or a quote breaks the parse. Values travel in the
+//    environment instead, where no quoting rules apply.
+//  * The script text itself carries quotes and parentheses that Windows command-line
+//    escaping mangles. `-EncodedCommand` takes base64 UTF-16LE and bypasses that layer
+//    completely.
+//  * CI runs these steps under pwsh 7, which exports a PSModulePath covering only
+//    PowerShell 7 modules. Inheriting it leaves Windows PowerShell unable to autoload
+//    its own system modules (CimCmdlets, Microsoft.PowerShell.Security), so the pinned
+//    path below keeps the child independent of whichever shell invoked it.
+function windowsPowerShellInvocation(script, values = {}, baseEnv = process.env) {
+  const systemRoot = baseEnv.SystemRoot ?? baseEnv.SYSTEMROOT ?? "C:\\Windows";
+  return {
+    command: "powershell.exe",
+    args: [
+      "-NoProfile",
+      "-NonInteractive",
+      "-EncodedCommand",
+      Buffer.from(script, "utf16le").toString("base64"),
+    ],
+    env: {
+      ...baseEnv,
+      PSModulePath: path.win32.join(systemRoot, "system32", "WindowsPowerShell", "v1.0", "Modules"),
+      ...values,
+    },
+  };
+}
+
+function windowsPowerShell(script, values = {}) {
+  const { command, args, env } = windowsPowerShellInvocation(script, values);
+  return spawnSync(command, args, { encoding: "utf8", windowsHide: true, env });
+}
+
 function descendantProcesses(processes, rootPid) {
   const result = [];
   const pending = [rootPid];
@@ -81,11 +118,7 @@ function listWindowsProcesses() {
     "@{Name='StartIdentity';Expression={$_.CreationDate.ToUniversalTime().Ticks.ToString()}}",
     ") | ConvertTo-Json -Compress",
   ].join(" ");
-  const listed = spawnSync(
-    "powershell.exe",
-    ["-NoProfile", "-NonInteractive", "-Command", script],
-    { encoding: "utf8", windowsHide: true },
-  );
+  const listed = windowsPowerShell(script);
   if (listed.status !== 0) throw new Error(`process inventory failed: ${listed.stderr ?? "unknown error"}`);
   const rows = JSON.parse(listed.stdout || "[]");
   return (Array.isArray(rows) ? rows : [rows]).map((row) => ({
@@ -111,7 +144,7 @@ function readPosixExecutable(pid) {
 
 function readWindowsBoundIdentity(pid) {
   const script = [
-    "param([int]$TargetPid)",
+    "$TargetPid = [int]$env:OWB_TARGET_PID",
     "$cim = Get-CimInstance Win32_Process -Filter \"ProcessId=$TargetPid\"",
     "if ($null -eq $cim) { exit 3 }",
     "try { $process = [Diagnostics.Process]::GetProcessById($TargetPid) } catch { exit 3 }",
@@ -122,11 +155,7 @@ function readWindowsBoundIdentity(pid) {
     "ExecutablePath=$process.MainModule.FileName; CommandLine=$cim.CommandLine",
     "} | ConvertTo-Json -Compress",
   ].join(" ");
-  const result = spawnSync(
-    "powershell.exe",
-    ["-NoProfile", "-NonInteractive", "-Command", script, String(pid)],
-    { encoding: "utf8", windowsHide: true },
-  );
+  const result = windowsPowerShell(script, { OWB_TARGET_PID: String(pid) });
   if (result.status === 3) return null;
   if (result.status !== 0) throw new Error(`process identity failed: ${result.stderr ?? "unknown error"}`);
   const row = JSON.parse(result.stdout);
@@ -186,25 +215,19 @@ async function waitForBoundProcessIdentity(pid, { timeoutMs = 5000 } = {}) {
 
 function terminateBoundWindowsProcess(identity) {
   const script = [
-    "param([int]$TargetPid,[string]$HandleStart,[string]$Executable)",
+    "$TargetPid = [int]$env:OWB_TARGET_PID",
+    "$HandleStart = [string]$env:OWB_HANDLE_START",
+    "$Executable = [string]$env:OWB_EXECUTABLE",
     "try { $process = [Diagnostics.Process]::GetProcessById($TargetPid) } catch { exit 3 }",
     "if ($process.StartTime.ToUniversalTime().Ticks.ToString() -ne $HandleStart) { exit 4 }",
     "if (-not [StringComparer]::OrdinalIgnoreCase.Equals($process.MainModule.FileName,$Executable)) { exit 4 }",
     "$process.Kill(); if (-not $process.WaitForExit(5000)) { exit 5 }",
   ].join(" ");
-  const killed = spawnSync(
-    "powershell.exe",
-    [
-      "-NoProfile",
-      "-NonInteractive",
-      "-Command",
-      script,
-      String(identity.pid),
-      identity.handleStartTime,
-      identity.executable,
-    ],
-    { encoding: "utf8", windowsHide: true },
-  );
+  const killed = windowsPowerShell(script, {
+    OWB_TARGET_PID: String(identity.pid),
+    OWB_HANDLE_START: identity.handleStartTime,
+    OWB_EXECUTABLE: identity.executable,
+  });
   if (killed.status === 3 || killed.status === 4) return false;
   if (killed.status !== 0) throw new Error(`bound process termination failed: ${killed.stderr ?? killed.status}`);
   return true;
@@ -436,6 +459,7 @@ async function terminateNativeProcessTree(rootIdentity, stagingRoot, provenance 
 
 module.exports = {
   bindNativeProcessIdentity,
+  windowsPowerShellInvocation,
   descendantProcesses,
   listNativeProcesses,
   parsePosixProcesses,

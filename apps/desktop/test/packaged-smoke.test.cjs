@@ -22,6 +22,7 @@ const {
   selectCleanupCandidates,
   signalBoundProcess,
   terminateNativeProcessTree,
+  windowsPowerShellInvocation,
 } = require("../packaging/process-tree.cjs");
 
 const SMOKE_NONCE = "a".repeat(64);
@@ -652,4 +653,33 @@ test("cleanup binds and kills a TERM-spawned reparented group member", async (t)
   const escapedPid = Number(fs.readFileSync(pidFile, "utf8"));
   assert.equal(Number.isInteger(escapedPid), true);
   assert.throws(() => process.kill(escapedPid, 0), { code: "ESRCH" });
+});
+
+
+test("windows powershell invocation keeps values out of the script text", () => {
+  // `-Command` appends trailing argv to the script instead of binding a param()
+  // block, so every value travels in the environment and the script is encoded.
+  const script = '$p = Get-CimInstance Win32_Process -Filter "ProcessId=$env:OWB_TARGET_PID"';
+  const executable = "C:\\Program Files\\Org Workbench\\Org Workbench.exe";
+  const { command, args, env } = windowsPowerShellInvocation(
+    script,
+    { OWB_TARGET_PID: "4242", OWB_EXECUTABLE: executable },
+    { SystemRoot: "C:\\Windows", PSModulePath: "C:\\Program Files\\PowerShell\\7\\Modules" },
+  );
+
+  assert.equal(command, "powershell.exe");
+  assert.deepEqual(args.slice(0, 3), ["-NoProfile", "-NonInteractive", "-EncodedCommand"]);
+  assert.equal(Buffer.from(args[3], "base64").toString("utf16le"), script);
+  assert.equal(args.length, 4);
+
+  assert.equal(env.OWB_TARGET_PID, "4242");
+  assert.equal(env.OWB_EXECUTABLE, executable);
+  for (const argument of args) {
+    assert.ok(!argument.includes("4242"), "argv leaked a parameter value");
+    assert.ok(!argument.includes(executable), "argv leaked the executable path");
+  }
+
+  // pwsh 7 exports a PSModulePath without the Windows PowerShell system modules,
+  // which stops CimCmdlets from autoloading in the spawned 5.1 child.
+  assert.equal(env.PSModulePath, "C:\\Windows\\system32\\WindowsPowerShell\\v1.0\\Modules");
 });
