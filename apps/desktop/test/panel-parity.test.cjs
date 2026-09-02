@@ -73,23 +73,21 @@ test("#127 AC-001: `.owb-workspace-grid > .owb-turn-panel` is defined exactly on
   assert.equal(firstDecl(rules[0], "min-height"), "0");
 });
 
-test("#127 AC-001: `.owb-position-column` stretches to pair with the turn panel", () => {
+test("#127 AC-001: `.owb-position-column` never opts out of the row stretch", () => {
+  // The column stays as tall as the turn panel either by inheriting the
+  // parent's `align-items: stretch` (preferred, #120 AC-002 pins align-self
+  // to null/auto) or by an explicit `align-self: stretch`. What broke the
+  // layout was `align-self: start` — that must never come back.
   const rules = ruleBlocksMatching(".owb-position-column");
-  // Two blocks exist in-file (base + a re-declared block near the workspace
-  // layout section). Both must agree the column stretches.
-  const relevant = rules.filter((rule) => {
-    let hasAlignSelf = false;
-    rule.walkDecls("align-self", () => { hasAlignSelf = true; });
-    return hasAlignSelf;
-  });
-  assert.ok(relevant.length >= 1, "at least one `.owb-position-column` block must set align-self");
-  for (const rule of relevant) {
-    assert.equal(
-      firstDecl(rule, "align-self"),
-      "stretch",
-      "the position column must NOT start-align — it produced the empty-state height mismatch",
+  for (const rule of rules) {
+    const alignSelf = firstDecl(rule, "align-self");
+    assert.ok(
+      alignSelf === null || alignSelf === "stretch" || alignSelf === "auto",
+      `position column declares align-self: ${alignSelf}; only inherited stretch or explicit stretch/auto keep the pair equal-height`,
     );
   }
+  const grid = topLevelRuleBlocksMatching(".owb-workspace-grid")[0];
+  assert.equal(firstDecl(grid, "align-items"), "stretch");
 });
 
 test("#127 AC-002: single-column stacking (≤980px) preserves the min-height floor for both panels", () => {

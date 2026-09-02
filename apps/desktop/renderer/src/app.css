@@ -2394,21 +2394,31 @@
   font-weight: 600;
 }
 
-/* ---------- 主区：14px padding + 两栏 .92fr/1.14fr ---------- */
+/* ---------- 主区：14px padding + 两栏等宽 ---------- */
 
 .owb-main {
   gap: var(--ui-space-3, 12px);
   padding: 14px;
 }
 
+/* #120：桌面宽度下岗位区和对话区要读成“一对”。旧的 0.92fr/1.14fr 让左栏恒
+   窄一档；两轨不同的 px 下限（300/360）会在比例算不出来时接管轨道宽度，把
+   差值钉死，所以一并归零，等宽完全交给 1fr/1fr。
+   display 不能省：#130 单源化（issue #127）删掉了早先那个带 `display: grid` 的副本，之后
+   全文件再没有任何 .owb-workspace-grid 块声明 display，元素退回 display: block，
+   两栏变成上下堆叠、grid-template-columns 完全不生效。 */
 .owb-workspace-grid {
+  display: grid;
   height: 100%;
-  grid-template-columns: minmax(300px, 0.92fr) minmax(360px, 1.14fr);
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   gap: 14px;
   align-items: stretch;
 }
 
+/* minmax(0, …) 只保证轨道等宽。栅格项的自动最小尺寸是 min-content，轨道比
+   它窄时内容会顶出轨道，所以项自己放弃这个下限。 */
 .owb-workspace-grid > * {
+  min-width: 0;
   min-height: 0;
 }
 
@@ -2417,17 +2427,23 @@
   min-height: 0;
 }
 
-/* #127 AC-001: previously `align-self: start` on this column left the
- * position card visibly shorter than the turn panel (~50% delta in the
- * empty state), producing a broken-looking layout even though both cards
- * share the same `.owb-panel` shell. Stretching to match the turn panel
- * pairs the two visually — the PositionCard empty state centers `暂无
- * 数据 / 从左侧选择岗位查看档案` in the added space, and the loaded
- * state scrolls its own body via `.owb-pos-body { overflow: auto }`. */
+/* #127 + #120 合并口径：左栏必须与对话面板等高且卡片真正吃掉列高。
+ * `align-self: start` 时代左栏按内容收缩、比邻栏矮一截（#127 AC-001 的
+ * panel-parity 测试断言 align-self 只能 stretch）；`grid-template-rows:
+ * auto auto` 时代卡片不填列、列底留白（#120 的 org-panel-sizing 测试断言
+ * 首行必须 1fr、次行 auto）。两者合并：stretch 跟行高，minmax(0,1fr) 让
+ * 卡片吃剩余高度，裁撤行留列底，正文溢出交给 .owb-pos-body 自滚。 */
 .owb-position-column {
   min-height: 0;
   align-self: stretch;
-  grid-template-rows: auto auto;
+  grid-template-rows: minmax(0, 1fr) auto;
+}
+
+/* 拉伸带来的副作用：未选中岗位时卡片里只有一行提示，多出来的高度全堆在它下面。
+   复用 `.owb-groups__panel > .owb-panel__notice` 那两行，让提示吃满卡片并居中。 */
+.owb-position-column > .ui-org-position-card > .owb-panel__notice {
+  flex: 1;
+  align-content: center;
 }
 
 /* ---------- 通用面板（取代 antd Card 作为内容卡壳层） ---------- */
@@ -2525,6 +2541,9 @@
 .owb-pos-body {
   display: grid;
   align-content: start;
+  /* 卡片被列拉伸到全高时，正文是唯一的可伸缩区（上不涨就剩一片空白）；
+     列被短窗口压扁时，同一个 flex: 1 配上 overflow 让它自己滚。 */
+  flex: 1 1 auto;
   gap: 14px;
   min-height: 0;
   overflow: auto;
