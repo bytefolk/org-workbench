@@ -37,6 +37,7 @@ import {
   beginGroupRun,
   beginPendingTurn,
   cancelPendingTurn,
+  clearPersonalTurnState,
   reconcileGroupTimeline,
   resetStreamSeq,
   settlePendingTurn,
@@ -363,7 +364,7 @@ export function App() {
     selectedSessionIdRef.current = sessionId;
     setSelectedSessionId(sessionId);
     setTurns([]);
-    setTurnStream(EMPTY_TURN_STREAM);
+    setTurnStream((current) => clearPersonalTurnState(current));
     setTurnError(null);
   }, []);
 
@@ -404,7 +405,7 @@ export function App() {
       selectedSessionIdRef.current = session.sessionId;
       setSelectedSessionId(session.sessionId);
       setTurns([]);
-      setTurnStream(EMPTY_TURN_STREAM);
+      setTurnStream((current) => clearPersonalTurnState(current));
       await loadSessions(positionId);
     } catch {
       setTurnError("轮换会话失败：控制面不可达");

@@ -220,19 +220,26 @@ export function GroupsPanel({
     };
   }, [loadTimeline]);
 
-  const selectedLiveSignature = useMemo(() =>
-    Object.values(liveRuns)
+  const selectedReconcileSignature = useMemo(() => {
+    const live = Object.values(liveRuns)
       .filter((run) => run.groupRef === selectedRef)
-      .map((run) => [run.messageId ?? "", run.turnId ?? "", run.positionId, run.engine].join(":"))
+      .map((run) => ["live", run.messageId ?? "", run.turnId ?? "", run.positionId, run.engine].join(":"));
+    const persisted = timeline?.conversationRef === selectedRef
+      ? timeline.items
+          .flatMap((item) => item.kind === "member" && item.turn.status === "running"
+            ? [["persisted", item.turn.turnId, item.turn.positionId, item.turn.engine].join(":")]
+            : [])
+      : [];
+    return [...live, ...persisted]
       .sort((left, right) => left.localeCompare(right, "en"))
-      .join("|"),
-  [liveRuns, selectedRef]);
+      .join("|");
+  }, [liveRuns, selectedRef, timeline]);
 
   // SSE is a hint, not the source of truth. While this exact dispatch still
   // has live markers, retry a bounded number of authoritative timeline reads
   // so a dropped or late listener cannot leave the group permanently busy.
   useEffect(() => {
-    if (selectedRef === null || selectedLiveSignature === "") return;
+    if (selectedRef === null || selectedReconcileSignature === "") return;
     const conversationRef = selectedRef;
     let cancelled = false;
     let reads = 0;
@@ -250,7 +257,7 @@ export function GroupsPanel({
       cancelled = true;
       if (timer !== null) clearTimeout(timer);
     };
-  }, [loadTimeline, selectedLiveSignature, selectedRef]);
+  }, [loadTimeline, selectedReconcileSignature, selectedRef]);
 
   const selectedGroup = groups.find((group) => group.conversationRef === selectedRef) ?? null;
 

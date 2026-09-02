@@ -7,6 +7,7 @@ import type {
   GroupConversation,
   GroupTimeline,
   TurnRecord,
+  TurnRunDriver,
   WorkbenchSession,
   WorkbenchSessionList,
 } from "@org-workbench/shared";
@@ -314,6 +315,55 @@ test("group turn answers 202 with pre-assigned spawns and persists per-member re
     assert.ok(userItem !== undefined && userItem.kind === "user");
     assert.equal(userItem.input, "release status?");
     assert.deepEqual(userItem.mentions, ["repo-owner", "release-engineer"]);
+  } finally {
+    sse.close();
+    await server.close();
+  }
+});
+
+test("group driver failure publishes indeterminate with the complete exact attribution", async () => {
+  const failingDriver: TurnRunDriver = {
+    async turnRun() {
+      throw new Error("synthetic driver failure");
+    },
+  };
+  const server = await startTestServer(undefined, failingDriver);
+  const workspace = await copyExampleWorkspace();
+  const sse = connectSse(server.baseUrl, server.token);
+  try {
+    await openWorkspace(server.baseUrl, server.token, workspace);
+    const group = await createGroup(server.baseUrl, server.token);
+    const accepted = await api(server.baseUrl, `${routes.groups}/${group.conversationRef}/turns`, {
+      method: "POST",
+      token: server.token,
+      body: { input: "failure attribution", engine: "qoder", mentions: ["repo-owner"] },
+    });
+    assert.equal(accepted.status, 202);
+    const body = accepted.body as {
+      messageId: string;
+      spawns: Array<{ turnId: string; positionId: string }>;
+    };
+
+    const indeterminate = await sse.waitForEvent("turn.indeterminate", 10000);
+    const payload = (JSON.parse(indeterminate.data) as { payload: Record<string, unknown> }).payload;
+    assert.deepEqual(
+      {
+        groupRef: payload.groupRef,
+        conversationRef: payload.conversationRef,
+        messageId: payload.messageId,
+        turnId: payload.turnId,
+        positionId: payload.positionId,
+        engine: payload.engine,
+      },
+      {
+        groupRef: group.conversationRef,
+        conversationRef: group.conversationRef,
+        messageId: body.messageId,
+        turnId: body.spawns[0]!.turnId,
+        positionId: "repo-owner",
+        engine: "qoder",
+      },
+    );
   } finally {
     sse.close();
     await server.close();

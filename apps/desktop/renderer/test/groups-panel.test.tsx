@@ -217,6 +217,40 @@ describe("GroupsPanel collaboration visuals (#53)", () => {
     expect(screen.queryByText("working")).not.toBeInTheDocument();
   });
 
+  it("polls a persisted running turn to terminal when the listener attached after its spawn (#114)", async () => {
+    const running = { ...completedTurn(), status: "running" as const, output: undefined };
+    const runningTimeline: GroupTimeline = {
+      ...completedTimeline(),
+      items: [completedTimeline().items[0]!, { kind: "member", turn: running }],
+    };
+    const timeline = vi.fn()
+      .mockResolvedValueOnce({ status: 200, body: runningTimeline })
+      .mockResolvedValue({ status: 200, body: completedTimeline() });
+    const { container } = renderPanel({ timeline });
+
+    await waitFor(() => expect(screen.getByText("1 运行中")).toBeInTheDocument());
+    await waitFor(() => expect(timeline.mock.calls.length).toBeGreaterThanOrEqual(2), { timeout: 2500 });
+    await waitFor(() => expect(screen.getByText("OWNER_DONE")).toBeInTheDocument());
+    expect(container.querySelectorAll(".owb-bubble-row--employee")).toHaveLength(1);
+    expect(container.querySelectorAll(".is-running")).toHaveLength(0);
+  });
+
+  it("cancels persisted-running reconciliation when the panel unmounts (#114)", async () => {
+    const running = { ...completedTurn(), status: "running" as const, output: undefined };
+    const timelineBody: GroupTimeline = {
+      ...completedTimeline(),
+      items: [completedTimeline().items[0]!, { kind: "member", turn: running }],
+    };
+    const timeline = vi.fn().mockResolvedValue({ status: 200, body: timelineBody });
+    const { unmount } = renderPanel({ timeline });
+
+    await waitFor(() => expect(screen.getByText("1 运行中")).toBeInTheDocument());
+    expect(timeline).toHaveBeenCalledTimes(1);
+    unmount();
+    await new Promise((resolve) => setTimeout(resolve, 1_100));
+    expect(timeline).toHaveBeenCalledTimes(1);
+  });
+
   it("keeps a persisted running member busy while deduplicating its live buffer (#114)", async () => {
     const running = { ...completedTurn(), status: "running" as const, output: undefined };
     const timelineBody: GroupTimeline = {

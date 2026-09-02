@@ -285,8 +285,8 @@ export async function executeTurn(
       positionId: body.positionId,
       code: record.error?.code ?? "turn_protocol_invalid",
       envelopeDigest: envelope.envelopeDigest,
-      ...(group !== undefined ? { groupRef: group.groupRef } : {}),
-      ...(conversationRef !== undefined ? { conversationRef } : {}),
+      ...(group !== undefined ? { ...group, conversationRef: group.groupRef } : {}),
+      ...(group === undefined && conversationRef !== undefined ? { conversationRef } : {}),
     });
   } else {
     const terminal = result.events[result.events.length - 1];

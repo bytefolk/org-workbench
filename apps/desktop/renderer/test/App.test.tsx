@@ -336,6 +336,82 @@ describe("App runtime bridge", () => {
     expect(screen.getByLabelText("下达任务")).toBeDisabled();
   });
 
+  it("keeps a live group turn across personal session selection and rotation (#114)", async () => {
+    const group = {
+      schemaVersion: "conversation-group.v1" as const,
+      conversationRef: "33333333-3333-4333-8333-333333333333",
+      sessionId: "44444444-4444-4444-8444-444444444444",
+      members: ["repo-owner"],
+      createdAt: "2026-09-01T00:00:00.000Z",
+      updatedAt: "2026-09-01T00:00:00.000Z",
+    };
+    const historicalSession: WorkbenchSession = {
+      ...activeSession,
+      sessionId: "22222222-2222-4222-8222-222222222222",
+      status: "rotated",
+      rotatedTo: activeSession.sessionId,
+      rotatedAt: activeSession.createdAt,
+    };
+    const successor: WorkbenchSession = {
+      ...activeSession,
+      sessionId: "55555555-5555-4555-8555-555555555555",
+      rotatedFrom: activeSession.sessionId,
+    };
+    const rotateSession = vi.fn().mockResolvedValue({ status: 201, body: successor });
+    const createGroupTurn = vi.fn().mockResolvedValue({
+      status: 202,
+      body: {
+        conversationRef: group.conversationRef,
+        messageId: "message-1",
+        spawns: [{ turnId: "group-turn-1", positionId: "repo-owner" }],
+      },
+    });
+    openedBridge({
+      groups: vi.fn().mockResolvedValue({
+        status: 200,
+        body: { schemaVersion: "conversation-group-list.v1", groups: [group] },
+      }),
+      groupTimeline: vi.fn().mockResolvedValue({
+        status: 200,
+        body: { schemaVersion: "group-timeline.v1", conversationRef: group.conversationRef, items: [] },
+      }),
+      createGroupTurn,
+      sessions: vi.fn().mockResolvedValue({
+        status: 200,
+        body: {
+          schemaVersion: "workbench-session-list.v1",
+          positionId: "repo-owner",
+          activeSessionId: activeSession.sessionId,
+          sessions: [activeSession, historicalSession],
+        },
+      }),
+      rotateSession,
+    });
+
+    const { container } = render(<App />);
+    fireEvent.click(await screen.findByRole("button", { name: "群聊" }));
+    await screen.findByLabelText("群聊消息");
+    const mention = screen.getByLabelText("选择要 @ 的成员").querySelector("button");
+    expect(mention).not.toBeNull();
+    fireEvent.click(mention!);
+    fireEvent.change(screen.getByLabelText("群聊消息"), { target: { value: "保持群状态" } });
+    fireEvent.click(screen.getByRole("button", { name: "发送群消息" }));
+    await waitFor(() => expect(createGroupTurn).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(container.querySelectorAll(".owb-bubble-row--employee")).toHaveLength(1));
+
+    fireEvent.click(screen.getByRole("button", { name: "组织" }));
+    await selectRepoOwner();
+    pickSelectOption("选择本地会话", historicalSession.sessionId.slice(0, 8));
+    fireEvent.click(screen.getByRole("button", { name: "群聊" }));
+    await waitFor(() => expect(container.querySelectorAll(".owb-bubble-row--employee")).toHaveLength(1));
+
+    fireEvent.click(screen.getByRole("button", { name: "组织" }));
+    fireEvent.click(await screen.findByRole("button", { name: "轮换当前会话" }));
+    await waitFor(() => expect(rotateSession).toHaveBeenCalledWith(activeSession.sessionId));
+    fireEvent.click(screen.getByRole("button", { name: "群聊" }));
+    await waitFor(() => expect(container.querySelectorAll(".owb-bubble-row--employee")).toHaveLength(1));
+  });
+
   it("submits a drag move proposal and rejects a self-drop before IPC", async () => {
     const tree = {
       ...snapshot,

@@ -245,6 +245,17 @@ export function cancelPendingTurn(state: TurnStreamState): TurnStreamState {
   return { ...state, pending: null };
 }
 
+/** Session navigation owns only the 1:1 lane; group convergence is global. */
+export function clearPersonalTurnState(state: TurnStreamState): TurnStreamState {
+  return {
+    ...state,
+    pending: null,
+    runs: Object.fromEntries(
+      Object.entries(state.runs).filter(([, run]) => run.groupRef !== undefined),
+    ),
+  };
+}
+
 /**
  * The POST returned, so the server-side record is terminal and the history
  * reload is authoritative. Drop the pending marker and any live buffer that
@@ -256,9 +267,9 @@ export function settlePendingTurn(
 ): TurnStreamState {
   const runs: Record<string, LiveRunState> = {};
   for (const [runId, run] of Object.entries(state.runs)) {
-    const superseded = outcome.runId !== null
+    const superseded = run.groupRef === undefined && (outcome.runId !== null
       ? runId === outcome.runId
-      : run.positionId === outcome.positionId;
+      : run.positionId === outcome.positionId);
     if (!superseded) runs[runId] = run;
   }
   return { ...state, pending: null, runs };

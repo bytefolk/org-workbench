@@ -5,6 +5,7 @@ import {
   beginGroupRun,
   beginPendingTurn,
   cancelPendingTurn,
+  clearPersonalTurnState,
   reconcileGroupTimeline,
   settlePendingTurn,
 } from "../src/turns/turnStream";
@@ -108,6 +109,27 @@ describe("turn stream reducer", () => {
     const settled = applyTurnEvent(missed, started(1, "run-1"));
     const byPosition = settlePendingTurn(settled, { runId: null, positionId: "repo-owner" });
     expect(byPosition.runs).toEqual({});
+  });
+
+  it("personal settle/reset preserve same-position group runs and settled tombstones", () => {
+    let state = beginPendingTurn(EMPTY_TURN_STREAM, pending);
+    state = applyTurnEvent(state, started(1, "run-personal"));
+    state = beginGroupRun(state, groupSpawn("repo-owner", "turn-owner"));
+    state = applyTurnEvent(
+      state,
+      groupTerminal(2, "run-settled", "turn-settled", "release-engineer"),
+    );
+
+    const settled = settlePendingTurn(state, { runId: null, positionId: "repo-owner" });
+    expect(settled.runs["run-personal"]).toBeUndefined();
+    expect(settled.runs["turn-owner"]?.turnId).toBe("turn-owner");
+    expect(settled.settledGroupRuns["turn-settled"]?.turnId).toBe("turn-settled");
+
+    const reset = clearPersonalTurnState(state);
+    expect(reset.pending).toBeNull();
+    expect(reset.runs["run-personal"]).toBeUndefined();
+    expect(reset.runs["turn-owner"]?.turnId).toBe("turn-owner");
+    expect(reset.settledGroupRuns["turn-settled"]?.turnId).toBe("turn-settled");
   });
 
   it("cancel clears only the pending marker", () => {
