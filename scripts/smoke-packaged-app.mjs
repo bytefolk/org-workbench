@@ -447,7 +447,7 @@ export async function smokePackagedApp(platform, candidate, options = {}) {
     const launch = options.launch ?? launchApp;
     // Taken before launch so it is already present when the app writes its report
     // and looks for it. Released once this harness is done reading the process tree.
-    const lease = mode === "static" ? harnessLeasePath(report) : null;
+    const lease = mode === "static" ? harnessLeasePath(reportPath) : null;
     if (lease !== null) await fs.writeFile(lease, "held\n", { flag: "wx" });
     releaseLease = async () => {
       if (lease === null) return;
