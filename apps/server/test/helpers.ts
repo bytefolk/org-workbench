@@ -1,3 +1,4 @@
+import assert from "node:assert/strict";
 import fs from "node:fs/promises";
 import http from "node:http";
 import os from "node:os";
@@ -21,6 +22,18 @@ import { GroupStore } from "../src/groups/store.js";
 import { ContextExportService, type ContextAdapterClient } from "../src/context-export/exporter.js";
 
 export const TEST_TOKEN = "test-boot-token-0123456789abcdef";
+
+/**
+ * Assert POSIX permission bits on a file, skipping Windows: NTFS models
+ * permissions as ACLs, and Node reports synthetic 0o666/0o444 mode bits there
+ * regardless of the mode a file was written with, so the assertion only has
+ * meaning on platforms that model permission bits.
+ */
+export async function assertPosixMode(file: string, expected: number): Promise<void> {
+  if (process.platform === "win32") return;
+  const stat = await fs.stat(file);
+  assert.equal(stat.mode & 0o777, expected, `${file} must carry mode 0${expected.toString(8)}`);
+}
 
 export const EXAMPLE_WORKSPACE = fileURLToPath(
   new URL("../../../../examples/oss-maintainer", import.meta.url),

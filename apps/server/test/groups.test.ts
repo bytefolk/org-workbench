@@ -11,7 +11,7 @@ import type {
   WorkbenchSession,
   WorkbenchSessionList,
 } from "@org-workbench/shared";
-import { api, connectSse, copyExampleWorkspace, startTestServer } from "./helpers.js";
+import { api, assertPosixMode, connectSse, copyExampleWorkspace, startTestServer } from "./helpers.js";
 
 async function openWorkspace(baseUrl: string, token: string, dir: string): Promise<void> {
   const opened = await api(baseUrl, "/workspace/open", {
@@ -62,8 +62,8 @@ test("group create anchors a real session, persists 0o700/0o600 state, and lists
 
     // Storage discipline: dirs 0o700, records 0o600.
     const groupDir = path.join(workspace, ".digital-employee", "workbench", "groups", group.conversationRef);
-    assert.equal((await fs.stat(groupDir)).mode & 0o777, 0o700);
-    assert.equal((await fs.stat(path.join(groupDir, "group.json"))).mode & 0o777, 0o600);
+    await assertPosixMode(groupDir, 0o700);
+    await assertPosixMode(path.join(groupDir, "group.json"), 0o600);
 
     const listed = await api(server.baseUrl, routes.groups, { token: server.token });
     assert.equal(listed.status, 200);

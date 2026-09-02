@@ -6,6 +6,7 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { assertPosixMode } from "./helpers.js";
 
 /** The adapter is a standalone script implementing the pinned digital-employee
  * CLI surface; tests drive it exactly like driver-cli spawns an engine. */
@@ -463,7 +464,7 @@ test("qoder-engine org apply: bootstrap writes 0600 applied state and reports En
   assert.match(String(applied.organization), /^sha256:[0-9a-f]{64}$/);
 
   const runtime = path.join(dir, ".digital-employee");
-  assert.equal((await fs.stat(path.join(runtime, "org.json"))).mode & 0o777, 0o600);
+  await assertPosixMode(path.join(runtime, "org.json"), 0o600);
   const model = JSON.parse(await fs.readFile(path.join(runtime, "org.json"), "utf8")) as { roles: Array<{ id: string; reportTo: string | null; name: string }> };
   const docs = model.roles.find((role) => role.id === "docs-writer");
   assert.equal(docs?.reportTo, "repo-owner");
@@ -481,7 +482,7 @@ test("qoder-engine org apply: bootstrap writes 0600 applied state and reports En
     assert.match(role.package.digest, /^sha256:[0-9a-f]{64}$/);
     assert.ok(role.budget.perTask.tokens > 0);
   }
-  assert.equal((await fs.stat(path.join(runtime, "permissions.json"))).mode & 0o777, 0o600);
+  await assertPosixMode(path.join(runtime, "permissions.json"), 0o600);
 });
 
 test("qoder-engine org apply: a moved position is diffed against the previous applied state", async () => {
@@ -507,7 +508,7 @@ test("qoder-engine org apply: a stray top-level directory fails with the actiona
   assert.match(failed.message, /invalid top-level position entry: client-lead/);
 });
 
-test("qoder-engine turn run: maps qoder stream-json into engine.v1 events and passes --agent <position>", async () => {
+test("qoder-engine turn run: maps qoder stream-json into engine.v1 events and passes --agent <position>", { skip: process.platform === "win32" ? "requires POSIX exec of a shebang fixture; the Windows package smoke leg covers the win32 .cmd spawn path" : false }, async () => {
   const dir = await makeWorkspace();
   const fakeDir = await fs.mkdtemp(path.join(os.tmpdir(), "owb-fake-qoder-"));
   const argsFile = path.join(fakeDir, "args.json");
@@ -607,7 +608,7 @@ test("qoder-engine turn run: an unsupported permission mode fails before spawnin
   assert.equal((failed?.error as { retryable: boolean }).retryable, false);
 });
 
-test("qoder-engine turn run uses the same PATH resolver without an explicit binary override", async () => {
+test("qoder-engine turn run uses the same PATH resolver without an explicit binary override", { skip: process.platform === "win32" ? "requires POSIX exec of a shebang fixture; the Windows package smoke leg covers the win32 .cmd spawn path" : false }, async () => {
   const dir = await makeWorkspace();
   const fakeDir = await fs.mkdtemp(path.join(os.tmpdir(), "owb-qoder-path-"));
   const fakeBin = path.join(fakeDir, "qodercli");
@@ -626,7 +627,7 @@ test("qoder-engine turn run uses the same PATH resolver without an explicit bina
   assert.equal(events.at(-1)?.output, "release gate passed");
 });
 
-test("qoder-engine turn run: an error result becomes run.failed with retryable=false", async () => {
+test("qoder-engine turn run: an error result becomes run.failed with retryable=false", { skip: process.platform === "win32" ? "requires POSIX exec of a shebang fixture; the Windows package smoke leg covers the win32 .cmd spawn path" : false }, async () => {
   const dir = await makeWorkspace();
   const fakeDir = await fs.mkdtemp(path.join(os.tmpdir(), "owb-fake-qoder-"));
   const fakeBin = await writeFakeQoder(fakeDir, FAKE_QODER_ERROR_RESULT);

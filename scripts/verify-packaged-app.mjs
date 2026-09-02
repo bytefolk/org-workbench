@@ -24,8 +24,11 @@ function walkFiles(root, filter = () => true) {
   const files = [];
   const visit = (dir, prefix = "") => {
     for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
-      const relative = prefix.length > 0 ? path.join(prefix, entry.name) : entry.name;
-      if (relative === ".digital-employee" || relative.startsWith(`.digital-employee${path.sep}`)) continue;
+      // Build relative paths with POSIX separators on every platform: filter
+      // callbacks match literals such as "dist/", and path.join would emit
+      // backslash separators on Windows, silently excluding whole subtrees.
+      const relative = prefix.length > 0 ? `${prefix}/${entry.name}` : entry.name;
+      if (relative === ".digital-employee" || relative.startsWith(".digital-employee/")) continue;
       const absolute = path.join(dir, entry.name);
       // Windows electron-builder can materialize NTFS junctions inside the
       // packaged tree; those show up as symbolic links to lstat. Everywhere
@@ -33,7 +36,7 @@ function walkFiles(root, filter = () => true) {
       // tree, so we still reject links.
       assert.equal(entry.isSymbolicLink(), false, `runtime tree must not contain symlinks: ${absolute}`);
       if (entry.isDirectory()) visit(absolute, relative);
-      else if (entry.isFile() && filter(relative)) files.push(relative.split(path.sep).join("/"));
+      else if (entry.isFile() && filter(relative)) files.push(relative);
     }
   };
   visit(root);

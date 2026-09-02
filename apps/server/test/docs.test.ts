@@ -14,7 +14,7 @@ import {
   routes,
 } from "@org-workbench/shared";
 import type { DocsCreateResponse, DocsFileListResponse, DocsFileResponse, DocsResolveResponse } from "@org-workbench/shared";
-import { api, copyExampleWorkspace, startTestServer } from "./helpers.js";
+import { api, assertPosixMode, copyExampleWorkspace, startTestServer } from "./helpers.js";
 
 async function openWorkspace(baseUrl: string, token: string, dir: string): Promise<void> {
   const opened = await api(baseUrl, routes.workspaceOpen, {
@@ -154,8 +154,7 @@ test("docs create lands a 0600 file and registers an asset-record.v1 with the fr
     assert.match(body.assetId, /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
 
     const file = path.join(dir, "positions", "repo-owner", "notes", "runbook.md");
-    const stat = await fs.stat(file);
-    assert.equal(stat.mode & 0o777, 0o600, "created docs land at 0600");
+    await assertPosixMode(file, 0o600);
     assert.equal(await fs.readFile(file, "utf8"), "# Runbook\n");
 
     const recordRaw = JSON.parse(

@@ -27,6 +27,14 @@ const QODER_PERMISSION_MODES = new Set([
 ]);
 const QODER_CHILD_ENV_KEYS = [
   "PATH",
+  // Non-credential Windows process-startup keys: PATHEXT/ComSpec let cmd.exe
+  // interpret .cmd launcher scripts, and SystemRoot/WINDIR are required for
+  // child process creation. They mirror runtimeExecutableEnvironment.
+  "PATHEXT",
+  "SYSTEMROOT",
+  "SystemRoot",
+  "WINDIR",
+  "ComSpec",
   "HOME",
   "USER",
   "LOGNAME",
@@ -576,8 +584,13 @@ function turnRun(workspaceDir, positionId) {
       // tokens, and arbitrary server configuration stop here. Qoder and any
       // MCP descendants receive only their explicit runtime/credential contract.
       const qoderEnvironment = qoderChildEnvironment(process.env);
+      // Node refuses to exec Windows .bat/.cmd launcher scripts without a
+      // shell (CVE-2024-27980 hardening). Route exactly those resolved
+      // targets through cmd.exe; every other target keeps the shell-free spawn.
+      const needsWindowsShell = process.platform === "win32" && /\.(bat|cmd)$/i.test(qoderBin);
       child = spawn(qoderBin, args, {
         env: qoderEnvironment,
+        shell: needsWindowsShell,
         stdio: ["ignore", "pipe", "pipe"],
       });
     } catch {
