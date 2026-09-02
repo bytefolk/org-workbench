@@ -38,7 +38,7 @@
 - #73 无边框窗口自定义标题栏：`owb:window:minimize` / `owb:window:toggle-maximize` / `owb:window:close` 三个枚举式 IPC；每个 handler 均校验 `event.senderFrame` 是 mainWindow 自身主 frame 且仍在展示打包渲染层（`window-ipc.cjs` 纯函数 + 6 条负向单测），并对 mainWindow 加 `will-navigate`/`setWindowOpenHandler` 拦截，拒绝导航到打包文件之外的任何地址与新窗口。
 - `apps/desktop/test/contrast.test.cjs`：对 `--ui-foreground-subtle` 在亮/暗两套主题的全部 5 个背景阶做真实 WCAG 对比度计算断言（≥4.5:1），而非仅检查 token 字符串存在。
 - #94 主题切换入口：自定义标题栏新增亮/暗切换按钮（`aria-pressed` + 目标态 `title`/`aria-label`），`theme-mode.ts` 提供唯一的 `data-theme` 写入路径与 `localStorage` 持久化，`main.tsx` 在 `createRoot()` 前种子化。未显式选择过时跟随系统 `prefers-color-scheme`（含运行时变化），首次点击即固化为显式选择并停止跟随。`antd-skin.css` 的暗色调色板与 antd `darkAlgorithm`/`ANTD_SEED.dark` 自 #73 起已完备，此前只是无人可达。
-- #110 Lane A：新增 macOS arm64 / Windows x64 原生无产品签名的 unpacked staging、逐文件字节精确的运行时 inventory/拒绝清单、架构与签名状态核验，以及从源码树外 clean staging 启动后证明静态 renderer、控制面 ready 和严格 process-ownership 边界归零的 smoke；command/staging path 不授予 signal 权限。只扩展只读验证工作流，不含安装器、分发签名、发布或自动更新。#111 的 Finder PATH → Qoder/MCP fixture → turn/history 行为资格验证保留为独立 macOS-only command/schema，不与 static smoke 混称。Windows 原生结果需等待 `windows-latest` 实际运行，不能由本机 macOS 推断。
+- #110 Lane A：新增 macOS arm64 / Windows x64 原生无产品签名的 unpacked staging、逐文件字节精确的运行时 inventory/拒绝清单、架构与签名状态核验，以及从源码树外 clean staging 启动后证明静态 renderer、控制面 ready 和严格 process-ownership 边界归零的 smoke；command/staging path 不授予 signal 权限。只扩展只读验证工作流，不含安装器、分发签名、发布或自动更新。#111 的 Finder PATH → Qoder/MCP fixture → turn/history 行为资格验证保留为独立 macOS-only command/schema，不与 static smoke 混称。Windows 原生结果已由 `windows-latest` 在 head `59b7eaf` 实际运行验证（run 33601662786：package / verify / smoke 全绿，verifier 报告 33 required entries、189 packaged files、`authenticode-not-signed`）；该结果不外推到安装包、签名与自动更新路径，Windows 上的 Qoder 残留断言按构造未被执行，见 #131。
 
 ### Changed
 
