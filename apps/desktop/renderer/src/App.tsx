@@ -390,6 +390,34 @@ export function App() {
     }
   }, [loadSessions]);
 
+  /** #248 R2 ② 点人即聊：挂载该岗位的 active 会话，没有就自动创建，输入立即可用。 */
+  const ensureActiveSession = useCallback(async (positionId: string) => {
+    setSessionBusy(true);
+    setTurnError(null);
+    try {
+      const ok = await loadSessions(positionId);
+      if (ok && selectedSessionIdRef.current === null) {
+        const res = await window.owb.createSession({ positionId });
+        if (res.status === 201) {
+          const session = res.body as WorkbenchSession;
+          selectedSessionIdRef.current = session.sessionId;
+          setSelectedSessionId(session.sessionId);
+          await loadSessions(positionId);
+        }
+      }
+    } catch {
+      // 会话自动挂载失败不阻断：操作员仍可在「会话设置」里手动新建。
+    } finally {
+      setSessionBusy(false);
+    }
+  }, [loadSessions]);
+
+  /** #248 R2 ②：组织树点某人 = 直接打开与他的对话（一键）。 */
+  const openConversation = useCallback((positionId: string) => {
+    selectPosition(positionId);
+    void ensureActiveSession(positionId);
+  }, [selectPosition, ensureActiveSession]);
+
   const rotateSession = useCallback(async (sessionId: string) => {
     const positionId = selectedIdRef.current;
     if (positionId === null) return;
@@ -1027,6 +1055,11 @@ export function App() {
             selectedPositionId={selectedId}
           />
         ) : <div className="owb-org-module">
+          {/* #137 two-column workspace: the left column stacks the org chart
+              and the position-record card (aligned, one column); the right
+              column is owned solely by the conversation panel so the turn
+              stream gets the full module height. */}
+          <div className="owb-org-module__left">
           {/* P0 组织图：应用态汇报树节点图（纯展示，数据与侧栏树同源）。 */}
           <OrgChart
             snapshot={snapshot}
@@ -1036,9 +1069,8 @@ export function App() {
             displayModes={positionModes}
             avatarColors={positionColors}
             selectedId={selectedId}
-            onSelect={selectPosition}
+            onSelect={openConversation}
           />
-          <div className="owb-workspace-grid">
           <div className="owb-position-column">
             <PositionCard
               position={card.data}
@@ -1047,8 +1079,9 @@ export function App() {
               consumption={selectedBudgetRatio}
               running={selectedId !== null && runningPositionIds.has(selectedId)}
               onRefresh={() => void refresh()}
+              actions={selectedPosition && selectedId && selectedId !== snapshot?.owner ? <DismissPositionDialog positionName={selectedPosition.name} positionId={selectedId} descendantCount={selectedNode ? countDescendants(selectedNode) : 0} busy={orgBusy} onDismiss={() => dismissPosition(selectedId)} /> : undefined}
             />
-            {selectedPosition && selectedId && selectedId !== snapshot?.owner ? <div className="owb-position-actions"><DismissPositionDialog positionName={selectedPosition.name} positionId={selectedId} descendantCount={selectedNode ? countDescendants(selectedNode) : 0} busy={orgBusy} onDismiss={() => dismissPosition(selectedId)} /></div> : null}
+          </div>
           </div>
           <TurnPanel
             workspaceOpen={workspaceInfo?.open === true}
@@ -1075,7 +1108,6 @@ export function App() {
             onCreateSession={createSession}
             onRotateSession={rotateSession}
           />
-          </div>
         </div>}
       </div>
     </AppShell>

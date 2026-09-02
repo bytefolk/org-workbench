@@ -9,7 +9,7 @@ import type {
   TurnRunResult,
 } from "@org-workbench/shared";
 import { POSITION_ID_PATTERN } from "@org-workbench/shared";
-import { api, connectSse, copyExampleWorkspace, startTestServer } from "./helpers.js";
+import { api, assertPosixMode, connectSse, copyExampleWorkspace, startTestServer } from "./helpers.js";
 import {
   TurnStore,
   assertPositionId,
@@ -135,7 +135,7 @@ test("POST /turns seals one Qoder turn, persists it with 0600 mode, and publishe
       "turns",
       `${String(record.turnId)}.json`,
     );
-    assert.equal((await fs.stat(turnFile)).mode & 0o777, 0o600);
+    await assertPosixMode(turnFile, 0o600);
     const conversationFile = path.join(
       workspace,
       ".digital-employee",
@@ -144,8 +144,8 @@ test("POST /turns seals one Qoder turn, persists it with 0600 mode, and publishe
       "repo-owner",
       "conversation.json",
     );
-    assert.equal((await fs.stat(conversationFile)).mode & 0o777, 0o600);
-    assert.equal((await fs.stat(path.dirname(turnFile))).mode & 0o777, 0o700);
+    await assertPosixMode(conversationFile, 0o600);
+    await assertPosixMode(path.dirname(turnFile), 0o700);
     const persisted = await fs.readFile(turnFile, "utf8");
     assert.doesNotMatch(persisted, /QODER_PERSONAL_ACCESS_TOKEN|ANTHROPIC_API_KEY/);
   } finally {

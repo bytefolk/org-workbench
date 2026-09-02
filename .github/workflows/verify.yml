@@ -11,6 +11,17 @@ permissions:
 jobs:
   check:
     name: Node 24 / ${{ matrix.os }}
+    # This matrix is deliberately POSIX-only. Running the whole suite on
+    # windows-latest was tried and reverted: the suite is written against POSIX
+    # process and filesystem semantics, and the leg hung on `npm run check` for
+    # over an hour with no bounded failure to point at. Windows is covered by a
+    # purpose-built leg instead -- staging package, verify and smoke -- which is
+    # green. Re-adding this platform means porting the suite first, not just
+    # adding the runner.
+    #
+    # The bound below stays regardless: the staging jobs were always bounded and
+    # this one was not. Per-test bounds live in the node --test invocations.
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
@@ -52,8 +63,8 @@ jobs:
         working-directory: org-workbench
         run: npm run check
 
-  package-macos:
-    name: macOS arm64 / unsigned package smoke
+  staging-macos-arm64:
+    name: Unpacked staging smoke / macOS arm64
     runs-on: macos-15
     timeout-minutes: 30
     steps:
@@ -88,12 +99,154 @@ jobs:
         working-directory: org-workbench
         run: npm ci
 
-      - name: Build and verify unsigned application directory
+      - name: Stage unsigned macOS app
         working-directory: org-workbench
-        run: |
-          test "$(uname -m)" = "arm64"
-          npm run package:macos:unsigned
+        run: npm run package:staging:macos
 
-      - name: Run clean-staging packaged application smoke
+      - name: Verify macOS staging manifest
+        working-directory: org-workbench
+        run: npm run verify:package:macos
+
+      - name: Smoke macOS clean staging copy
         working-directory: org-workbench
         run: npm run smoke:package:macos
+
+      - name: Qualify packaged PATH and Qoder behavior
+        working-directory: org-workbench
+        run: npm run smoke:package:macos:behavior
+
+  staging-windows-x64:
+    name: Unpacked staging smoke / Windows x64
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - name: Check out org-workbench
+        uses: actions/checkout@v6
+        with:
+          path: org-workbench
+
+      - name: Check out pinned design system
+        uses: actions/checkout@v6
+        with:
+          repository: ${{ github.repository_owner }}/design-system
+          ref: 9d048faaabe0429a6a8720bfbb31418544237b6b
+          path: design-system
+
+      - name: Set up Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: |
+            design-system/package-lock.json
+            org-workbench/package-lock.json
+
+      - name: Build pinned design system
+        working-directory: design-system
+        run: |
+          npm ci
+          npm run build:package
+
+      - name: Install workbench
+        working-directory: org-workbench
+        run: npm ci
+
+      - name: Stage unsigned Windows app
+        working-directory: org-workbench
+        run: npm run package:staging:windows
+
+      - name: Verify Windows staging manifest
+        working-directory: org-workbench
+        run: npm run verify:package:windows
+
+      - name: Smoke Windows clean staging copy
+        working-directory: org-workbench
+        run: npm run smoke:package:windows
+
+  installers-macos-arm64:
+    name: Unsigned installers / macOS arm64
+    runs-on: macos-15
+    timeout-minutes: 30
+    steps:
+      - name: Check out org-workbench
+        uses: actions/checkout@v6
+        with:
+          path: org-workbench
+
+      - name: Check out pinned design system
+        uses: actions/checkout@v6
+        with:
+          repository: ${{ github.repository_owner }}/design-system
+          ref: 9d048faaabe0429a6a8720bfbb31418544237b6b
+          path: design-system
+
+      - name: Set up Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: |
+            design-system/package-lock.json
+            org-workbench/package-lock.json
+
+      - name: Build pinned design system
+        working-directory: design-system
+        run: |
+          npm ci
+          npm run build:package
+
+      - name: Install workbench
+        working-directory: org-workbench
+        run: npm ci
+
+      - name: Build unsigned macOS installers
+        working-directory: org-workbench
+        run: npm run package:dist:macos
+
+      - name: Verify macOS installer asset set
+        working-directory: org-workbench
+        run: npm run verify:dist:macos
+
+  installers-windows-x64:
+    name: Unsigned installers / Windows x64
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - name: Check out org-workbench
+        uses: actions/checkout@v6
+        with:
+          path: org-workbench
+
+      - name: Check out pinned design system
+        uses: actions/checkout@v6
+        with:
+          repository: ${{ github.repository_owner }}/design-system
+          ref: 9d048faaabe0429a6a8720bfbb31418544237b6b
+          path: design-system
+
+      - name: Set up Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: |
+            design-system/package-lock.json
+            org-workbench/package-lock.json
+
+      - name: Build pinned design system
+        working-directory: design-system
+        run: |
+          npm ci
+          npm run build:package
+
+      - name: Install workbench
+        working-directory: org-workbench
+        run: npm ci
+
+      - name: Build unsigned Windows installer
+        working-directory: org-workbench
+        run: npm run package:dist:windows
+
+      - name: Verify Windows installer asset set
+        working-directory: org-workbench
+        run: npm run verify:dist:windows
