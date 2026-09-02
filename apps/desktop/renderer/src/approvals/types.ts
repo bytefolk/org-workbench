@@ -20,6 +20,7 @@
  *     with no UI-shape change.
  */
 import type { TurnApprovalActionKind } from "@org-workbench/shared";
+import { zhText } from "@org-workbench/ui";
 
 export type ApprovalCategory = TurnApprovalActionKind;
 
@@ -55,11 +56,12 @@ export interface ApprovalQueueCallbacks {
   onDeny: (approvalId: string, reason?: string) => void;
 }
 
+/** #146：展示词面走 apr.kind.* 目录；该导出以 zh 目录为源保持旧值。 */
 export const APPROVAL_CATEGORY_LABEL: Record<ApprovalCategory, string> = {
-  exec: "命令执行",
-  write: "写入操作",
-  network: "网络访问",
-  tool: "工具调用",
+  exec: zhText("apr.kind.exec"),
+  write: zhText("apr.kind.write"),
+  network: zhText("apr.kind.network"),
+  tool: zhText("apr.kind.tool"),
 };
 
 /**

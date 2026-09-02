@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
 import { Button as AntButton, Input, Select as AntSelect } from "antd";
 import { ArrowUp, MessagesSquare, Plus, RefreshCw, Square } from "lucide-react";
 import type { WorkbenchSession } from "@org-workbench/shared";
+import { useT } from "@org-workbench/ui";
 import { PositionMention } from "./PositionMention";
 import { EngineIcon } from "./engine-icon";
 import { TurnThread } from "./TurnThread";
@@ -51,11 +52,18 @@ export interface TurnPanelProps {
 const ENGINE_LABEL: Record<TurnEngine, string> = {
   qoder: "Qoder",
   "claude-code": "Claude Code",
-  "claude-local": "Claude Code · 本地登录",
+  "claude-local": "Claude Code",
 };
 
-export function engineLabel(engine: TurnEngine): string {
-  return ENGINE_LABEL[engine];
+/** #146：引擎品牌名保持原文（数据面不迁）；只有 claude-local 的变体修饰词
+ * 走目录。同 locale 内返回的函数身份稳定。 */
+export function useEngineLabel(): (engine: TurnEngine) => string {
+  const t = useT();
+  return useCallback(
+    (engine: TurnEngine) =>
+      engine === "claude-local" ? `Claude Code · ${t("turn.claudeLocalSuffix")}` : ENGINE_LABEL[engine],
+    [t],
+  );
 }
 
 /** antd Select option list for the Agent Host picker (#57): brand icon + label
@@ -63,13 +71,14 @@ export function engineLabel(engine: TurnEngine): string {
 function engineSelectOptions(
   engines: readonly TurnEngine[],
   engineAvailability: Record<TurnEngine, TurnEngineAvailability>,
+  labelOf: (engine: TurnEngine) => string,
 ) {
   return engines.map((candidate) => ({
     value: candidate,
     label: (
       <span className="owb-engine-option">
         <EngineIcon engine={candidate} />
-        {ENGINE_LABEL[candidate]}
+        {labelOf(candidate)}
         {engineAvailability[candidate].ready
           ? " · Configured"
           : engineAvailability[candidate].configured
@@ -89,11 +98,11 @@ function isTurnEngine(value: unknown): value is TurnEngine {
  * shows icon + host name. Readiness is already stated in prose right under the
  * control (see the engine hint below) and in GroupsPanel's engine chip, so the
  * suffix is the redundant half and the right thing to drop here. */
-function engineTriggerLabel(engine: TurnEngine) {
+function engineTriggerLabel(engine: TurnEngine, labelOf: (engine: TurnEngine) => string) {
   return (
     <span className="owb-engine-option">
       <EngineIcon engine={engine} />
-      {ENGINE_LABEL[engine]}
+      {labelOf(engine)}
     </span>
   );
 }
@@ -118,15 +127,17 @@ export function EngineSelect({
   disabled?: boolean;
   onChange: (engine: TurnEngine) => void;
 }) {
+  const t = useT();
+  const labelOf = useEngineLabel();
   return (
     <AntSelect
-      aria-label="选择 Agent Host"
+      aria-label={t("turn.pickHost")}
       value={value}
       disabled={disabled}
       onChange={(next) => onChange(next as TurnEngine)}
-      options={engineSelectOptions(engines, engineAvailability)}
+      options={engineSelectOptions(engines, engineAvailability, labelOf)}
       labelRender={({ value: selected, label }) =>
-        isTurnEngine(selected) ? engineTriggerLabel(selected) : label}
+        isTurnEngine(selected) ? engineTriggerLabel(selected, labelOf) : label}
       popupMatchSelectWidth={false}
     />
   );
@@ -157,6 +168,8 @@ export function TurnPanel({
   onCreateSession,
   onRotateSession,
 }: TurnPanelProps) {
+  const t = useT();
+  const engineLabel = useEngineLabel();
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
   const selectedPosition = positions.find((position) => position.id === selectedPositionId) ?? null;
@@ -180,17 +193,17 @@ export function TurnPanel({
   const activeSession = sessions?.find((session) => session.status === "active") ?? null;
 
   const disabledReason = useMemo(() => {
-    if (!workspaceOpen) return "打开工作区后才能开始对话";
-    if (positions.length === 0) return "组织中暂无可对话岗位";
-    if (!selectedPosition) return "先从组织树或 @ 选择器选择岗位";
-    if (sessionMode && !selectedSession) return "请先新建或选择一个会话";
-    if (sessionMode && selectedSession?.status !== "active") return "历史会话只读；请选择当前会话";
+    if (!workspaceOpen) return t("turn.emptyOpenFirst");
+    if (positions.length === 0) return t("turn.noPositions");
+    if (!selectedPosition) return t("turn.emptyPick");
+    if (sessionMode && !selectedSession) return t("turn.emptySession");
+    if (sessionMode && selectedSession?.status !== "active") return t("turn.sessionReadOnly");
     if (!engineAvailability[engine].ready) {
-      return engineAvailability[engine].reason ?? `${ENGINE_LABEL[engine]} 尚未就绪`;
+      return engineAvailability[engine].reason ?? t("turn.engineNotReady", { engine: engineLabel(engine) });
     }
-    if (busy || sending || sessionBusy) return "会话或回合正在更新";
+    if (busy || sending || sessionBusy) return t("turn.updating");
     return null;
-  }, [busy, engine, engineAvailability, positions.length, selectedPosition, selectedSession, sending, sessionBusy, sessionMode, workspaceOpen]);
+  }, [busy, engine, engineAvailability, engineLabel, positions.length, selectedPosition, selectedSession, sending, sessionBusy, sessionMode, t, workspaceOpen]);
 
   const submit = async (event: FormEvent) => {
     event.preventDefault();
@@ -225,13 +238,13 @@ export function TurnPanel({
   };
 
   return (
-    <section className="owb-turn-panel owb-panel" aria-label="岗位对话">
+    <section className="owb-turn-panel owb-panel" aria-label={t("turn.panelAria")}>
       <header className="owb-turn-panel__header owb-panel-head">
         <div className="owb-panel-head__main">
           <span className="owb-turn-panel__eyebrow">TURN STREAM · EVIDENCE-FIRST</span>
           <h2>
             <MessagesSquare aria-hidden="true" size={15} />
-            本地对话
+            {t("turn.title")}
             {selectedPosition ? (
               <span className="owb-turn-panel__subject">· {selectedPosition.id}</span>
             ) : null}
@@ -251,7 +264,7 @@ export function TurnPanel({
       <TurnThread
         turns={turns}
         retrying={busy || sending}
-        emptyPrompt={disabledReason ?? "从一个明确任务开始"}
+        emptyPrompt={disabledReason ?? t("turn.emptyStart")}
         canRetry={(turn) => workspaceOpen && engineAvailability[turn.engine].ready && (!sessionMode || selectedSession?.status === "active")}
         onRetry={(turn) => void retry(turn)}
         onVerdict={onVerdictTurn === undefined ? undefined : (turn, decision, reason) => void onVerdictTurn(turn, decision, reason)}
@@ -259,13 +272,13 @@ export function TurnPanel({
       />
 
       <form className="owb-turn-composer" onSubmit={(event) => void submit(event)}>
-        <label htmlFor="owb-turn-input">下达任务</label>
+        <label htmlFor="owb-turn-input">{t("turn.compose")}</label>
         <div className="owb-turn-composer__surface">
           <Input.TextArea
             id="owb-turn-input"
             value={input}
             rows={3}
-            placeholder={selectedPosition ? `向 @${selectedPosition.name} 下达任务…` : "先选择一个岗位…"}
+            placeholder={selectedPosition ? t("turn.composeTo", { name: selectedPosition.name }) : t("turn.composePlaceholder")}
             disabled={disabledReason !== null}
             onChange={(event) => setInput(event.target.value)}
             onKeyDown={(event) => {
@@ -288,8 +301,8 @@ export function TurnPanel({
             <AntButton
               danger
               disabled={cancelling || !selectedPosition}
-              aria-label="中断回合"
-              title="中断回合（⌘.）"
+              aria-label={t("turn.interrupt")}
+              title={t("turn.interruptTitle")}
               icon={<Square aria-hidden="true" size={15} />}
               onClick={() => {
                 if (selectedPosition) void onCancelTurn?.(selectedPosition.id);
@@ -300,7 +313,7 @@ export function TurnPanel({
               type="primary"
               htmlType="submit"
               disabled={disabledReason !== null || input.trim().length === 0}
-              aria-label="发送任务"
+              aria-label={t("turn.send")}
               icon={<ArrowUp aria-hidden="true" size={15} />}
             />
           )}
@@ -310,8 +323,8 @@ export function TurnPanel({
           <p className="owb-turn-composer__hint" role="status">
           {runningTurn
             ? cancelling
-              ? "正在请求控制面中断引擎进程…"
-              : "回合运行中：点击中断或按 ⌘. 终止该岗位的在途回合"
+              ? t("turn.interrupting")
+              : t("turn.running")
             : disabledReason}
           </p>
         ) : null}
@@ -320,7 +333,7 @@ export function TurnPanel({
       {/* #248 R2 ③：对话岗位 / 新建会话 / Agent Host 降级为默认收起的会话设置，
           值由点人即聊自动填充，不挡在聊天输入前面。 */}
       <details className="owb-turn-panel__settings">
-        <summary className="owb-turn-panel__settings-summary">会话设置</summary>
+        <summary className="owb-turn-panel__settings-summary">{t("turn.sessionSettings")}</summary>
         <div className="owb-turn-panel__settings-body">
           <div className="owb-turn-panel__controls">
             <PositionMention
@@ -342,7 +355,7 @@ export function TurnPanel({
           </div>
 
           {sessionMode && selectedSession ? (
-            <div className="owb-session-row" aria-label="当前会话">
+            <div className="owb-session-row" aria-label={t("turn.currentSession")}>
               <div className="owb-session-chip">
                 <span
                   className={selectedSession.status === "active" ? "owb-led owb-led--running" : "owb-led owb-led--off"}
@@ -350,7 +363,7 @@ export function TurnPanel({
                 />
                 <span className="owb-session-chip__kind">session</span>
                 <span className="owb-session-chip__id">
-                  {selectedSession.sessionId.slice(0, 8)} · {selectedSession.status === "active" ? "active" : "只读"}
+                  {selectedSession.sessionId.slice(0, 8)} · {selectedSession.status === "active" ? "active" : t("turn.sessionKindReadonly")}
                   {selectedPosition ? ` · ${selectedPosition.id}` : ""}
                 </span>
               </div>
@@ -358,20 +371,24 @@ export function TurnPanel({
           ) : null}
 
           {sessionMode ? (
-            <div className="owb-session-controls" aria-label="岗位会话">
+            <div className="owb-session-controls" aria-label={t("turn.positionSessions")}>
               <label>
-                <span className="owb-turn-control__label">本地会话</span>
+                <span className="owb-turn-control__label">{t("turn.session")}</span>
                 <AntSelect
-                  aria-label="选择本地会话"
+                  aria-label={t("turn.pickSession")}
                   value={selectedSessionId ?? undefined}
-                  placeholder="尚未创建会话"
+                  placeholder={t("turn.noSession")}
                   disabled={!workspaceOpen || !selectedPosition || sessionBusy || sessions.length === 0}
                   onChange={(next) => {
                     if (next) onSelectSession?.(next);
                   }}
                   options={sessions.map((session, index) => ({
                     value: session.sessionId,
-                    label: `${session.status === "active" ? "当前" : "只读"} · 会话 ${sessions.length - index} · ${session.sessionId.slice(0, 8)}`,
+                    label: t("turn.sessionOption", {
+                      kind: session.status === "active" ? t("turn.sessionKindActive") : t("turn.sessionKindReadonly"),
+                      index: sessions.length - index,
+                      shortId: session.sessionId.slice(0, 8),
+                    }),
                   }))}
                 />
               </label>
@@ -381,7 +398,7 @@ export function TurnPanel({
                   onClick={() => void onRotateSession?.(activeSession.sessionId)}
                   icon={<RefreshCw aria-hidden="true" size={13} />}
                 >
-                  轮换当前会话
+                  {t("turn.rotate")}
                 </AntButton>
               ) : (
                 <AntButton
@@ -389,7 +406,7 @@ export function TurnPanel({
                   onClick={() => void onCreateSession?.()}
                   icon={<Plus aria-hidden="true" size={13} />}
                 >
-                  新建会话
+                  {t("turn.newSession")}
                 </AntButton>
               )}
             </div>
@@ -397,7 +414,7 @@ export function TurnPanel({
 
           {/* 设计稿 .boundaries：host / mode / budget 三枚实况 chip。全部来自
               /health 与 /positions/:id 的事实，缺失即显示 —，不猜。 */}
-          <div className="owb-turn-panel__boundaries" aria-label="能力边界">
+          <div className="owb-turn-panel__boundaries" aria-label={t("turn.boundaries")}>
             <span className="owb-boundary">
               <b>host</b>
               {engineLabel(engine)} — {engineAvailability[engine].ready
@@ -411,8 +428,8 @@ export function TurnPanel({
               {selectedMode === null
                 ? "—"
                 : selectedMode === "read_only"
-                  ? "read_only · 只读"
-                  : "approval_required · 需批准"}
+                  ? `read_only · ${t("pos.readOnly")}`
+                  : `approval_required · ${t("pos.approval")}`}
             </span>
             <span className="owb-boundary">
               <b>budget</b>

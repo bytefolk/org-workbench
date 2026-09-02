@@ -126,6 +126,7 @@ describe("orgChartBudgetLabel（预算徽标口径：与 perTaskBudgetLabel 同�
   it("点击阈值：小于 4px 的移动不进入 pan，节点点击不受拖拽影响 (#137 review)", () => {
     const { container } = render(<OrgChart snapshot={snapshot} />);
     const body = container.querySelector("#owb-org-chart-body") as HTMLElement;
+    const stage = () => body.querySelector(".owb-org-chart__stage") as HTMLElement;
     fireEvent(body, new MouseEvent("pointerdown", { button: 0, clientX: 120, clientY: 80, bubbles: true }));
     fireEvent(body, new MouseEvent("pointermove", { button: 0, clientX: 118, clientY: 80, bubbles: true }));
     expect(stage().style.transform).toContain("translate(0px");

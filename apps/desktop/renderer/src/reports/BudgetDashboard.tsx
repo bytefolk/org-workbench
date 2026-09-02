@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { Alert, Badge, Empty, Input, Segmented, Skeleton, Statistic, Table, Tag, Tooltip } from "antd";
 import type { ColumnsType } from "antd/es/table";
-import { BudgetBar } from "@org-workbench/ui";
+import { BudgetBar, useT, zhText } from "@org-workbench/ui";
 import type { BudgetReport, EscalationEntry } from "@org-workbench/shared";
 import { AlertTriangle, ArrowUpRight } from "lucide-react";
 import { BudgetDetailDrawer } from "./BudgetDetailDrawer";
@@ -50,16 +50,21 @@ function computeRatio(budget: BudgetReport): number | null {
   return budget.latestTurn.totalTokens / limit;
 }
 
-/** Format numbers with tabular-nums; kept side-effect free so tests can import. */
-export function budgetPercentText(ratio: number | null): string {
-  if (ratio === null) return "声明期";
+/** Format numbers with tabular-nums; kept side-effect free so tests can import.
+ * #146：声明期词面走目录；裸调用（测试）回退 zh 目录，渲染侧传入 t() 词面。 */
+export function budgetPercentText(ratio: number | null, declaredLabel: string = zhText("rep.declaredPhase")): string {
+  if (ratio === null) return declaredLabel;
   return `${Math.round(ratio * 100)}%`;
 }
 
+const STATE_LABEL_KEYS: Record<BudgetReport["state"], string> = {
+  exceeded: "rep.stateExceeded",
+  within: "rep.stateWithin",
+  unobserved: "rep.stateUnobserved",
+};
+
 export function stateLabel(state: BudgetReport["state"]): string {
-  if (state === "exceeded") return "已超出";
-  if (state === "within") return "声明内";
-  return "无事实";
+  return zhText(STATE_LABEL_KEYS[state]);
 }
 
 export function BudgetDashboard({
@@ -70,6 +75,7 @@ export function BudgetDashboard({
   positionColors,
   onOpenTimeline,
 }: BudgetDashboardProps) {
+  const t = useT();
   const [filter, setFilter] = useState<FilterKey>("all");
   const [keyword, setKeyword] = useState("");
   const [openId, setOpenId] = useState<string | null>(null);
@@ -129,7 +135,7 @@ export function BudgetDashboard({
   const columns: ColumnsType<BudgetRow> = useMemo(
     () => [
       {
-        title: "岗位",
+        title: t("rep.colPosition"),
         dataIndex: "positionId",
         key: "position",
         width: 240,
@@ -148,11 +154,11 @@ export function BudgetDashboard({
         ),
       },
       {
-        title: "单任务消耗",
+        title: t("rep.colPerTask"),
         key: "perTask",
         render: (_: unknown, row: BudgetRow) => (
           <BudgetBar
-            label="单任务"
+            label={t("pos.perTask")}
             declared={{ taskLimit: row.declared.perTask, dailyLimit: null }}
             consumption={row.ratio}
             format="compact"
@@ -160,7 +166,7 @@ export function BudgetDashboard({
         ),
       },
       {
-        title: "单日",
+        title: t("pos.perDay"),
         key: "perDay",
         width: 200,
         render: (_: unknown, row: BudgetRow) => {
@@ -169,22 +175,22 @@ export function BudgetDashboard({
           return (
             <span className="owb-budget-dash__daily">
               <BudgetBar
-                label="单日"
+                label={t("pos.perDay")}
                 declared={{ taskLimit: null, dailyLimit: row.declared.perDay }}
                 consumption={null}
                 format="compact"
               />
               <span className="owb-budget-dash__daily-cap">
                 {typeof cap === "number"
-                  ? `未记录 · 上限 ${cap.toLocaleString()} ${unit}`
-                  : "未声明"}
+                  ? t("rep.dailyCap", { cap: cap.toLocaleString(), unit })
+                  : t("pos.undeclared")}
               </span>
             </span>
           );
         },
       },
       {
-        title: "累计记录",
+        title: t("rep.colRecorded"),
         key: "recorded",
         width: 140,
         align: "right" as const,
@@ -199,46 +205,46 @@ export function BudgetDashboard({
         ),
       },
       {
-        title: "状态",
+        title: t("rep.colState"),
         key: "state",
         width: 120,
         render: (_: unknown, row: BudgetRow) => {
           if (row.state === "exceeded") {
             return (
               <Tag className="owb-budget-dash__tag is-danger" bordered={false}>
-                已超出
+                {t("rep.stateExceeded")}
               </Tag>
             );
           }
           if (row.approaching) {
             return (
               <Tag className="owb-budget-dash__tag is-warning" bordered={false}>
-                逼近 {budgetPercentText(row.ratio)}
+                {t("rep.approaching", { pct: budgetPercentText(row.ratio, t("rep.declaredPhase")) })}
               </Tag>
             );
           }
           if (row.state === "within") {
             return (
               <Tag className="owb-budget-dash__tag is-success" bordered={false}>
-                声明内
+                {t("rep.stateWithin")}
               </Tag>
             );
           }
           return (
             <Tag className="owb-budget-dash__tag is-neutral" bordered={false}>
-              无事实
+              {t("rep.stateUnobserved")}
             </Tag>
           );
         },
       },
     ],
-    [],
+    [t],
   );
 
   if (loading) {
     return (
-      <section className="owb-budget-dash" aria-label="预算成本看板">
-        <div className="owb-budget-dash__summary" aria-label="摘要">
+      <section className="owb-budget-dash" aria-label={t("rep.dashAria")}>
+        <div className="owb-budget-dash__summary" aria-label={t("rep.summaryShort")}>
           {[0, 1, 2, 3].map((idx) => (
             <div className="owb-budget-dash__stat" key={idx}>
               <Skeleton.Input active size="small" />
@@ -249,7 +255,7 @@ export function BudgetDashboard({
           active
           paragraph={{ rows: 4 }}
           title={false}
-          aria-label="预算表格加载中"
+          aria-label={t("rep.tableLoading")}
         />
       </section>
     );
@@ -258,14 +264,14 @@ export function BudgetDashboard({
   const openBudget = openId ? rows.find((row) => row.positionId === openId) ?? null : null;
 
   return (
-    <section className="owb-budget-dash" aria-label="预算成本看板">
-      <div className="owb-budget-dash__summary" role="group" aria-label="预算摘要">
+    <section className="owb-budget-dash" aria-label={t("rep.dashAria")}>
+      <div className="owb-budget-dash__summary" role="group" aria-label={t("rep.summary")}>
         <div className="owb-budget-dash__stat" data-tone="neutral">
-          <Statistic title="岗位" value={summary.total} />
+          <Statistic title={t("rep.colPosition")} value={summary.total} />
         </div>
         <div className="owb-budget-dash__stat" data-tone="danger" data-testid="stat-exceeded">
           <Statistic
-            title="超限"
+            title={t("rep.statExceeded")}
             value={summary.exceeded}
             valueStyle={{
               color: summary.exceeded > 0 ? "var(--ui-danger)" : "var(--ui-foreground)",
@@ -274,7 +280,7 @@ export function BudgetDashboard({
         </div>
         <div className="owb-budget-dash__stat" data-tone="warning">
           <Statistic
-            title="逼近 (>=80%)"
+            title={t("rep.statApproaching")}
             value={summary.approaching}
             valueStyle={{
               color: summary.approaching > 0 ? "var(--ui-warning)" : "var(--ui-foreground)",
@@ -282,7 +288,7 @@ export function BudgetDashboard({
           />
         </div>
         <div className="owb-budget-dash__stat" data-tone="neutral">
-          <Statistic title="声明期" value={summary.unobserved} />
+          <Statistic title={t("rep.declaredPhase")} value={summary.unobserved} />
         </div>
       </div>
 
@@ -293,15 +299,15 @@ export function BudgetDashboard({
           className="owb-budget-dash__alert"
           type="error"
           showIcon
-          message={`${summary.exceeded} 个岗位已超出单任务声明`}
-          description="界不是预测，是已经发生的事实——点击表格中红条行查看详情。"
+          message={t("rep.exceededAlert", { count: summary.exceeded })}
+          description={t("rep.exceededAlertDesc")}
         />
       ) : null}
 
-      <div className="owb-budget-dash__toolbar" role="group" aria-label="筛选与搜索">
+      <div className="owb-budget-dash__toolbar" role="group" aria-label={t("rep.filterAria")}>
         <Input.Search
           allowClear
-          placeholder="按岗位 id / 名称过滤"
+          placeholder={t("rep.filterPh")}
           className="owb-budget-dash__search"
           value={keyword}
           onChange={(event) => setKeyword(event.target.value)}
@@ -311,10 +317,10 @@ export function BudgetDashboard({
           value={filter}
           onChange={(value) => setFilter(value as FilterKey)}
           options={[
-            { label: `全部 ${summary.total}`, value: "all" },
-            { label: `超限 ${summary.exceeded}`, value: "exceeded" },
-            { label: `逼近 ${summary.approaching}`, value: "approaching" },
-            { label: `声明期 ${summary.unobserved}`, value: "declared" },
+            { label: t("rep.filterAll", { count: summary.total }), value: "all" },
+            { label: t("rep.filterExceeded", { count: summary.exceeded }), value: "exceeded" },
+            { label: t("rep.filterApproaching", { count: summary.approaching }), value: "approaching" },
+            { label: t("rep.filterDeclared", { count: summary.unobserved }), value: "declared" },
           ]}
         />
       </div>
@@ -322,10 +328,10 @@ export function BudgetDashboard({
       {rows.length === 0 ? (
         <Empty
           className="owb-budget-dash__empty"
-          description="尚无预算事实——为岗位完成招聘（hire = 预算随附）后此处点亮"
+          description={t("rep.noBudgetFacts")}
         />
       ) : visibleRows.length === 0 ? (
-        <Empty className="owb-budget-dash__empty" description="该组合下没有预算事实" />
+        <Empty className="owb-budget-dash__empty" description={t("rep.noBudgetFactsFiltered")} />
       ) : (
         <Table<BudgetRow>
           className="owb-budget-dash__table"
@@ -357,10 +363,10 @@ export function BudgetDashboard({
       )}
 
       {budgetRelatedEscalations.length > 0 ? (
-        <div className="owb-budget-dash__escalations" aria-label="预算相关失败">
+        <div className="owb-budget-dash__escalations" aria-label={t("rep.budgetFailsAria")}>
           <header>
             <AlertTriangle aria-hidden="true" size={14} />
-            <h3>预算相关失败（{budgetRelatedEscalations.length}）</h3>
+            <h3>{t("rep.budgetFails", { count: budgetRelatedEscalations.length })}</h3>
           </header>
           <ul>
             {budgetRelatedEscalations.map((entry) => (
@@ -369,7 +375,7 @@ export function BudgetDashboard({
                 <strong>{positionNames?.[entry.positionId] ?? entry.positionId}</strong>
                 <code>{entry.code}</code>
                 <span className="owb-budget-dash__chain">
-                  汇报链 {entry.reportingChain.join(" → ") || "—"}
+                  {t("rep.reportingChain", { chain: entry.reportingChain.join(" → ") || "—" })}
                 </span>
                 {onOpenTimeline ? (
                   <button
@@ -377,7 +383,7 @@ export function BudgetDashboard({
                     className="owb-budget-dash__linkbtn"
                     onClick={() => onOpenTimeline(entry.positionId)}
                   >
-                    查看时间线
+                    {t("rep.openTimeline")}
                     <ArrowUpRight aria-hidden="true" size={12} />
                   </button>
                 ) : null}

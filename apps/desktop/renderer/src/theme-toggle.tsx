@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { Moon, Sun } from "lucide-react";
+import { useT } from "@org-workbench/ui";
 import { setThemeMode, type ThemeMode } from "./theme-mode";
 
 /** Live `data-theme` on <html> (main.tsx seeds it, see initThemeMode). antd's
@@ -27,8 +28,9 @@ export function useThemeMode(): ThemeMode {
  * readout, so hiding it by default would hide the very thing the control
  * reports (the same reasoning `.owb-wctl`'s icons were missing before #94). */
 export function ThemeToggle({ mode }: { mode: ThemeMode }) {
+  const t = useT();
   const next: ThemeMode = mode === "dark" ? "light" : "dark";
-  const label = next === "dark" ? "切换到深色主题" : "切换到浅色主题";
+  const label = next === "dark" ? t("misc.themeToDark") : t("misc.themeToLight");
   return (
     <button
       type="button"

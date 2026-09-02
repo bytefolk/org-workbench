@@ -3,6 +3,7 @@ import { Button, Empty, Skeleton } from "antd";
 import { cn } from "@fullstack-ai-infra/ui";
 import { ChartNoAxesColumn, Cloud, Crosshair, FileText, Info, RefreshCw, ShieldCheck, Zap } from "lucide-react";
 import { BudgetBar } from "./budget-bar";
+import { useT, type OwbT } from "./i18n";
 import type { PositionCardData } from "./types";
 import type { ContextSourceSummary } from "@org-workbench/shared";
 
@@ -44,9 +45,10 @@ export function PositionCard({
   actions,
   className,
 }: PositionCardProps) {
+  const t = useT();
   if (loading) {
     return (
-      <section className={cn("owb-panel", "ui-org-position-card", className)} aria-label="岗位档案">
+      <section className={cn("owb-panel", "ui-org-position-card", className)} aria-label={t("pos.title")}>
         <header className="owb-panel-head">
           <div className="owb-panel-head__main">
             <div className="owb-panel-head__eyebrow">POSITION · DEVICE RECORD</div>
@@ -66,23 +68,23 @@ export function PositionCard({
     return (
       <section
         className={cn("owb-panel", "ui-org-position-card", "ui-org-position-card--notice", className)}
-        aria-label="岗位档案"
+        aria-label={t("pos.title")}
       >
         <header className="owb-panel-head">
           <div className="owb-panel-head__main">
             <div className="owb-panel-head__eyebrow">POSITION · DEVICE RECORD</div>
-            <h2>岗位不可用</h2>
+            <h2>{t("pos.unavailable")}</h2>
           </div>
           <div className="owb-panel-head__right">
-            <span className="owb-badge owb-badge--muted">已裁撤</span>
+            <span className="owb-badge owb-badge--muted">{t("pos.dismissedBadge")}</span>
           </div>
         </header>
         <div className="owb-panel__notice">
           <Info aria-hidden="true" size={26} className="ui-org-position-card__notice-icon" />
-          <p>岗位已不存在（可能已裁撤）；目录保留在 backup，可从恢复区显式恢复。</p>
+          <p>{t("pos.gone")}</p>
           {onRefresh ? (
             <Button type="primary" icon={<RefreshCw aria-hidden="true" size={13} />} onClick={onRefresh}>
-              刷新组织树
+              {t("pos.refreshTree")}
             </Button>
           ) : null}
         </div>
@@ -94,45 +96,45 @@ export function PositionCard({
     return (
       <section
         className={cn("owb-panel", "ui-org-position-card", "ui-org-position-card--empty", className)}
-        aria-label="岗位档案"
+        aria-label={t("pos.title")}
       >
         <header className="owb-panel-head">
           <div className="owb-panel-head__main">
             <div className="owb-panel-head__eyebrow">POSITION · DEVICE RECORD</div>
-            <h2>岗位档案</h2>
+            <h2>{t("pos.title")}</h2>
           </div>
         </header>
         <div className="owb-panel__notice">
-          <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="从左侧选择岗位查看档案" />
+          <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={t("pos.empty")} />
         </div>
       </section>
     );
   }
 
   const readOnly = position.mode === "read_only";
-  const contextSources = position.contextSources ?? legacyContextSource(position);
+  const contextSources = position.contextSources ?? legacyContextSource(position, t);
   return (
-    <section className={cn("owb-panel", "ui-org-position-card", className)} aria-label="岗位档案">
+    <section className={cn("owb-panel", "ui-org-position-card", className)} aria-label={t("pos.title")}>
       <header className="owb-panel-head">
         <div className="owb-panel-head__main">
           <div className="owb-panel-head__eyebrow">POSITION · DEVICE RECORD</div>
           <h2>{position.name}</h2>
           <p className="owb-panel-head__sub">
             {position.id}
-            {position.reportTo ? ` — 汇报给 ${position.reportTo}` : " — 企业负责人"}
+            {position.reportTo ? ` — ${t("pos.reportTo", { name: position.reportTo })}` : ` — ${t("pos.owner")}`}
           </p>
         </div>
         <div className="owb-panel-head__right">
           {actions}
           <span className={cn("owb-badge", readOnly ? "owb-badge--read" : "owb-badge--approval")}>
             <Zap aria-hidden="true" size={11} />
-            {readOnly ? "只读" : "需批准"}
+            {readOnly ? t("pos.readOnly") : t("pos.approval")}
           </span>
           <span
             className={cn("owb-led", running && "owb-led--running")}
             role="img"
-            aria-label={running ? "回合运行中" : "岗位就绪"}
-            title={running ? "回合运行中" : "岗位就绪"}
+            aria-label={running ? t("pos.running") : t("pos.ready")}
+            title={running ? t("pos.running") : t("pos.ready")}
           />
         </div>
       </header>
@@ -143,7 +145,7 @@ export function PositionCard({
         <section className="owb-pos-section">
           <h3>
             <ChartNoAxesColumn aria-hidden="true" size={13} />
-            预算声明
+            {t("pos.budget")}
           </h3>
           <BudgetBar
             declared={
@@ -158,11 +160,11 @@ export function PositionCard({
         <section className="owb-pos-section">
           <h3>
             <ShieldCheck aria-hidden="true" size={13} />
-            权限摘要
+            {t("pos.perms")}
           </h3>
           <div className="owb-tagrow">
             {position.permissions.toolAllow.length === 0 ? (
-              <span className="owb-tag owb-tag--muted">无允许工具</span>
+              <span className="owb-tag owb-tag--muted">{t("pos.noAllow")}</span>
             ) : (
               position.permissions.toolAllow.map((tool) => (
                 <span key={tool} className="owb-tag">
@@ -181,28 +183,26 @@ export function PositionCard({
         <section className="owb-pos-section">
           <h3>
             <Crosshair aria-hidden="true" size={13} />
-            上下文来源
+            {t("pos.scope")}
           </h3>
           <div className="owb-context-sources">
             {contextSources.map((source) => (
               <ContextSourceRow key={source.id} source={source} />
             ))}
           </div>
-          <p className="owb-context-sources__hint">
-            左侧目录树只配置汇报关系；来源由 Workbench 统一绑定，mem/context 继续负责各自的数据与召回。
-          </p>
+          <p className="owb-context-sources__hint">{t("pos.contextSourcesHint")}</p>
         </section>
       </div>
     </section>
   );
 }
 
-function legacyContextSource(position: PositionCardData): ContextSourceSummary[] {
+function legacyContextSource(position: PositionCardData, t: OwbT): ContextSourceSummary[] {
   return [{
     id: "legacy-context-scope",
     kind: "workspace_docs",
-    name: "岗位上下文",
-    locator: position.contextScope || "未声明",
+    name: t("pos.legacyContextName"),
+    locator: position.contextScope || t("pos.undeclared"),
     binding: "bound",
     state: position.contextScope ? "ready" : "empty",
     readOnly: true,
@@ -210,21 +210,22 @@ function legacyContextSource(position: PositionCardData): ContextSourceSummary[]
 }
 
 function ContextSourceRow({ source }: { source: ContextSourceSummary }) {
+  const t = useT();
   const SourceIcon = source.kind === "workspace_docs"
     ? FileText
     : source.kind === "mem_drive"
       ? Cloud
       : Crosshair;
   const stateLabel = {
-    ready: source.kind === "workspace_docs" ? "已接入" : "已配置",
-    empty: "暂无内容",
-    not_configured: "未配置",
-    error: "读取失败",
+    ready: source.kind === "workspace_docs" ? t("pos.srcState.connected") : t("pos.srcState.configured"),
+    empty: t("pos.srcState.empty"),
+    not_configured: t("pos.srcState.notConfigured"),
+    error: t("pos.srcState.readFailed"),
   }[source.state];
-  const bindingLabel = source.binding === "bound" ? "当前绑定" : "可接入";
+  const bindingLabel = source.binding === "bound" ? t("pos.binding.bound") : t("pos.binding.available");
   const countLabel = source.itemCount === undefined
     ? ""
-    : ` · ${source.itemCount} ${source.kind === "workspace_docs" ? "份文档" : "条记录"}`;
+    : ` · ${t(source.kind === "workspace_docs" ? "pos.srcCount.docs" : "pos.srcCount.records", { count: source.itemCount })}`;
   return (
     <div className="owb-context-source">
       <div className="owb-context-source__head">
@@ -235,7 +236,7 @@ function ContextSourceRow({ source }: { source: ContextSourceSummary }) {
         </div>
         <span className={`owb-context-source__state is-${source.state}`}>{stateLabel}</span>
       </div>
-      <div className="owb-context-source__meta">{bindingLabel}{countLabel}{source.readOnly ? " · 只读" : ""}</div>
+      <div className="owb-context-source__meta">{bindingLabel}{countLabel}{source.readOnly ? t("pos.srcReadOnlySuffix") : ""}</div>
     </div>
   );
 }

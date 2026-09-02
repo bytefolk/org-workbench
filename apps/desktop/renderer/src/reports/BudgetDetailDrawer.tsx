@@ -1,5 +1,5 @@
 import { Button, Drawer, Statistic } from "antd";
-import { BudgetBar } from "@org-workbench/ui";
+import { BudgetBar, useT } from "@org-workbench/ui";
 import type { BudgetReport } from "@org-workbench/shared";
 import { ArrowUpRight } from "lucide-react";
 
@@ -12,11 +12,12 @@ export interface BudgetDetailDrawerProps {
 
 /** Right-side drawer with the full BudgetBar (per-task + per-day lanes) and the
  * raw evidence panels. Honest-lane rule: per-day never renders a percentage —
- * only the declared cap and「未记录」. */
+ * only the declared cap and the「unrecorded」word. */
 export function BudgetDetailDrawer({ open, budget, onClose, onOpenTimeline }: BudgetDetailDrawerProps) {
+  const t = useT();
   const title = budget
-    ? `${budget.displayName ?? budget.positionId} · 预算详情`
-    : "预算详情";
+    ? t("rep.budgetDetail", { name: budget.displayName ?? budget.positionId })
+    : t("rep.budgetDetailPlain");
   const ratio = budget?.ratio
     ?? (budget && budget.latestTurn && budget.declared.perTask.tokens
       ? budget.latestTurn.totalTokens / budget.declared.perTask.tokens
@@ -29,11 +30,11 @@ export function BudgetDetailDrawer({ open, budget, onClose, onOpenTimeline }: Bu
       title={title}
       width={420}
       destroyOnClose
-      aria-label="预算详情抽屉"
+      aria-label={t("rep.budgetDetailAria")}
     >
       {budget ? (
         <div className="owb-budget-drawer__body">
-          <section aria-label="声明与事实">
+          <section aria-label={t("rep.declaredFactsAria")}>
             <BudgetBar
               declared={{
                 taskLimit: budget.declared.perTask,
@@ -41,11 +42,11 @@ export function BudgetDetailDrawer({ open, budget, onClose, onOpenTimeline }: Bu
               }}
               consumption={ratio}
               format="full"
-              label="预算声明 × 事实"
+              label={t("rep.budgetBarLabel")}
             />
           </section>
-          <section aria-label="最近回合 usage" className="owb-budget-drawer__usage">
-            <h4>最近回合 usage</h4>
+          <section aria-label={t("rep.lastTurnUsageAria")} className="owb-budget-drawer__usage">
+            <h4>{t("rep.lastTurnUsage")}</h4>
             {budget.latestTurn ? (
               <div className="owb-budget-drawer__stats">
                 <Statistic title="input" value={budget.latestTurn.inputTokens} />
@@ -53,17 +54,17 @@ export function BudgetDetailDrawer({ open, budget, onClose, onOpenTimeline }: Bu
                 <Statistic title="total" value={budget.latestTurn.totalTokens} />
               </div>
             ) : (
-              <p className="owb-muted">尚未记录任何回合（声明期）</p>
+              <p className="owb-muted">{t("rep.noTurnsYet")}</p>
             )}
           </section>
-          <section aria-label="累计记录" className="owb-budget-drawer__usage">
-            <h4>累计记录</h4>
+          <section aria-label={t("rep.colRecorded")} className="owb-budget-drawer__usage">
+            <h4>{t("rep.colRecorded")}</h4>
             <div className="owb-budget-drawer__stats">
               <Statistic title="input" value={budget.recorded.inputTokens} />
               <Statistic title="output" value={budget.recorded.outputTokens} />
               <Statistic title="total" value={budget.recorded.totalTokens} />
             </div>
-            <p className="owb-muted">口径：全部已记录回合累计（非「今日」）</p>
+            <p className="owb-muted">{t("rep.recordedNote")}</p>
           </section>
           {onOpenTimeline ? (
             <div className="owb-budget-drawer__actions">
@@ -75,7 +76,7 @@ export function BudgetDetailDrawer({ open, budget, onClose, onOpenTimeline }: Bu
                 }}
                 icon={<ArrowUpRight size={14} />}
               >
-                查看时间线
+                {t("rep.openTimeline")}
               </Button>
             </div>
           ) : null}

@@ -20,6 +20,7 @@ import type {
   OrgTreeSnapshot,
   PositionMode,
 } from "@org-workbench/shared";
+import { useT } from "@org-workbench/ui";
 import { PositionAvatar } from "../PositionAvatar";
 
 /* jsdom / 无 rAF 环境退化为同步执行，缩放锚点补偿依旧可测。 */
@@ -46,9 +47,9 @@ export interface OrgChartProps {
   className?: string;
 }
 
-const MODE_LABEL: Record<PositionMode, string> = {
-  read_only: "只读",
-  approval_required: "需审批",
+const MODE_LABEL_KEYS: Record<PositionMode, string> = {
+  read_only: "pos.readOnly",
+  approval_required: "tree.needsApproval",
 };
 
 /** 预算徽标：单任务上限的紧凑写法（40k/task）。token 优先（引擎按 token 计费），
@@ -87,6 +88,7 @@ function ChartNode({
   selectedId,
   onSelect,
 }: ChartNodeProps) {
+  const t = useT();
   const name = displayNames?.[node.id] ?? node.id;
   const title = displayTitles?.[node.id] ?? node.id;
   const mode = displayModes?.[node.id];
@@ -94,8 +96,8 @@ function ChartNode({
   const selected = selectedId === node.id;
   const reportLine =
     node.reportTo === null
-      ? "组织根（无上级汇报线）"
-      : `汇报给 ${displayNames?.[node.reportTo] ?? node.reportTo}`;
+      ? t("tree.root")
+      : t("tree.reportsTo", { name: displayNames?.[node.reportTo] ?? node.reportTo });
   return (
     <div className="owb-org-chart__branch">
       <Tooltip title={`${name} · ${reportLine}`}>
@@ -104,7 +106,7 @@ function ChartNode({
           data-org-chart-node={node.id}
           className={`owb-org-chart__card${selected ? " is-selected" : ""}`}
           aria-pressed={selected}
-          aria-label={`岗位 ${name}（${reportLine}）`}
+          aria-label={t("tree.chartNodeAria", { name, reportLine })}
           onClick={() => onSelect?.(node.id)}
         >
           <span className="owb-org-chart__card-head">
@@ -121,7 +123,7 @@ function ChartNode({
           </span>
           <span className="owb-org-chart__card-foot">
             {budgetLabel ? (
-              <span className="owb-org-chart__budget" title="单任务预算声明">
+              <span className="owb-org-chart__budget" title={t("tree.budgetDeclaredTitle")}>
                 {budgetLabel}
               </span>
             ) : (
@@ -133,7 +135,7 @@ function ChartNode({
                 color={mode === "approval_required" ? "processing" : "default"}
                 className="owb-org-chart__mode"
               >
-                {MODE_LABEL[mode]}
+                {t(MODE_LABEL_KEYS[mode])}
               </Tag>
             ) : null}
           </span>
@@ -172,6 +174,7 @@ export function OrgChart({
   onSelect,
   className,
 }: OrgChartProps) {
+  const t = useT();
   const empty = snapshot === null || snapshot.tree.length === 0;
   const [collapsed, setCollapsed] = useState(false);
   const bodyRef = useRef<HTMLDivElement | null>(null);
@@ -272,7 +275,7 @@ export function OrgChart({
   return (
     <section
       className={`owb-panel owb-org-chart${collapsed ? " is-collapsed" : ""}${className ? ` ${className}` : ""}`}
-      aria-label="组织图"
+      aria-label={t("tree.chart")}
     >
       <header className="owb-org-chart__head">
         <button
@@ -280,22 +283,22 @@ export function OrgChart({
           className="owb-org-chart__toggle"
           aria-expanded={!collapsed}
           aria-controls="owb-org-chart-body"
-          aria-label={collapsed ? "展开组织图" : "折叠组织图"}
-          title={collapsed ? "展开组织图" : "折叠组织图"}
+          aria-label={collapsed ? t("tree.chartExpand") : t("tree.chartCollapse")}
+          title={collapsed ? t("tree.chartExpand") : t("tree.chartCollapse")}
           onClick={() => setCollapsed((v) => !v)}
         >
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.6} strokeLinecap="round" strokeLinejoin="round">
             <path d="M6 9l6 6 6-6" />
           </svg>
         </button>
-        <span className="owb-org-chart__head-title">组织图</span>
+        <span className="owb-org-chart__head-title">{t("tree.chart")}</span>
         {snapshot && !empty ? (
           <span className="owb-org-chart__zoom">
             <button
               type="button"
               className="owb-org-chart__toggle"
-              aria-label="缩小组织图"
-              title="缩小（触控板捏合同样可用）"
+              aria-label={t("tree.zoomOut")}
+              title={t("tree.zoomOutTitle")}
               disabled={zoom <= ZOOM_MIN}
               onClick={() => applyZoom(zoom / 1.1)}
             >
@@ -304,8 +307,8 @@ export function OrgChart({
             <button
               type="button"
               className="owb-org-chart__zoom-pct"
-              aria-label="重置缩放到 100%"
-              title="重置缩放"
+              aria-label={t("tree.zoomReset")}
+              title={t("tree.zoomTitle")}
               onClick={() => applyZoom(1)}
             >
               {Math.round(zoom * 100)}%
@@ -313,8 +316,8 @@ export function OrgChart({
             <button
               type="button"
               className="owb-org-chart__toggle"
-              aria-label="放大组织图"
-              title="放大（触控板捏合同样可用）"
+              aria-label={t("tree.zoomIn")}
+              title={t("tree.zoomInTitle")}
               disabled={zoom >= ZOOM_MAX}
               onClick={() => applyZoom(zoom * 1.1)}
             >
@@ -333,11 +336,11 @@ export function OrgChart({
         onPointerCancel={onPanEnd}
       >
         {loading ? (
-          <div className="owb-org-chart__loading" aria-label="组织图加载中">
+          <div className="owb-org-chart__loading" aria-label={t("tree.chartLoading")}>
             <Skeleton active title={false} paragraph={{ rows: 3 }} />
           </div>
         ) : empty ? (
-          <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无组织数据" />
+          <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={t("tree.chartEmpty")} />
         ) : (
           <div className="owb-org-chart__stage" style={{ transform: `translate(${view.x}px, ${view.y}px) scale(${view.scale})` }}>
             <div className="owb-org-chart__roots">
