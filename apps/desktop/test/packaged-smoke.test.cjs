@@ -1,5 +1,5 @@
 const assert = require("node:assert/strict");
-const { spawn } = require("node:child_process");
+const { spawn, spawnSync } = require("node:child_process");
 const { EventEmitter, once } = require("node:events");
 const fs = require("node:fs");
 const os = require("node:os");
@@ -23,6 +23,7 @@ const {
   signalBoundProcess,
   terminateNativeProcessTree,
   windowsPowerShellInvocation,
+  WINDOWS_POWERSHELL_SCRIPTS,
 } = require("../packaging/process-tree.cjs");
 
 const SMOKE_NONCE = "a".repeat(64);
@@ -682,4 +683,44 @@ test("windows powershell invocation keeps values out of the script text", () => 
   // pwsh 7 exports a PSModulePath without the Windows PowerShell system modules,
   // which stops CimCmdlets from autoloading in the spawned 5.1 child.
   assert.equal(env.PSModulePath, "C:\\Windows\\system32\\WindowsPowerShell\\v1.0\\Modules");
+});
+
+
+function powerShellParser() {
+  for (const candidate of ["pwsh", "powershell.exe"]) {
+    const probe = spawnSync(candidate, ["-NoProfile", "-Command", "$PSVersionTable.PSVersion.Major"], {
+      encoding: "utf8",
+    });
+    if (probe.status === 0) return candidate;
+  }
+  return null;
+}
+
+// Every Windows shell defect on this path so far has been a parse error that only a
+// native runner could surface, which made the Windows job the de facto syntax check.
+// Both GitHub runner images ship PowerShell, so the scripts get parsed here instead —
+// on every pull request, and hours before the packaging job runs.
+test("windows powershell scripts parse", { skip: powerShellParser() === null ? "no PowerShell on this host" : false }, () => {
+  const shell = powerShellParser();
+
+  for (const [name, script] of Object.entries(WINDOWS_POWERSHELL_SCRIPTS)) {
+    // Parse what powershell.exe actually receives: the decoded -EncodedCommand payload.
+    const { args } = windowsPowerShellInvocation(script);
+    const decoded = Buffer.from(args.at(-1), "base64").toString("utf16le");
+    assert.equal(decoded, script, `${name}: encoded payload does not round-trip`);
+
+    const parsed = spawnSync(
+      shell,
+      [
+        "-NoProfile",
+        "-NonInteractive",
+        "-Command",
+        "$e = $null; $src = [Console]::In.ReadToEnd();" +
+          " $null = [System.Management.Automation.Language.Parser]::ParseInput($src, [ref]$null, [ref]$e);" +
+          " if ($e.Count -gt 0) { $e | ForEach-Object { $_.Message }; exit 1 }",
+      ],
+      { encoding: "utf8", input: decoded },
+    );
+    assert.equal(parsed.status, 0, `${name} failed to parse:\n${parsed.stdout}${parsed.stderr}`);
+  }
 });

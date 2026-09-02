@@ -110,14 +110,44 @@ function listPosixProcesses(pid = null) {
   return parsePosixProcesses(listed.stdout);
 }
 
+// Script text is kept at module scope so the parse guard in the test suite can
+// check exactly what ships, rather than a re-typed copy of it. Each entry is a
+// standalone statement, so they are newline-joined: run together on one line the
+// parser sees `$a = 1 $b = 2` and rejects the whole script. -EncodedCommand is
+// what makes the newlines safe to transport.
+const INVENTORY_SCRIPT = [
+  "@(",
+  "Get-CimInstance Win32_Process |",
+  "Select-Object ProcessId,ParentProcessId,CommandLine,ExecutablePath,",
+  "@{Name='StartIdentity';Expression={$_.CreationDate.ToUniversalTime().Ticks.ToString()}}",
+  ") | ConvertTo-Json -Compress",
+].join("\n");
+
+const IDENTITY_SCRIPT = [
+  "$TargetPid = [int]$env:OWB_TARGET_PID",
+  "$cim = Get-CimInstance Win32_Process -Filter \"ProcessId=$TargetPid\"",
+  "if ($null -eq $cim) { exit 3 }",
+  "try { $process = [Diagnostics.Process]::GetProcessById($TargetPid) } catch { exit 3 }",
+  "[pscustomobject]@{",
+  "ProcessId=$cim.ProcessId; ParentProcessId=$cim.ParentProcessId;",
+  "StartIdentity=$cim.CreationDate.ToUniversalTime().Ticks.ToString();",
+  "HandleStartIdentity=$process.StartTime.ToUniversalTime().Ticks.ToString();",
+  "ExecutablePath=$process.MainModule.FileName; CommandLine=$cim.CommandLine",
+  "} | ConvertTo-Json -Compress",
+].join("\n");
+
+const TERMINATE_SCRIPT = [
+  "$TargetPid = [int]$env:OWB_TARGET_PID",
+  "$HandleStart = [string]$env:OWB_HANDLE_START",
+  "$Executable = [string]$env:OWB_EXECUTABLE",
+  "try { $process = [Diagnostics.Process]::GetProcessById($TargetPid) } catch { exit 3 }",
+  "if ($process.StartTime.ToUniversalTime().Ticks.ToString() -ne $HandleStart) { exit 4 }",
+  "if (-not [StringComparer]::OrdinalIgnoreCase.Equals($process.MainModule.FileName,$Executable)) { exit 4 }",
+  "$process.Kill(); if (-not $process.WaitForExit(5000)) { exit 5 }",
+].join("\n");
+
 function listWindowsProcesses() {
-  const script = [
-    "@(",
-    "Get-CimInstance Win32_Process |",
-    "Select-Object ProcessId,ParentProcessId,CommandLine,ExecutablePath,",
-    "@{Name='StartIdentity';Expression={$_.CreationDate.ToUniversalTime().Ticks.ToString()}}",
-    ") | ConvertTo-Json -Compress",
-  ].join(" ");
+  const script = INVENTORY_SCRIPT;
   const listed = windowsPowerShell(script);
   if (listed.status !== 0) throw new Error(`process inventory failed: ${listed.stderr ?? "unknown error"}`);
   const rows = JSON.parse(listed.stdout || "[]");
@@ -143,18 +173,7 @@ function readPosixExecutable(pid) {
 }
 
 function readWindowsBoundIdentity(pid) {
-  const script = [
-    "$TargetPid = [int]$env:OWB_TARGET_PID",
-    "$cim = Get-CimInstance Win32_Process -Filter \"ProcessId=$TargetPid\"",
-    "if ($null -eq $cim) { exit 3 }",
-    "try { $process = [Diagnostics.Process]::GetProcessById($TargetPid) } catch { exit 3 }",
-    "[pscustomobject]@{",
-    "ProcessId=$cim.ProcessId; ParentProcessId=$cim.ParentProcessId;",
-    "StartIdentity=$cim.CreationDate.ToUniversalTime().Ticks.ToString();",
-    "HandleStartIdentity=$process.StartTime.ToUniversalTime().Ticks.ToString();",
-    "ExecutablePath=$process.MainModule.FileName; CommandLine=$cim.CommandLine",
-    "} | ConvertTo-Json -Compress",
-  ].join(" ");
+  const script = IDENTITY_SCRIPT;
   const result = windowsPowerShell(script, { OWB_TARGET_PID: String(pid) });
   if (result.status === 3) return null;
   if (result.status !== 0) throw new Error(`process identity failed: ${result.stderr ?? "unknown error"}`);
@@ -214,15 +233,7 @@ async function waitForBoundProcessIdentity(pid, { timeoutMs = 5000 } = {}) {
 }
 
 function terminateBoundWindowsProcess(identity) {
-  const script = [
-    "$TargetPid = [int]$env:OWB_TARGET_PID",
-    "$HandleStart = [string]$env:OWB_HANDLE_START",
-    "$Executable = [string]$env:OWB_EXECUTABLE",
-    "try { $process = [Diagnostics.Process]::GetProcessById($TargetPid) } catch { exit 3 }",
-    "if ($process.StartTime.ToUniversalTime().Ticks.ToString() -ne $HandleStart) { exit 4 }",
-    "if (-not [StringComparer]::OrdinalIgnoreCase.Equals($process.MainModule.FileName,$Executable)) { exit 4 }",
-    "$process.Kill(); if (-not $process.WaitForExit(5000)) { exit 5 }",
-  ].join(" ");
+  const script = TERMINATE_SCRIPT;
   const killed = windowsPowerShell(script, {
     OWB_TARGET_PID: String(identity.pid),
     OWB_HANDLE_START: identity.handleStartTime,
@@ -458,6 +469,11 @@ async function terminateNativeProcessTree(rootIdentity, stagingRoot, provenance 
 }
 
 module.exports = {
+  WINDOWS_POWERSHELL_SCRIPTS: {
+    inventory: INVENTORY_SCRIPT,
+    identity: IDENTITY_SCRIPT,
+    terminate: TERMINATE_SCRIPT,
+  },
   bindNativeProcessIdentity,
   windowsPowerShellInvocation,
   descendantProcesses,
