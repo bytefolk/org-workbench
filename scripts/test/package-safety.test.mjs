@@ -169,6 +169,22 @@ test("windows signature inspection keeps the target path out of the PowerShell s
   assert.ok(args.at(-1).includes(`$env:${WINDOWS_SIGNATURE_TARGET_ENV}`));
 });
 
+test("windows signature inspection pins the Windows PowerShell module path", () => {
+  // The CI step runs under pwsh 7, whose PSModulePath omits the Windows PowerShell
+  // system modules; inheriting it makes Get-AuthenticodeSignature unresolvable.
+  const inherited = "C:\\Program Files\\PowerShell\\7\\Modules";
+  const { env } = windowsSignatureInspection("C:\\app\\Org Workbench.exe", {
+    SystemRoot: "C:\\Windows",
+    PSModulePath: inherited,
+  });
+
+  assert.equal(env.PSModulePath, "C:\\Windows\\system32\\WindowsPowerShell\\v1.0\\Modules");
+  assert.ok(!env.PSModulePath.includes(inherited));
+
+  const { env: fallback } = windowsSignatureInspection("C:\\app\\x.exe", {});
+  assert.equal(fallback.PSModulePath, "C:\\Windows\\system32\\WindowsPowerShell\\v1.0\\Modules");
+});
+
 test("mac signature classifier accepts only the observed unsealed linker ad-hoc state", () => {
   const verification = {
     status: 1,

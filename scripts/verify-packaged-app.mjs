@@ -289,6 +289,11 @@ export const WINDOWS_SIGNATURE_TARGET_ENV = "VERIFY_SIGNATURE_TARGET";
  * executable is named "Org Workbench.exe".
  */
 export function windowsSignatureInspection(executable, baseEnv = process.env) {
+  // CI runs this step under pwsh 7, which exports its own PSModulePath. Inheriting it
+  // leaves Windows PowerShell without its system module directory, so the built-in
+  // Microsoft.PowerShell.Security module fails to autoload and the cmdlet resolves to
+  // nothing. Pin the one directory the cmdlet actually needs.
+  const systemRoot = baseEnv.SystemRoot ?? baseEnv.SYSTEMROOT ?? "C:\\Windows";
   return {
     command: "powershell.exe",
     args: [
@@ -297,7 +302,11 @@ export function windowsSignatureInspection(executable, baseEnv = process.env) {
       "-Command",
       `(Get-AuthenticodeSignature -LiteralPath $env:${WINDOWS_SIGNATURE_TARGET_ENV}).Status.ToString()`,
     ],
-    env: { ...baseEnv, [WINDOWS_SIGNATURE_TARGET_ENV]: executable },
+    env: {
+      ...baseEnv,
+      PSModulePath: path.win32.join(systemRoot, "system32", "WindowsPowerShell", "v1.0", "Modules"),
+      [WINDOWS_SIGNATURE_TARGET_ENV]: executable,
+    },
   };
 }
 
