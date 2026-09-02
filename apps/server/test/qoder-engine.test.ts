@@ -1,10 +1,11 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
+import { constants as fsConstants } from "node:fs";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 /** The adapter is a standalone script implementing the pinned digital-employee
  * CLI surface; tests drive it exactly like driver-cli spawns an engine. */
@@ -40,6 +41,56 @@ const BUDGET = {
   perTask: { tokens: 20000, iterations: 8 },
   perDay: { tokens: 200000, iterations: 64 },
 };
+
+/** Byte-for-byte field values from the pinned digital-employee #194 fixture. */
+function upstreamHireEnvelope(): Record<string, unknown> {
+  return {
+    schemaVersion: "hire-request.v1alpha1",
+    workspaceRef: "ws-main",
+    packageRef: {
+      name: "team-answer",
+      version: "v1alpha1",
+      digest: "sha256:0123456789abcdef",
+    },
+    targetParentId: "pos-parent-1",
+    budget: {
+      perTask: { tokens: 50_000, iterations: 8 },
+      perDay: { tokens: 500_000 },
+    },
+    requestedBy: "cto",
+    deadline: "2026-01-01T00:00:00Z",
+    envelopeDigest: "sha256:abcdef0123456789",
+  };
+}
+
+type ReadBoundedHireFile = (file: string, options?: Record<string, unknown>) => Promise<string>;
+
+async function loadBoundedHireReader(): Promise<ReadBoundedHireFile> {
+  const module = await import(pathToFileURL(ADAPTER).href) as { readBoundedHireFile: ReadBoundedHireFile };
+  return module.readBoundedHireFile;
+}
+
+async function assertHireReadFailure(promise: Promise<string>, code: string): Promise<void> {
+  await assert.rejects(promise, (error: unknown) => {
+    assert.equal((error as { code?: string }).code, code);
+    return true;
+  });
+}
+
+async function writeHireEnvelope(dir: string, body: unknown): Promise<string> {
+  const file = path.join(dir, "hire-request.json");
+  await fs.writeFile(file, `${JSON.stringify(body, null, 2)}\n`, { mode: 0o600 });
+  return file;
+}
+
+async function exists(file: string): Promise<boolean> {
+  try {
+    await fs.lstat(file);
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 async function writePosition(dir: string, name: string): Promise<void> {
   await fs.mkdir(dir, { recursive: true });
@@ -105,6 +156,298 @@ test("qoder-engine: --version satisfies the driver probe surface", async () => {
   const result = await runAdapter(["--version"]);
   assert.equal(result.code, 0);
   assert.match(result.stdout.trim(), /^qoder-engine \d+\.\d+\.\d+$/);
+});
+
+test("qoder-engine hire validate: help advertises the bounded static contract", async () => {
+  const result = await runAdapter(["--help"]);
+  assert.equal(result.code, 0);
+  assert.match(result.stderr, /hire validate <file> --json/);
+});
+
+test("qoder-engine hire validate: accepts the pinned upstream opaque-digest fixture without effects", async (t) => {
+  const workspace = await makeWorkspace();
+  const fixtureDir = await fs.mkdtemp(path.join(os.tmpdir(), "owb-qoder-hire-"));
+  t.after(() => Promise.all([
+    fs.rm(workspace, { recursive: true, force: true }),
+    fs.rm(fixtureDir, { recursive: true, force: true }),
+  ]));
+  const envelope = upstreamHireEnvelope();
+  const file = await writeHireEnvelope(fixtureDir, envelope);
+  const marker = path.join(fixtureDir, "qoder-spawned");
+  const fakeQoder = await writeFakeQoder(
+    fixtureDir,
+    `#!/usr/bin/env node\nrequire("node:fs").writeFileSync(process.env.FAKE_QODER_SPAWN_MARKER, "spawned");\n`,
+  );
+  const before = await fs.readdir(path.join(workspace, "positions", "repo-owner"));
+
+  const result = await runAdapter(["hire", "validate", file, "--json"], {
+    env: { ORG_WORKBENCH_QODER_BIN: fakeQoder, FAKE_QODER_SPAWN_MARKER: marker },
+  });
+
+  assert.equal(result.code, 0, result.stderr);
+  assert.deepEqual(JSON.parse(result.stdout), { status: "valid", hire: envelope });
+  assert.equal(await exists(marker), false, "static hire validation never starts Qoder");
+  assert.deepEqual(await fs.readdir(path.join(workspace, "positions", "repo-owner")), before);
+  assert.equal(await exists(path.join(workspace, ".digital-employee")), false);
+});
+
+test("qoder-engine hire validate: preserves valid Unicode in bounded string fields", async (t) => {
+  const fixtureDir = await fs.mkdtemp(path.join(os.tmpdir(), "owb-qoder-hire-unicode-"));
+  t.after(() => fs.rm(fixtureDir, { recursive: true, force: true }));
+  const envelope = {
+    ...upstreamHireEnvelope(),
+    workspaceRef: "工作区/研发",
+    targetParentId: "岗位/负责人",
+    requestedBy: "产品负责人·修雨",
+  };
+  const file = await writeHireEnvelope(fixtureDir, envelope);
+
+  const result = await runAdapter(["hire", "validate", file, "--json"]);
+
+  assert.equal(result.code, 0, result.stderr);
+  assert.deepEqual(JSON.parse(result.stdout), { status: "valid", hire: envelope });
+});
+
+test("qoder-engine hire validate: malformed and too-short opaque digests fail closed before any effect", async (t) => {
+  const workspace = await makeWorkspace();
+  const fixtureDir = await fs.mkdtemp(path.join(os.tmpdir(), "owb-qoder-hire-invalid-"));
+  t.after(() => Promise.all([
+    fs.rm(workspace, { recursive: true, force: true }),
+    fs.rm(fixtureDir, { recursive: true, force: true }),
+  ]));
+  const marker = path.join(fixtureDir, "qoder-spawned");
+  const fakeQoder = await writeFakeQoder(
+    fixtureDir,
+    `#!/usr/bin/env node\nrequire("node:fs").writeFileSync(process.env.FAKE_QODER_SPAWN_MARKER, "spawned");\n`,
+  );
+  const before = await fs.readdir(path.join(workspace, "positions", "repo-owner"));
+  const cases: Array<{ name: string; body: Record<string, unknown>; code: string }> = [
+    {
+      name: "unknown root field",
+      body: { ...upstreamHireEnvelope(), approvedBy: "operator" },
+      code: "hire_request_unknown_field:approvedBy",
+    },
+    {
+      name: "missing budget",
+      body: (() => {
+        const body = upstreamHireEnvelope();
+        delete body.budget;
+        return body;
+      })(),
+      code: "hire_request_missing_budget",
+    },
+    {
+      name: "invalid deadline",
+      body: { ...upstreamHireEnvelope(), deadline: "not-a-date" },
+      code: "hire_request_invalid_field:deadline",
+    },
+    {
+      name: "opaque digest shorter than 16 characters",
+      body: {
+        ...upstreamHireEnvelope(),
+        envelopeDigest: "123456789012345",
+      },
+      code: "hire_request_invalid_field:envelopeDigest",
+    },
+  ];
+
+  for (const testCase of cases) {
+    const file = await writeHireEnvelope(fixtureDir, testCase.body);
+    const result = await runAdapter(["hire", "validate", file, "--json"], {
+      env: { ORG_WORKBENCH_QODER_BIN: fakeQoder, FAKE_QODER_SPAWN_MARKER: marker },
+    });
+    assert.equal(result.code, 1, testCase.name);
+    assert.deepEqual(JSON.parse(result.stdout), { status: "failed", code: testCase.code }, testCase.name);
+  }
+
+  const malformed = path.join(fixtureDir, "malformed.json");
+  await fs.writeFile(malformed, "{not-json", { mode: 0o600 });
+  const malformedResult = await runAdapter(["hire", "validate", malformed, "--json"]);
+  assert.equal(malformedResult.code, 1);
+  assert.deepEqual(JSON.parse(malformedResult.stdout), { status: "failed", code: "hire_request_invalid_json" });
+
+  const malformedUtf8 = path.join(fixtureDir, "malformed-utf8.json");
+  const markerBytes = Buffer.from("INVALID_UTF8_MARKER", "utf8");
+  const otherwiseValid = Buffer.from(JSON.stringify({
+    ...upstreamHireEnvelope(),
+    requestedBy: markerBytes.toString("utf8"),
+  }), "utf8");
+  const markerOffset = otherwiseValid.indexOf(markerBytes);
+  assert.notEqual(markerOffset, -1);
+  await fs.writeFile(malformedUtf8, Buffer.concat([
+    otherwiseValid.subarray(0, markerOffset),
+    Buffer.from([0x80]),
+    otherwiseValid.subarray(markerOffset + markerBytes.length),
+    Buffer.from("\n", "utf8"),
+  ]), { mode: 0o600 });
+  const malformedUtf8Result = await runAdapter(["hire", "validate", malformedUtf8, "--json"], {
+    env: { ORG_WORKBENCH_QODER_BIN: fakeQoder, FAKE_QODER_SPAWN_MARKER: marker },
+  });
+  assert.equal(malformedUtf8Result.code, 1);
+  assert.deepEqual(JSON.parse(malformedUtf8Result.stdout), { status: "failed", code: "hire_request_invalid_json" });
+  assert.equal(malformedUtf8Result.stderr, "", "fatal UTF-8 failure does not disclose request bytes");
+
+  const symlink = path.join(fixtureDir, "hire-request-link.json");
+  await fs.symlink(malformed, symlink);
+  const symlinkResult = await runAdapter(["hire", "validate", symlink, "--json"]);
+  assert.equal(symlinkResult.code, 1);
+  assert.deepEqual(JSON.parse(symlinkResult.stdout), { status: "failed", code: "hire_request_file_unreadable" });
+
+  const missingResult = await runAdapter(["hire", "validate", path.join(fixtureDir, "missing.json"), "--json"]);
+  assert.equal(missingResult.code, 1);
+  assert.deepEqual(JSON.parse(missingResult.stdout), { status: "failed", code: "hire_request_file_unreadable" });
+
+  const directoryResult = await runAdapter(["hire", "validate", fixtureDir, "--json"]);
+  assert.equal(directoryResult.code, 1);
+  assert.deepEqual(JSON.parse(directoryResult.stdout), { status: "failed", code: "hire_request_file_unreadable" });
+
+  const oversized = path.join(fixtureDir, "oversized.json");
+  await fs.writeFile(oversized, " ".repeat(256 * 1024 + 1), { mode: 0o600 });
+  const oversizedResult = await runAdapter(["hire", "validate", oversized, "--json"]);
+  assert.equal(oversizedResult.code, 1);
+  assert.deepEqual(JSON.parse(oversizedResult.stdout), { status: "failed", code: "hire_request_too_large" });
+
+  assert.equal(await exists(marker), false, "rejected hire envelopes never start Qoder");
+  assert.deepEqual(await fs.readdir(path.join(workspace, "positions", "repo-owner")), before);
+  assert.equal(await exists(path.join(workspace, ".digital-employee")), false);
+});
+
+test("qoder-engine hire read: deterministic pathname replacement race fails closed", async (t) => {
+  const fixtureDir = await fs.mkdtemp(path.join(os.tmpdir(), "owb-qoder-hire-race-"));
+  t.after(() => fs.rm(fixtureDir, { recursive: true, force: true }));
+  const requested = await writeHireEnvelope(fixtureDir, upstreamHireEnvelope());
+  const replacement = path.join(fixtureDir, "replacement.json");
+  const displaced = path.join(fixtureDir, "displaced.json");
+  await fs.writeFile(replacement, `${JSON.stringify({ ...upstreamHireEnvelope(), requestedBy: "replacement" })}\n`, { mode: 0o600 });
+  const readBoundedHireFile = await loadBoundedHireReader();
+
+  await assertHireReadFailure(
+    readBoundedHireFile(requested, {
+      hooks: {
+        beforeOpen: async () => {
+          await fs.rename(requested, displaced);
+          await fs.rename(replacement, requested);
+        },
+      },
+    }),
+    "hire_request_file_unreadable",
+  );
+});
+
+test("qoder-engine hire read: concurrent growth is detected by the MAX+1 positional read", async (t) => {
+  const fixtureDir = await fs.mkdtemp(path.join(os.tmpdir(), "owb-qoder-hire-growth-"));
+  t.after(() => fs.rm(fixtureDir, { recursive: true, force: true }));
+  const requested = await writeHireEnvelope(fixtureDir, upstreamHireEnvelope());
+  const readBoundedHireFile = await loadBoundedHireReader();
+  let grown = false;
+
+  await assertHireReadFailure(
+    readBoundedHireFile(requested, {
+      hooks: {
+        afterReadChunk: async () => {
+          if (grown) return;
+          grown = true;
+          await fs.appendFile(requested, Buffer.alloc(256 * 1024 + 1, 0x20));
+        },
+      },
+    }),
+    "hire_request_too_large",
+  );
+  assert.equal(grown, true);
+});
+
+test("qoder-engine hire read: same-inode same-length rewrite fails closed before effects", async (t) => {
+  const workspace = await makeWorkspace();
+  const fixtureDir = await fs.mkdtemp(path.join(os.tmpdir(), "owb-qoder-hire-rewrite-"));
+  t.after(() => Promise.all([
+    fs.rm(workspace, { recursive: true, force: true }),
+    fs.rm(fixtureDir, { recursive: true, force: true }),
+  ]));
+  const requested = await writeHireEnvelope(fixtureDir, upstreamHireEnvelope());
+  const original = await fs.readFile(requested, "utf8");
+  const replacement = original.replace('"requestedBy": "cto"', '"requestedBy": "bot"');
+  assert.notEqual(replacement, original);
+  assert.equal(Buffer.byteLength(replacement), Buffer.byteLength(original));
+  const beforeRequest = await fs.lstat(requested, { bigint: true });
+  const beforeWorkspace = await fs.readdir(path.join(workspace, "positions", "repo-owner"));
+  const qoderMarker = path.join(fixtureDir, "qoder-spawned");
+  const readBoundedHireFile = await loadBoundedHireReader();
+  let rewritten = false;
+
+  await assertHireReadFailure(
+    readBoundedHireFile(requested, {
+      hooks: {
+        afterReadChunk: async () => {
+          if (rewritten) return;
+          rewritten = true;
+          const writer = await fs.open(requested, "r+");
+          try {
+            const bytes = Buffer.from(replacement);
+            await writer.write(bytes, 0, bytes.length, 0);
+            await writer.sync();
+            await writer.utimes(new Date("2000-01-01T00:00:00.000Z"), new Date("2000-01-01T00:00:00.000Z"));
+          } finally {
+            await writer.close();
+          }
+          const afterRequest = await fs.lstat(requested, { bigint: true });
+          assert.equal(afterRequest.dev, beforeRequest.dev);
+          assert.equal(afterRequest.ino, beforeRequest.ino);
+          assert.equal(afterRequest.size, beforeRequest.size);
+          assert.notEqual(afterRequest.mtimeNs, beforeRequest.mtimeNs);
+          assert.notEqual(afterRequest.ctimeNs, beforeRequest.ctimeNs);
+        },
+      },
+    }),
+    "hire_request_file_unreadable",
+  );
+  assert.equal(rewritten, true);
+  assert.equal(await exists(qoderMarker), false, "rejected rewrite never starts Qoder");
+  assert.deepEqual(await fs.readdir(path.join(workspace, "positions", "repo-owner")), beforeWorkspace);
+  assert.equal(await exists(path.join(workspace, ".digital-employee")), false);
+});
+
+test("qoder-engine hire read: Windows/no-O_NOFOLLOW fallback remains bounded and fail-closed", async (t) => {
+  const fixtureDir = await fs.mkdtemp(path.join(os.tmpdir(), "owb-qoder-hire-win-"));
+  t.after(() => fs.rm(fixtureDir, { recursive: true, force: true }));
+  const requested = await writeHireEnvelope(fixtureDir, upstreamHireEnvelope());
+  const expected = await fs.readFile(requested, "utf8");
+  const readBoundedHireFile = await loadBoundedHireReader();
+  let windowsFlags: number | undefined;
+
+  const actual = await readBoundedHireFile(requested, {
+    platform: "win32",
+    constants: { O_RDONLY: fsConstants.O_RDONLY },
+    hooks: { beforeOpen: ({ flags }: { flags: number }) => { windowsFlags = flags; } },
+  });
+  assert.equal(actual, expected);
+  assert.equal(windowsFlags, fsConstants.O_RDONLY, "Windows fallback adds neither unavailable O_NOFOLLOW nor O_NONBLOCK");
+
+  if (fsConstants.O_NONBLOCK !== undefined) {
+    let posixFlags: number | undefined;
+    await readBoundedHireFile(requested, {
+      platform: "darwin",
+      constants: { O_RDONLY: fsConstants.O_RDONLY, O_NONBLOCK: fsConstants.O_NONBLOCK },
+      hooks: { beforeOpen: ({ flags }: { flags: number }) => { posixFlags = flags; } },
+    });
+    assert.equal((posixFlags ?? 0) & fsConstants.O_NONBLOCK, fsConstants.O_NONBLOCK, "POSIX adds O_NONBLOCK when available");
+  }
+
+  const replacement = path.join(fixtureDir, "windows-replacement.json");
+  const displaced = path.join(fixtureDir, "windows-displaced.json");
+  await fs.writeFile(replacement, `${JSON.stringify({ ...upstreamHireEnvelope(), requestedBy: "replacement" })}\n`, { mode: 0o600 });
+  await assertHireReadFailure(
+    readBoundedHireFile(requested, {
+      platform: "win32",
+      constants: { O_RDONLY: fsConstants.O_RDONLY },
+      hooks: {
+        beforeOpen: async () => {
+          await fs.rename(requested, displaced);
+          await fs.rename(replacement, requested);
+        },
+      },
+    }),
+    "hire_request_file_unreadable",
+  );
 });
 
 test("qoder-engine org apply: bootstrap writes 0600 applied state and reports EngineOrgApplySuccess", async () => {

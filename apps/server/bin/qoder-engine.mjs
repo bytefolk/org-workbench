@@ -1,18 +1,22 @@
 #!/usr/bin/env node
 /**
  * qoder-engine: implements the pinned digital-employee CLI surface
- * (`--version`, `org apply <ws> --json`, `turn run <ws> --position <id> --stdin`)
+ * (`--version`, `hire validate <file> --json`, `org apply <ws> --json`,
+ * `turn run <ws> --position <id> --stdin`)
  * on top of the qoder CLI, so org-workbench is directly runnable with Qoder as
  * the agent host. Contract mirroring: engine.v1 / workspace-org semantics are
  * frozen elsewhere; this adapter only translates, never invents.
  */
 import { spawn } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
+import { constants as fsConstants, realpathSync } from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
+import { TextDecoder } from "node:util";
 import { resolveQoderExecutable } from "../src/qoder-binary.js";
 
-const VERSION = "0.1.0";
+const VERSION = "0.2.0";
 const POSITION_ID_PATTERN = /^[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?$/;
 const QODER_PERMISSION_MODES = new Set([
   "default",
@@ -54,9 +58,309 @@ function qoderChildEnvironment(source) {
   }
   return environment;
 }
+const HIRE_REQUEST_SCHEMA_VERSION = "hire-request.v1alpha1";
+const HIRE_REQUEST_MAX_BYTES = 256 * 1024;
+const HIRE_ID_MAX_LENGTH = 256;
+const HIRE_DIGEST_MIN_LENGTH = 16;
+const HIRE_BUDGET_MAX = 1_000_000_000;
+const HIRE_PACKAGE_VERSION_PATTERN = /^v1alpha1(\.[0-9]+)?$/;
+const HIRE_REQUEST_FIELDS = [
+  "schemaVersion",
+  "workspaceRef",
+  "packageRef",
+  "targetParentId",
+  "budget",
+  "requestedBy",
+  "deadline",
+  "envelopeDigest",
+];
+const HIRE_PACKAGE_FIELDS = ["name", "version", "digest"];
+const HIRE_BUDGET_FIELDS = ["perTask", "perDay"];
+const HIRE_BUDGET_SCOPE_FIELDS = ["tokens", "iterations"];
+const HIRE_UTF8_DECODER = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true });
+
+/*
+ * Static mirror of digital-employee #194/#198 (b3d54bf). The adapter is a
+ * standalone packaged entrypoint, so importing an unbuilt workspace package
+ * would make the desktop contract depend on source layout. #113 adds only the
+ * frozen static validation surface; it does not turn validation into a
+ * provider call or replace the later org apply gate. In that pinned contract,
+ * envelopeDigest is an opaque sealed-turn reference with minLength 16.
+ */
 
 function sha256(text) {
   return `sha256:${createHash("sha256").update(text, "utf8").digest("hex")}`;
+}
+
+class HireValidationError extends Error {
+  constructor(code, message) {
+    super(message);
+    this.code = code;
+    this.name = "HireValidationError";
+  }
+}
+
+function hireError(code, message) {
+  return new HireValidationError(code, message);
+}
+
+function isPlainObject(value) {
+  return value !== null && typeof value === "object" && !Array.isArray(value) && Object.getPrototypeOf(value) === Object.prototype;
+}
+
+function assertKnownFields(value, allowed, objectPath) {
+  for (const key of Object.keys(value)) {
+    if (!allowed.includes(key)) {
+      const field = objectPath ? `${objectPath}.${key}` : key;
+      throw hireError(`hire_request_unknown_field:${field}`, `unknown field: ${field}`);
+    }
+  }
+}
+
+function assertHireId(value, field) {
+  if (typeof value !== "string" || value.trim().length === 0 || value.length > HIRE_ID_MAX_LENGTH) {
+    throw hireError(`hire_request_invalid_field:${field}`, `${field} must be a non-empty bounded string`);
+  }
+  return value;
+}
+
+function assertHireDigest(value, field) {
+  if (typeof value !== "string" || value.length < HIRE_DIGEST_MIN_LENGTH) {
+    throw hireError(`hire_request_invalid_field:${field}`, `${field} must be a bounded digest string`);
+  }
+  return value;
+}
+
+function validateHireBudgetScope(value, field) {
+  if (!isPlainObject(value)) {
+    throw hireError(`hire_request_invalid_field:${field}`, `${field} must be an object`);
+  }
+  assertKnownFields(value, HIRE_BUDGET_SCOPE_FIELDS, field);
+  const scope = {};
+  let present = 0;
+  for (const key of HIRE_BUDGET_SCOPE_FIELDS) {
+    const entry = value[key];
+    if (entry === undefined) continue;
+    if (!Number.isInteger(entry) || entry < 1 || entry > HIRE_BUDGET_MAX) {
+      throw hireError(
+        `hire_request_invalid_field:${field}.${key}`,
+        `${field}.${key} must be an integer between 1 and ${HIRE_BUDGET_MAX}`,
+      );
+    }
+    scope[key] = entry;
+    present += 1;
+  }
+  if (present === 0) {
+    throw hireError(`hire_request_invalid_field:${field}`, `${field} must declare tokens or iterations`);
+  }
+  return scope;
+}
+
+function validateHireBudget(value) {
+  if (!isPlainObject(value)) {
+    throw hireError("hire_request_invalid_field:budget", "budget must be an object");
+  }
+  assertKnownFields(value, HIRE_BUDGET_FIELDS, "budget");
+  if (value.perTask === undefined || value.perDay === undefined) {
+    const missing = value.perTask === undefined ? "perTask" : "perDay";
+    throw hireError(`hire_request_invalid_field:budget.${missing}`, `budget.${missing} is required`);
+  }
+  return {
+    perTask: validateHireBudgetScope(value.perTask, "budget.perTask"),
+    perDay: validateHireBudgetScope(value.perDay, "budget.perDay"),
+  };
+}
+
+function validateHirePackageRef(value) {
+  if (!isPlainObject(value)) {
+    throw hireError("hire_request_invalid_field:packageRef", "packageRef must be an object");
+  }
+  assertKnownFields(value, HIRE_PACKAGE_FIELDS, "packageRef");
+  const name = assertHireId(value.name, "packageRef.name");
+  if (typeof value.version !== "string" || !HIRE_PACKAGE_VERSION_PATTERN.test(value.version)) {
+    throw hireError("hire_request_invalid_field:packageRef.version", "packageRef.version is invalid");
+  }
+  return {
+    name,
+    version: value.version,
+    digest: assertHireDigest(value.digest, "packageRef.digest"),
+  };
+}
+
+function validateHireRequest(raw) {
+  if (!isPlainObject(raw)) {
+    throw hireError("hire_request_invalid_field:hireRequest", "hire request must be a JSON object");
+  }
+  assertKnownFields(raw, HIRE_REQUEST_FIELDS, "");
+  if (raw.schemaVersion !== HIRE_REQUEST_SCHEMA_VERSION) {
+    throw hireError("hire_request_invalid_field:schemaVersion", `schemaVersion must be ${HIRE_REQUEST_SCHEMA_VERSION}`);
+  }
+  const workspaceRef = assertHireId(raw.workspaceRef, "workspaceRef");
+  const packageRef = validateHirePackageRef(raw.packageRef);
+  const targetParentId = assertHireId(raw.targetParentId, "targetParentId");
+  if (raw.budget === undefined) {
+    throw hireError("hire_request_missing_budget", "budget is required");
+  }
+  const budget = validateHireBudget(raw.budget);
+  const requestedBy = assertHireId(raw.requestedBy, "requestedBy");
+  let deadline;
+  if (raw.deadline !== undefined) {
+    if (typeof raw.deadline !== "string" || Number.isNaN(Date.parse(raw.deadline))) {
+      throw hireError("hire_request_invalid_field:deadline", "deadline must be a valid ISO 8601 timestamp");
+    }
+    deadline = raw.deadline;
+  }
+  const envelopeDigest = assertHireDigest(raw.envelopeDigest, "envelopeDigest");
+  return {
+    schemaVersion: HIRE_REQUEST_SCHEMA_VERSION,
+    workspaceRef,
+    packageRef,
+    targetParentId,
+    budget,
+    requestedBy,
+    ...(deadline !== undefined ? { deadline } : {}),
+    envelopeDigest,
+  };
+}
+
+function assertHirePathStats(stats) {
+  if (stats.isSymbolicLink() || !stats.isFile()) {
+    throw hireError("hire_request_file_unreadable", "hire request must be a regular non-symlink file");
+  }
+}
+
+function assertHireHandleStats(stats) {
+  if (!stats.isFile()) {
+    throw hireError("hire_request_file_unreadable", "hire request must be a regular file");
+  }
+}
+
+function assertHireSize(stats) {
+  if (stats.size > BigInt(HIRE_REQUEST_MAX_BYTES)) {
+    throw hireError("hire_request_too_large", "hire request exceeds the bounded envelope size");
+  }
+}
+
+function sameHireSnapshot(left, right) {
+  return left.dev === right.dev &&
+    left.ino === right.ino &&
+    left.size === right.size &&
+    left.mtimeNs === right.mtimeNs &&
+    left.ctimeNs === right.ctimeNs;
+}
+
+function assertStableHireFile(pathStats, handleStats) {
+  if (!sameHireSnapshot(pathStats, handleStats)) {
+    throw hireError("hire_request_file_unreadable", "hire request file snapshot changed during validation");
+  }
+}
+
+/**
+ * Read one bounded immutable snapshot of the requested path. `options` exists
+ * only as a deterministic test seam; the CLI never accepts or populates it.
+ */
+export async function readBoundedHireFile(file, options = {}) {
+  const fileSystem = options.fileSystem ?? fs;
+  const constants = options.constants ?? fsConstants;
+  const platform = options.platform ?? process.platform;
+  const hooks = options.hooks ?? {};
+  let initial;
+  try {
+    initial = await fileSystem.lstat(file, { bigint: true });
+  } catch {
+    throw hireError("hire_request_file_unreadable", "hire request file is unreadable");
+  }
+  assertHirePathStats(initial);
+  assertHireSize(initial);
+
+  let handle;
+  try {
+    const noFollow = constants.O_NOFOLLOW ?? 0;
+    const nonBlock = platform === "win32" ? 0 : (constants.O_NONBLOCK ?? 0);
+    const flags = constants.O_RDONLY | noFollow | nonBlock;
+    await hooks.beforeOpen?.({ file, flags });
+    handle = await fileSystem.open(file, flags);
+    await hooks.afterOpen?.({ file, flags, handle });
+
+    const opened = await handle.stat({ bigint: true });
+    const pathAfterOpen = await fileSystem.lstat(file, { bigint: true });
+    assertHireHandleStats(opened);
+    assertHirePathStats(pathAfterOpen);
+    assertHireSize(opened);
+    assertHireSize(pathAfterOpen);
+    assertStableHireFile(initial, opened);
+    assertStableHireFile(pathAfterOpen, opened);
+
+    const buffer = Buffer.allocUnsafe(HIRE_REQUEST_MAX_BYTES + 1);
+    let totalBytes = 0;
+    while (totalBytes < buffer.length) {
+      const { bytesRead } = await handle.read(
+        buffer,
+        totalBytes,
+        buffer.length - totalBytes,
+        totalBytes,
+      );
+      if (bytesRead === 0) break;
+      totalBytes += bytesRead;
+      await hooks.afterReadChunk?.({ file, bytesRead, totalBytes, handle });
+    }
+    if (totalBytes > HIRE_REQUEST_MAX_BYTES) {
+      throw hireError("hire_request_too_large", "hire request exceeds the bounded envelope size");
+    }
+
+    const openedAfterRead = await handle.stat({ bigint: true });
+    const pathAfterRead = await fileSystem.lstat(file, { bigint: true });
+    assertHireHandleStats(openedAfterRead);
+    assertHirePathStats(pathAfterRead);
+    assertHireSize(openedAfterRead);
+    assertHireSize(pathAfterRead);
+    assertStableHireFile(opened, openedAfterRead);
+    assertStableHireFile(pathAfterRead, openedAfterRead);
+    if (openedAfterRead.size !== BigInt(totalBytes)) {
+      throw hireError("hire_request_file_unreadable", "hire request file size changed during validation");
+    }
+
+    try {
+      return HIRE_UTF8_DECODER.decode(buffer.subarray(0, totalBytes));
+    } catch {
+      throw hireError("hire_request_invalid_json", "hire request must be valid UTF-8 JSON");
+    }
+  } catch (error) {
+    if (error instanceof HireValidationError) throw error;
+    throw hireError("hire_request_file_unreadable", "hire request file is unreadable");
+  } finally {
+    await handle?.close().catch(() => {});
+  }
+}
+
+function emitHireFailure(code, json) {
+  if (json) process.stdout.write(`${JSON.stringify({ status: "failed", code })}\n`);
+  else process.stderr.write(`qoder-engine: ${code}\n`);
+  process.exitCode = 1;
+}
+
+async function hireValidate(file, json) {
+  let text;
+  try {
+    text = await readBoundedHireFile(file);
+  } catch (error) {
+    if (error instanceof HireValidationError) return emitHireFailure(error.code, json);
+    throw error;
+  }
+  let raw;
+  try {
+    raw = JSON.parse(text);
+  } catch {
+    return emitHireFailure("hire_request_invalid_json", json);
+  }
+  try {
+    const request = validateHireRequest(raw);
+    if (json) process.stdout.write(`${JSON.stringify({ status: "valid", hire: request })}\n`);
+    else process.stdout.write(`hire request valid: ${request.packageRef.name}@${request.packageRef.version}\n`);
+  } catch (error) {
+    if (error instanceof HireValidationError) return emitHireFailure(error.code, json);
+    throw error;
+  }
 }
 
 function now() {
@@ -342,23 +646,48 @@ function turnRun(workspaceDir, positionId) {
   });
 }
 
-const argv = process.argv.slice(2);
-if (argv.includes("--version") || argv.includes("-v")) {
-  console.log(`qoder-engine ${VERSION}`);
-} else if (argv[0] === "org" && argv[1] === "apply" && typeof argv[2] === "string") {
-  orgApply(argv[2]).catch((error) => {
-    console.log(JSON.stringify({ status: "failed", code: "qoder.org_apply_failed", message: String(error?.message ?? error).slice(0, 2000) }));
-    process.exit(0);
-  });
-} else if (argv[0] === "turn" && argv[1] === "run" && typeof argv[2] === "string") {
-  const positionIndex = argv.indexOf("--position");
-  const positionId = positionIndex >= 0 ? argv[positionIndex + 1] : undefined;
-  if (!positionId) {
-    console.error("qoder-engine: turn run requires --position <id>");
-    process.exit(1);
+function runCli(argv) {
+  if (argv.includes("--version") || argv.includes("-v")) {
+    console.log(`qoder-engine ${VERSION}`);
+  } else if (argv[0] === "hire" && (argv[1] === "--help" || argv[1] === "-h")) {
+    console.log("qoder-engine hire validate <file> [--json]\nstatic hire-request.v1alpha1 validation only; no Qoder or provider process is started");
+  } else if (
+    argv[0] === "hire" &&
+    argv[1] === "validate" &&
+    typeof argv[2] === "string" &&
+    (argv.length === 3 || (argv.length === 4 && argv[3] === "--json"))
+  ) {
+    hireValidate(argv[2], argv[3] === "--json").catch(() => {
+      emitHireFailure("hire_request_file_unreadable", argv[3] === "--json");
+    });
+  } else if (argv[0] === "org" && argv[1] === "apply" && typeof argv[2] === "string") {
+    orgApply(argv[2]).catch((error) => {
+      console.log(JSON.stringify({ status: "failed", code: "qoder.org_apply_failed", message: String(error?.message ?? error).slice(0, 2000) }));
+      process.exit(0);
+    });
+  } else if (argv[0] === "turn" && argv[1] === "run" && typeof argv[2] === "string") {
+    const positionIndex = argv.indexOf("--position");
+    const positionId = positionIndex >= 0 ? argv[positionIndex + 1] : undefined;
+    if (!positionId) {
+      console.error("qoder-engine: turn run requires --position <id>");
+      process.exit(1);
+    }
+    turnRun(argv[2], positionId);
+  } else {
+    console.error(`qoder-engine ${VERSION} — digital-employee CLI surface over the qoder CLI\nusage: qoder-engine [--version] | hire validate <file> --json | org apply <workspace> --json | turn run <workspace> --position <id> --stdin`);
+    process.exit(argv.length === 0 || argv.includes("--help") || argv.includes("-h") ? 0 : 1);
   }
-  turnRun(argv[2], positionId);
-} else {
-  console.error(`qoder-engine ${VERSION} — digital-employee CLI surface over the qoder CLI\nusage: qoder-engine [--version] | org apply <workspace> --json | turn run <workspace> --position <id> --stdin`);
-  process.exit(argv.length === 0 || argv.includes("--help") || argv.includes("-h") ? 0 : 1);
+}
+
+const invokedEntry = process.argv[1];
+let invokedDirectly = false;
+if (invokedEntry) {
+  try {
+    invokedDirectly = realpathSync(invokedEntry) === realpathSync(fileURLToPath(import.meta.url));
+  } catch {
+    invokedDirectly = false;
+  }
+}
+if (invokedDirectly) {
+  runCli(process.argv.slice(2));
 }

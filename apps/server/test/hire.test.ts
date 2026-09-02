@@ -3,7 +3,9 @@ import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
 import test from "node:test";
+import { fileURLToPath } from "node:url";
 import type { HireResult, OrganizationFile } from "@org-workbench/shared";
+import { DigitalEmployeeCliDriver } from "../src/engine/driver-cli.js";
 import { computeEnvelopeDigest } from "../src/turns/envelope.js";
 import { FakeDriver, api, connectSse, copyExampleWorkspace, startTestServer } from "./helpers.js";
 
@@ -18,6 +20,9 @@ const VALID_HIRE = {
     perDay: { tokens: 200000, iterations: 64 },
   },
 } as const;
+
+const QODER_ADAPTER = fileURLToPath(new URL("../../bin/qoder-engine.mjs", import.meta.url));
+const QODER_ADAPTER_COMMAND = `${JSON.stringify(process.execPath)} ${JSON.stringify(QODER_ADAPTER)}`;
 
 async function readJson<T>(file: string): Promise<T> {
   return JSON.parse(await fs.readFile(file, "utf8")) as T;
@@ -68,6 +73,84 @@ async function seedAppliedState(dir: string): Promise<void> {
     { mode: 0o600 },
   );
 }
+
+test("POST /hire: the bundled qoder-engine validates and applies a hire through both real spawn gates", async (t) => {
+  const driver = new DigitalEmployeeCliDriver(QODER_ADAPTER_COMMAND);
+  const server = await startTestServer(driver);
+  const dir = await copyExampleWorkspace();
+  t.after(() => fs.rm(dir, { recursive: true, force: true }));
+  try {
+    const opened = await api(server.baseUrl, "/workspace/open", {
+      method: "POST",
+      token: server.token,
+      body: { path: dir },
+    });
+    assert.equal(opened.status, 200);
+
+    const response = await api(server.baseUrl, "/hire", {
+      method: "POST",
+      token: server.token,
+      body: VALID_HIRE,
+    });
+    assert.equal(response.status, 200);
+    assert.equal((response.body as HireResult).status, "hired");
+
+    const applied = await readApplied(dir);
+    assert.ok(applied.roles.some((role) => role.id === "docs-writer"), "gate two publishes the staged employee");
+    const auditLines = (await fs.readFile(path.join(dir, ".digital-employee", "org-audit.jsonl"), "utf8"))
+      .trim()
+      .split("\n")
+      .map((line) => JSON.parse(line) as { actor: string; changes: { hired: Array<{ id: string }> } });
+    assert.equal(auditLines.at(-1)?.actor, "qoder-engine org apply");
+    assert.ok(auditLines.at(-1)?.changes.hired.some((role) => role.id === "docs-writer"));
+  } finally {
+    await server.close();
+  }
+});
+
+test("POST /hire: bundled validation rejects a too-short opaque digest before staging or org apply", async (t) => {
+  const spawned = new DigitalEmployeeCliDriver(QODER_ADAPTER_COMMAND);
+  let applyCalls = 0;
+  const driver = {
+    async hireValidate(file: string) {
+      const envelope = await readJson<Record<string, unknown>>(file);
+      envelope.envelopeDigest = "too-short";
+      await fs.writeFile(file, `${JSON.stringify(envelope, null, 2)}\n`, { mode: 0o600 });
+      return spawned.hireValidate(file);
+    },
+    async apply(workspaceDir: string) {
+      applyCalls += 1;
+      return spawned.apply(workspaceDir);
+    },
+  };
+  const server = await startTestServer(driver);
+  const dir = await copyExampleWorkspace();
+  t.after(() => fs.rm(dir, { recursive: true, force: true }));
+  try {
+    const opened = await api(server.baseUrl, "/workspace/open", {
+      method: "POST",
+      token: server.token,
+      body: { path: dir },
+    });
+    assert.equal(opened.status, 200);
+    const before = await fs.readdir(path.join(dir, "positions", "repo-owner"));
+
+    const response = await api(server.baseUrl, "/hire", {
+      method: "POST",
+      token: server.token,
+      body: VALID_HIRE,
+    });
+    assert.equal(response.status, 422);
+    assert.equal((response.body as { code: string }).code, "hire_request_invalid_field:envelopeDigest");
+    assert.equal(applyCalls, 0, "opaque digest rejection never opens the org apply gate");
+    assert.deepEqual(await fs.readdir(path.join(dir, "positions", "repo-owner")), before);
+    assert.equal(await exists(path.join(dir, "positions", "repo-owner", "docs-writer")), false);
+    assert.equal(await exists(path.join(dir, ".digital-employee", "org.json")), false);
+    assert.equal(await exists(path.join(dir, ".digital-employee", "org-audit.jsonl")), false);
+  } finally {
+    await server.close();
+  }
+});
 
 /** Deterministic engine double: hires whatever skeleton the control plane staged. */
 async function emulateEngineHire(dir: string): Promise<void> {

@@ -87,7 +87,7 @@ export interface TestServer {
 }
 
 export async function startTestServer(
-  driver?: FakeDriver,
+  driver?: OrgApplyDriver & HireValidateDriver,
   turnDriver: TurnRunDriver = new DefaultFakeTurnDriver(),
   contextExporter: ContextExportService = new ContextExportService(new UnavailableTestContextAdapter()),
 ): Promise<TestServer> {
