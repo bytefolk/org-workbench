@@ -57,6 +57,7 @@ import { GroupsPanel } from "./groups/GroupsPanel";
 import { DocsModule } from "./docs/DocsModule";
 import { ReportsCenter } from "./reports/ReportsCenter";
 import { ApprovalQueue, type ApprovalQueueItem } from "./approvals";
+import { decodeEscapedUnicode } from "./display-text";
 
 interface PositionCardState {
   loading: boolean;
@@ -180,7 +181,9 @@ export function App() {
         const cardEntries = await Promise.all(positionIds.map(async (id): Promise<[string, { name: string; color?: string; mode?: PositionMode; title?: string }]> => {
           const response = await window.owb.position(id);
           const body = response.body as { position?: PositionCardData };
-          const position = response.status === 200 ? body.position : undefined;
+          const position = response.status === 200 && body.position
+            ? normalizePositionForDisplay(body.position)
+            : undefined;
           const color = position?.metadata?.color;
           const title = position?.metadata?.title;
           return [id, {
@@ -237,7 +240,11 @@ export function App() {
       setCard({ loading: false, data: null, notFound: true });
       return;
     }
-    setCard({ loading: false, data: body?.position ?? null, notFound: false });
+    setCard({
+      loading: false,
+      data: body?.position ? normalizePositionForDisplay(body.position) : null,
+      notFound: false,
+    });
   }, []);
 
   const loadTurnHistory = useCallback(async (id: string) => {
@@ -1025,9 +1032,11 @@ export function App() {
         ) : activeModule === "approvals" ? (
           <ApprovalQueue
             items={approvalItems}
+            dataState="not-connected"
+            onNavigateToOrg={() => setActiveModule("org")}
             onApprove={(approvalId, reason) => {
-              // TODO(v0 gap): wire into onVerdictTurn once the queue is
-              // fed by the bounded-scan + SSE derivation path.
+              // TODO(v0 gap): wire into onVerdictTurn once the queue is fed
+              // by the bounded-scan + SSE derivation path.
               console.info("approval.approve", { approvalId, reason });
             }}
             onDeny={(approvalId, reason) => {
@@ -1190,6 +1199,22 @@ function perTaskBudgetLabel(position: PositionCardData | null): string | null {
  * button with an accessible name — the previous decorative dots sat under the
  * native frame and did nothing. Guarded with `?.` so the renderer still boots
  * against an older preload bridge (tests stub a partial bridge). */
+function normalizePositionForDisplay(position: PositionCardData): PositionCardData {
+  return {
+    ...position,
+    name: decodeEscapedUnicode(position.name),
+    description: decodeEscapedUnicode(position.description),
+    contextScope: decodeEscapedUnicode(position.contextScope),
+    permissions: {
+      toolAllow: position.permissions.toolAllow.map(decodeEscapedUnicode),
+      toolDeny: position.permissions.toolDeny.map(decodeEscapedUnicode),
+    },
+    metadata: Object.fromEntries(
+      Object.entries(position.metadata).map(([key, value]) => [key, decodeEscapedUnicode(value)]),
+    ),
+  };
+}
+
 function WindowControls() {
   return (
     <span className="owb-wintitle__controls">

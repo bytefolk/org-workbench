@@ -12,8 +12,8 @@
  *   `turn.approval.requested`. UI shape is stable across that swap.
  */
 import { useMemo, useState } from "react";
-import { Alert, Badge, Empty, List, Segmented, Tag, Tooltip } from "antd";
-import { ShieldAlert, ShieldCheck } from "lucide-react";
+import { Alert, Button, List, Segmented, Tag, Tooltip } from "antd";
+import { ArrowRight, Clock3, ShieldAlert, ShieldCheck } from "lucide-react";
 import {
   APPROVAL_CATEGORY_LABEL,
   isDecided,
@@ -23,8 +23,10 @@ import {
   type ApprovalQueueItem,
 } from "./types";
 import { ApprovalDetailDrawer } from "./ApprovalDetailDrawer";
+import { decodeEscapedUnicode } from "../display-text";
 
 export type ApprovalQueueFilter = "pending" | "decided" | "all";
+export type ApprovalQueueDataState = "ready" | "not-connected";
 
 export interface ApprovalQueueProps extends ApprovalQueueCallbacks {
   items: ApprovalQueueItem[];
@@ -33,12 +35,16 @@ export interface ApprovalQueueProps extends ApprovalQueueCallbacks {
    * plain message; App wires the actual apiErrorMessage in. */
   errorMessage?: string;
   defaultFilter?: ApprovalQueueFilter;
+  /** `not-connected` is used when the host has not started deriving items
+   * from turn history/SSE yet; it must not be presented as a real zero. */
+  dataState?: ApprovalQueueDataState;
+  onNavigateToOrg?: () => void;
 }
 
 const FILTER_OPTIONS: { label: string; value: ApprovalQueueFilter }[] = [
-  { label: "\u5f85\u88c1\u51b3", value: "pending" },
-  { label: "\u5df2\u88c1\u51b3", value: "decided" },
-  { label: "\u5168\u90e8", value: "all" },
+  { label: "待裁决", value: "pending" },
+  { label: "已裁决", value: "decided" },
+  { label: "全部", value: "all" },
 ];
 
 const CATEGORY_TAG_COLOR: Record<ApprovalCategory, string> = {
@@ -51,13 +57,13 @@ const CATEGORY_TAG_COLOR: Record<ApprovalCategory, string> = {
 function decisionLabel(item: ApprovalQueueItem): string {
   switch (item.decision.kind) {
     case "pending":
-      return "\u5f85\u88c1\u51b3";
+      return "待裁决";
     case "granted":
-      return "\u5df2\u6279\u51c6";
+      return "已批准";
     case "denied":
-      return "\u5df2\u62d2\u7edd";
+      return "已拒绝";
     case "expired":
-      return "\u5df2\u8fc7\u671f";
+      return "已过期";
   }
 }
 
@@ -70,6 +76,8 @@ export function ApprovalQueue({
   loading,
   errorMessage,
   defaultFilter = "pending",
+  dataState = "ready",
+  onNavigateToOrg,
   onApprove,
   onDeny,
 }: ApprovalQueueProps) {
@@ -93,44 +101,58 @@ export function ApprovalQueue({
   );
 
   return (
-    <section className="owb-approval-queue" aria-label="\u5ba1\u6279\u961f\u5217">
+    <section className="owb-approval-queue" aria-label="审批中心">
       <header className="owb-approval-queue__hero">
-        <div>
+        <div className="owb-approval-queue__hero-copy">
           <span className="owb-approval-queue__eyebrow">LOCAL CONTROL PLANE</span>
-          <h1 className="owb-approval-queue__title">\u5ba1\u6279\u961f\u5217</h1>
+          <div className="owb-approval-queue__title-row">
+            <h1 className="owb-approval-queue__title">审批中心</h1>
+            <span className={`owb-approval-queue__state is-${dataState}`}>
+              <span aria-hidden="true" />
+              {dataState === "ready" ? "数据已接入" : "数据源未接入"}
+            </span>
+          </div>
           <p className="owb-approval-queue__lede">
-            \u6c47\u603b\u6563\u843d\u5728\u5404\u5c97\u4f4d\u56de\u5408\u91cc\u7684 <code>approval.requested</code>\uff1b\u6279\u51c6 / \u62d2\u7edd\u968f\u4e0b\u4e00\u56de\u5408\u7684
-            <code> pendingApproval</code> \u4e0b\u53d1\uff0c\u672c\u9875\u4e0d\u53d1\u8fd0\u884c\u4e2d\u901a\u9053\u3002
+            Agent 遇到需要人工确认的命令、写入、联网或受限工具调用时，会在这里暂停。
+            你可以查看动作目标和有效期，批准或拒绝后，裁决会随下一回合留痕下发；正常回合不会经过此页。
           </p>
         </div>
-        <div className="owb-approval-queue__badge" aria-label={`\u5f85\u88c1\u51b3 ${pendingCount}`}>
-          <Badge count={pendingCount} showZero={false} color="var(--ui-primary)">
-            <ShieldAlert aria-hidden="true" size={22} />
-          </Badge>
+        <div className="owb-approval-queue__metric" aria-label={`待裁决 ${pendingCount}`}>
+          <span className="owb-approval-queue__metric-icon" aria-hidden="true">
+            <ShieldAlert size={18} />
+          </span>
+          <span className="owb-approval-queue__metric-copy">
+            <strong>{pendingCount}</strong>
+            <span>待裁决</span>
+          </span>
         </div>
       </header>
 
-      <div className="owb-approval-queue__toolbar" role="toolbar" aria-label="\u5ba1\u6279\u8fc7\u6ee4">
-        <Segmented
-          value={filter}
-          onChange={(value) => setFilter(value as ApprovalQueueFilter)}
-          options={FILTER_OPTIONS}
-          aria-label="\u6309\u72b6\u6001\u8fc7\u6ee4"
-        />
+      <div className="owb-approval-queue__toolbar" role="toolbar" aria-label="审批过滤">
+        <div className="owb-approval-queue__filter-label">
+          <span>裁决状态</span>
+          <Segmented
+            value={filter}
+            onChange={(value) => setFilter(value as ApprovalQueueFilter)}
+            options={FILTER_OPTIONS}
+            aria-label="按状态过滤"
+          />
+        </div>
+        <span className="owb-approval-queue__count">共 {items.length} 条记录</span>
       </div>
 
       {errorMessage ? (
         <Alert
           type="warning"
           showIcon
-          message="\u63a7\u5236\u9762\u4e0d\u53ef\u8fbe\uff0c\u961f\u5217\u6682\u505c\u5237\u65b0"
+          message="控制面不可达，队列暂停刷新"
           description={errorMessage}
           className="owb-approval-queue__banner"
         />
       ) : null}
 
       {loading ? (
-        <div className="owb-approval-queue__loading" aria-label="\u5ba1\u6279\u961f\u5217\u52a0\u8f7d\u4e2d">
+        <div className="owb-approval-queue__loading" aria-label="审批队列加载中">
           <List
             dataSource={[0, 1, 2]}
             renderItem={(key) => (
@@ -141,13 +163,10 @@ export function ApprovalQueue({
           />
         </div>
       ) : visible.length === 0 ? (
-        <Empty
-          image={<ShieldCheck aria-hidden="true" size={40} />}
-          description={
-            filter === "pending"
-              ? "\u6ca1\u6709\u7b49\u5f85\u5ba1\u6279\u7684\u52a8\u4f5c \u2014\u2014 \u6240\u6709\u56de\u5408\u90fd\u5728\u754c\u5185\u8fd0\u884c"
-              : "\u8be5\u8fc7\u6ee4\u4e0b\u6ca1\u6709\u6761\u76ee"
-          }
+        <ApprovalEmptyState
+          filter={filter}
+          dataState={dataState}
+          onNavigateToOrg={onNavigateToOrg}
         />
       ) : (
         <List
@@ -176,12 +195,69 @@ export function ApprovalQueue({
   );
 }
 
+function ApprovalEmptyState({
+  filter,
+  dataState,
+  onNavigateToOrg,
+}: {
+  filter: ApprovalQueueFilter;
+  dataState: ApprovalQueueDataState;
+  onNavigateToOrg?: () => void;
+}) {
+  const disconnected = dataState === "not-connected";
+  const title = disconnected
+    ? "审批列表还未接入回合数据"
+    : filter === "pending"
+      ? "没有等待审批的动作"
+      : filter === "decided"
+        ? "该筛选下没有已裁决记录"
+        : "暂无审批记录";
+  const description = disconnected
+    ? "当前版本已经提供审批协议和裁决面板，但还没有从回合历史与事件流汇总出列表。因此这里的 0 不代表系统已经确认没有审批。"
+    : filter === "pending"
+      ? "已读取的回合中没有处于暂停状态的能力请求。需要人工确认时，会在这里展示动作、目标、岗位和过期时间。"
+      : filter === "decided"
+        ? "批准或拒绝的结果会保留在回合证据中，并出现在这里。"
+        : "当 Agent 触发需要人工确认的动作后，审批记录会显示在这里。";
+
+  return (
+    <section className={`owb-approval-queue__empty is-${disconnected ? "disconnected" : filter}`}>
+      <div className="owb-approval-queue__empty-icon" aria-hidden="true">
+        {disconnected ? <Clock3 size={24} /> : <ShieldCheck size={26} />}
+      </div>
+      <span className="owb-approval-queue__empty-kicker">
+        {disconnected ? "QUEUE CONNECTION" : "NO ACTION REQUIRED"}
+      </span>
+      <h2>{title}</h2>
+      <p>{description}</p>
+      <div className="owb-approval-queue__rules" aria-label="审批规则说明">
+        <div>
+          <strong>什么时候出现</strong>
+          <span>命令执行、文件写入、网络访问或受限工具调用需要人工判断时</span>
+        </div>
+        <div>
+          <strong>怎么处理</strong>
+          <span>打开条目核对目标和有效期，再选择批准并继续或拒绝</span>
+        </div>
+      </div>
+      {disconnected && onNavigateToOrg ? (
+        <Button type="default" onClick={onNavigateToOrg} icon={<ArrowRight size={14} />}>
+          返回组织模块
+        </Button>
+      ) : null}
+    </section>
+  );
+}
+
 interface ApprovalCardProps {
   item: ApprovalQueueItem;
   onOpen: () => void;
 }
 
 function ApprovalCard({ item, onOpen }: ApprovalCardProps) {
+  const positionName = decodeEscapedUnicode(item.positionName ?? item.positionId);
+  const description = decodeEscapedUnicode(item.description);
+  const target = item.target ? decodeEscapedUnicode(item.target) : undefined;
   const overreach = isPermissionOverreach(item);
   const decided = isDecided(item);
   const decisionTagColor = !decided
@@ -205,43 +281,43 @@ function ApprovalCard({ item, onOpen }: ApprovalCardProps) {
         type="button"
         className="owb-approval-card__row"
         onClick={onOpen}
-        aria-label={`\u5ba1\u6279 ${item.approvalId}`}
+        aria-label={`审批 ${item.approvalId}`}
       >
         <div className="owb-approval-card__head">
-          <span className="owb-approval-card__eyebrow">APPROVAL \u00b7 CAPABILITY GATE</span>
+          <span className="owb-approval-card__eyebrow">APPROVAL · CAPABILITY GATE</span>
           <span className="owb-approval-card__tags">
             <Tag color={CATEGORY_TAG_COLOR[item.category]}>
               {APPROVAL_CATEGORY_LABEL[item.category]}
             </Tag>
             {overreach ? (
               <Tag color="red" data-testid="approval-overreach-tag">
-                \u8d8a\u6743\u5c1d\u8bd5
+                越权尝试
               </Tag>
             ) : null}
             {item.positionMode ? (
               <Tag color={item.positionMode === "read_only" ? "default" : "purple"}>
-                \u6a21\u5f0f {item.positionMode === "read_only" ? "\u53ea\u8bfb" : "\u9700\u6279\u51c6"}
+                模式 {item.positionMode === "read_only" ? "只读" : "需批准"}
               </Tag>
             ) : null}
             <Tag color={decisionTagColor}>{decisionLabel(item)}</Tag>
           </span>
         </div>
         <div className="owb-approval-card__title">
-          <strong>{item.positionName ?? item.positionId}</strong>
+          <strong>{positionName}</strong>
           <span className="owb-approval-card__pid">{item.positionId}</span>
         </div>
-        <p className="owb-approval-card__description" title={item.description}>
-          {item.description}
+        <p className="owb-approval-card__description" title={description}>
+          {description}
         </p>
-        {item.target ? (
-          <p className="owb-approval-card__target" title={item.target}>
-            {item.target}
+        {target ? (
+          <p className="owb-approval-card__target" title={target}>
+            {target}
           </p>
         ) : null}
         <p className="owb-approval-card__meta">
           {item.expiresAt ? (
             <Tooltip title={item.expiresAt}>
-              <span className="owb-approval-card__expires">\u8fc7\u671f {item.expiresAt}</span>
+              <span className="owb-approval-card__expires">过期 {formatApprovalTime(item.expiresAt)}</span>
             </Tooltip>
           ) : null}
           <span className="owb-approval-card__aid">{item.approvalId}</span>
@@ -249,4 +325,17 @@ function ApprovalCard({ item, onOpen }: ApprovalCardProps) {
       </button>
     </article>
   );
+}
+
+function formatApprovalTime(value?: string): string {
+  if (!value) return "未声明";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleString("zh-CN", {
+    month: "numeric",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  });
 }
