@@ -1079,8 +1079,8 @@ export function App() {
               consumption={selectedBudgetRatio}
               running={selectedId !== null && runningPositionIds.has(selectedId)}
               onRefresh={() => void refresh()}
+              actions={selectedPosition && selectedId && selectedId !== snapshot?.owner ? <DismissPositionDialog positionName={selectedPosition.name} positionId={selectedId} descendantCount={selectedNode ? countDescendants(selectedNode) : 0} busy={orgBusy} onDismiss={() => dismissPosition(selectedId)} /> : undefined}
             />
-            {selectedPosition && selectedId && selectedId !== snapshot?.owner ? <div className="owb-position-actions"><DismissPositionDialog positionName={selectedPosition.name} positionId={selectedId} descendantCount={selectedNode ? countDescendants(selectedNode) : 0} busy={orgBusy} onDismiss={() => dismissPosition(selectedId)} /></div> : null}
           </div>
           </div>
           <TurnPanel

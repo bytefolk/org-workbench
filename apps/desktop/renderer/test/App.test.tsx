@@ -535,7 +535,9 @@ describe("App runtime bridge", () => {
     });
     render(<App />);
     fireEvent.click(await screen.findByText("docs-writer", { selector: ".ui-org-tree__name, .ui-org-tree__id" }));
-    fireEvent.click(await screen.findByRole("button", { name: "裁撤" }));
+    // #137 review：裁撤动作住在岗位档案卡头部，而不是悬浮在卡片外面。
+    const cardRegion = screen.getByRole("region", { name: "岗位档案" });
+    fireEvent.click(await within(cardRegion).findByRole("button", { name: "裁撤" }));
     fireEvent.click(screen.getByRole("button", { name: /取\s*消/ }));
     expect(orgApply).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole("button", { name: "裁撤" }));

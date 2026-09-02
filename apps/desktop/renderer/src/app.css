@@ -95,11 +95,6 @@
   gap: var(--ui-space-2, 8px);
 }
 
-.owb-position-actions {
-  display: flex;
-  justify-content: flex-end;
-}
-
 .owb-org-dialog {
   width: min(620px, calc(100vw - 32px));
 }
@@ -2435,7 +2430,7 @@
 .owb-position-column {
   min-height: 0;
   align-self: stretch;
-  grid-template-rows: minmax(0, 1fr) auto;
+  grid-template-rows: minmax(0, 1fr);
 }
 
 /* 拉伸带来的副作用：未选中岗位时卡片里只有一行提示，多出来的高度全堆在它下面。
@@ -3322,6 +3317,47 @@
 .owb-org-chart__body {
   overflow-x: auto;
   padding: 4px 14px 14px;
+  cursor: grab;
+}
+
+.owb-org-chart__body.is-panning {
+  cursor: grabbing;
+  user-select: none;
+}
+
+/* #137 review：画布缩放控件——右对齐住在图表头部，和折叠按钮同款幽灵态。 */
+.owb-org-chart__zoom {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.owb-org-chart__zoom .owb-org-chart__toggle[disabled] {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.owb-org-chart__zoom .owb-org-chart__toggle[disabled]:hover {
+  background: transparent;
+}
+
+.owb-org-chart__zoom-pct {
+  border: none;
+  background: transparent;
+  color: var(--ui-foreground-subtle);
+  font-family: var(--ui-font-mono);
+  font-size: 11px;
+  min-width: 42px;
+  padding: 2px 4px;
+  border-radius: var(--ui-radius-sm, 6px);
+  text-align: center;
+  cursor: pointer;
+}
+
+.owb-org-chart__zoom-pct:hover {
+  background: color-mix(in srgb, var(--ui-surface) 60%, transparent);
+  color: var(--ui-foreground);
 }
 
 .owb-org-chart.is-collapsed .owb-org-chart__body {

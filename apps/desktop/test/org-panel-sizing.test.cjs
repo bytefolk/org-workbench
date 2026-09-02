@@ -187,7 +187,7 @@ test("position region and conversation panel are equal width on desktop (#120 AC
   }
 });
 
-test("position column stretches to the row and pins dismiss to the bottom (#120 AC-002)", () => {
+test("position column stretches to the row as a single filled card (#120 AC-002, #137 review)", () => {
   const rules = stylesheetRules();
   const viewport = VIEWPORTS.desktop;
 
@@ -204,9 +204,13 @@ test("position column stretches to the row and pins dismiss to the bottom (#120 
   );
 
   const rows = trackList(valueAt(rules, ".owb-position-column", "grid-template-rows", viewport));
-  assert.equal(rows.length, 2, "the column is card row + dismiss row");
+  assert.equal(rows.length, 1, "the column is a single card row since #137 moved dismiss into the card header");
   assert.match(normalizeTrack(rows[0]), /1fr/, `card row "${rows[0]}" must take the column's remaining height`);
-  assert.equal(normalizeTrack(rows[1]), "auto", `dismiss row "${rows[1]}" must stay content-sized at the bottom`);
+  assert.equal(
+    valueAt(rules, ".owb-position-actions", "display", viewport),
+    null,
+    "the outside dismiss wrapper must stay removed — the action lives in the card header now",
+  );
 
   assert.ok(
     flexGrows(valueAt(rules, ".owb-main > .owb-org-module", "flex", viewport)),
