@@ -77,6 +77,14 @@ export const errorCodes = {
   asset_request_invalid: "asset_request_invalid",
   /** A requested asset record does not exist in the drive (#36 S1). */
   asset_not_found: "asset_not_found",
+  /** Drive plane request shape is invalid (missing/oversized parameters). */
+  drive_request_invalid: "drive_request_invalid",
+  /** MEM_URL is unset; the drive plane serves a mock fixture from the server. */
+  drive_not_configured: "drive_not_configured",
+  /** The upstream mem service is unreachable or returned a transport error. */
+  drive_upstream_unavailable: "drive_upstream_unavailable",
+  /** The upstream mem service returned a non-2xx status for a proxied request. */
+  drive_upstream_failed: "drive_upstream_failed",
   /** Route not found. */
   not_found: "not_found",
   /** Method not allowed on a known route. */

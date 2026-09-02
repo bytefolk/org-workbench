@@ -5,6 +5,7 @@ import type { ControlPlaneContext } from "./context.js";
 import { sendError, sendJson } from "./http.js";
 import { handleAssetsCreate, handleAssetsList, handleAssetsRead } from "./routes/assets.js";
 import { handleDocsCreate, handleDocsList, handleDocsRead, handleDocsResolve } from "./routes/docs.js";
+import { handleDriveDetail, handleDriveList, handleDriveUpload } from "./routes/drive.js";
 import { handleEvents } from "./routes/events.js";
 import {
   handleGroupAddMember,
@@ -217,6 +218,18 @@ async function dispatch(
     }
     if (pathname === routes.assetsCreate && method === "POST") {
       await handleAssetsCreate(ctx, req, res);
+      return;
+    }
+    if (pathname === routes.driveList && method === "GET") {
+      await handleDriveList(res, url);
+      return;
+    }
+    if (pathname === routes.driveDetail && method === "GET") {
+      await handleDriveDetail(res, url);
+      return;
+    }
+    if (pathname === routes.driveUpload && method === "POST") {
+      await handleDriveUpload(res);
       return;
     }
     if (pathname === routes.events && method === "GET") {
