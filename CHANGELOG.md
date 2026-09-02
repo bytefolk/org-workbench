@@ -43,6 +43,7 @@
 
 ### Changed
 
+- #35 文档模块视觉整理：增加岗位文档上下文、文件类型与大小信息，优化文件选择/复制引用/解析引用的层级，并补齐加载、空状态、错误状态及窄窗口适配；文档引用契约与读写行为不变。
 - GitHub repository and raw-content coordinates now target the `bytefolk` organization while the published `@fullstack-ai-infra/*` npm scope and desktop application ID remain unchanged.
 - `DigitalEmployeeCliDriver` 调用翻转为 `digital-employee org apply <workspace> --json`；成功后控制面从 `.digital-employee/org.json` 重载应用态，`org.updated.updatedAt` 与引擎时间戳对齐。
 - oss-maintainer 示例改为目录表达汇报线的嵌套布局，并为每个岗位增加 `budget.json`。

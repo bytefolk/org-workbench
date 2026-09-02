@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { Alert, Button, Collapse, Empty, Input, Modal, Select, message } from "antd";
+import { FilePlus2, Link2, Plus } from "lucide-react";
 import type { DocRef, DocsCreateResponse, DocsFileListResponse, DocsFileResponse, DocsResolveResponse } from "@org-workbench/shared";
 import type { PositionMentionOption } from "../turns/types";
 import { DocsPanel } from "./DocsPanel";
@@ -133,8 +134,24 @@ export function DocsModule({ workspaceOpen, positions, selectedPositionId }: Doc
 
   return (
     <section className="owb-docs-module" aria-label="文档模块">
+      <header className="owb-docs-module__header">
+        <div>
+          <span className="owb-docs-module__eyebrow">POSITION DOCUMENTS</span>
+          <h1>岗位文档</h1>
+          <p>查看岗位说明、技能文件与知识库内容。</p>
+        </div>
+        <span className="owb-docs-module__scope">
+          <span className="owb-docs-module__scope-dot" aria-hidden="true" />
+          LOCAL WORKSPACE
+        </span>
+      </header>
       <div className="owb-docs-module__picker">
+        <div className="owb-docs-module__picker-copy">
+          <span>当前岗位</span>
+          <small>选择后加载文件清单</small>
+        </div>
         <Select
+          className="owb-docs-module__select"
           aria-label="选择岗位查看文档"
           placeholder="选择岗位查看文档"
           showSearch
@@ -144,10 +161,11 @@ export function DocsModule({ workspaceOpen, positions, selectedPositionId }: Doc
           onChange={(value) => setPositionId(value ?? null)}
           options={positions.map((position) => ({ value: position.id, label: position.name }))}
           popupMatchSelectWidth={false}
-          style={{ minWidth: 240 }}
         />
         <Button
+          className="owb-docs-module__create"
           disabled={positionId === null}
+          icon={<Plus aria-hidden="true" size={14} />}
           onClick={() => {
             setCreateError(null);
             setCreateOpen(true);
@@ -158,10 +176,21 @@ export function DocsModule({ workspaceOpen, positions, selectedPositionId }: Doc
       </div>
       <DocsPanel positionId={positionId} listDocs={listDocs} readDoc={readDoc} reloadToken={reloadToken} />
       <Collapse
+        className="owb-docs-module__resolve-panel"
         items={[
           {
             key: "resolve-doc-ref",
-            label: "解析引用",
+            label: (
+              <span className="owb-docs-module__resolve-label">
+                <span className="owb-docs-module__resolve-icon" aria-hidden="true">
+                  <Link2 size={15} strokeWidth={1.8} />
+                </span>
+                <span>
+                  <strong>解析引用</strong>
+                  <small>粘贴 doc-ref，定位到具体岗位文件</small>
+                </span>
+              </span>
+            ),
             children: (
               <div className="owb-docs-module__resolve">
                 <Input.TextArea
@@ -171,7 +200,7 @@ export function DocsModule({ workspaceOpen, positions, selectedPositionId }: Doc
                   value={resolveText}
                   onChange={(event) => setResolveText(event.target.value)}
                 />
-                <Button loading={resolving} onClick={submitResolve}>
+                <Button className="owb-docs-module__resolve-submit" loading={resolving} icon={<FilePlus2 aria-hidden="true" size={14} />} onClick={submitResolve}>
                   解析
                 </Button>
                 {resolveOutcome?.status === "error" ? (
