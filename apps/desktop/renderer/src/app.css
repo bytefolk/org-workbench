@@ -2431,7 +2431,9 @@
  * 卡片吃剩余高度，裁撤行留列底，正文溢出交给 .owb-pos-body 自滚。 */
 .owb-position-column {
   min-height: 0;
-  align-self: stretch;
+  /* 不显式声明 align-self：父级 .owb-workspace-grid 的 align-items: stretch
+     已让两栏等高（#120 AC-002 测试断言此处 align-self 必须 null/auto；
+     #127 panel-parity 测试断言若声明则只能 stretch，二者兼容于"不声明"）。 */
   grid-template-rows: minmax(0, 1fr) auto;
 }
 
