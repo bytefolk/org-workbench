@@ -30,14 +30,28 @@ test("window-control glyphs are visible without hovering the title bar (#94)", (
     !/opacity\s*:\s*0\b/.test(baseRule[1]),
     `.owb-wctl>svg must not default to opacity:0 (hides a real, non-decorative control until a broad title-bar hover); got "${baseRule[1]}"`,
   );
-
-  // The hover/focus rule still exists — it upgrades the stroke to a dark tone
-  // for contrast against the semantic danger/warning/success hover background,
-  // it just no longer does the *only* rendering of the glyph.
+  // #248: the glyph is dark by default so it reads on the always-on colored disc.
+  // (cssnano may emit the dark stroke as 8-digit hex #000000xx instead of rgba().)
   assert.ok(
-    /\.owb-wintitle:hover \.owb-wctl>svg,\.owb-wctl:focus-visible>svg,\.owb-wintitle:hover \.owb-wctl>svg rect,\.owb-wctl:focus-visible>svg rect\{stroke:[^}]+\}/.test(
-      css,
-    ),
-    "hover/focus must still swap the glyph stroke for contrast against the semantic background",
+    /stroke:(?:rgba\(0,0,0,|#000000)/.test(baseRule[1]),
+    `.owb-wctl>svg must default to a dark visible stroke; got "${baseRule[1]}"`,
+  );
+});
+
+// #248 小 UI 单：三钮常显彩色圆底（close 红 / min 琥珀 / max 绿），语义色随主题
+// 经 var 切换；不再是灰点 hover 才显形。
+test("window controls are always-on colored discs (#248)", () => {
+  const css = builtCss();
+  assert.ok(
+    /\.owb-wctl--close\{[^}]*background:var\(--ui-danger\)/.test(css),
+    "close button must default to the danger fill",
+  );
+  assert.ok(
+    /\.owb-wctl--min\{[^}]*background:var\(--ui-warning\)/.test(css),
+    "minimize button must default to the warning fill",
+  );
+  assert.ok(
+    /\.owb-wctl--max\{[^}]*background:var\(--ui-success\)/.test(css),
+    "fullscreen button must default to the success fill",
   );
 });

@@ -2005,20 +2005,8 @@
   -webkit-app-region: drag;
 }
 
-.owb-wintitle__mark {
-  flex: none;
-  width: 13px;
-  height: 13px;
-  border-radius: 3.5px;
-  background: linear-gradient(135deg, var(--ui-primary), var(--ui-ai));
-}
-
-/* 真实窗口控制（无边框窗口），#94 补充范围：图标常显，hover/focus 才叠加
-   语义色。此前照搬 macOS 口径把图标默认设为 opacity:0、只有 hover 整个标题
-   栏才显形——但这三颗是真实可点的功能按钮，不是装饰性圆点，默认不可发现
-   对首次使用和键盘用户都是缺陷（用户直接反馈）。默认描边用
-   `--ui-foreground-muted`（随主题走），hover/focus 时背景换成语义色、描边
-   跟着换回深色，在两套主题下都读得出。 */
+/* 真实窗口控制（无边框窗口）。#248 小 UI 单：品牌标 .owb-wintitle__mark 已移除，
+   左上仅余三钮；常显彩色圆底 + 内 glyph，hover/focus 加深（见下方规则）。 */
 .owb-wintitle__controls {
   display: flex;
   gap: 6px;
@@ -2026,15 +2014,18 @@
   -webkit-app-region: no-drag;
 }
 
+/* #248 小 UI 单②：三个窗口钮改为常显彩色圆底 + 内 glyph（close 红底 X、
+   min 琥珀底 −、fullscreen 绿底斜杠），不再是灰点 hover 才显形。
+   语义色走 --ui-danger/--ui-warning/--ui-success，随 [data-theme] 在
+   light/dark 两套 ANTD seed 间自动切换；glyph 用深色描边两套主题都读得出。 */
 .owb-wctl {
   display: grid;
   place-items: center;
   width: 13px;
   height: 13px;
   padding: 0;
-  border: 1px solid var(--ui-border-strong);
+  border: 1px solid transparent;
   border-radius: 50%;
-  background: var(--ui-surface-inset);
   cursor: pointer;
   transition:
     background var(--owb-duration-fast, 120ms) var(--owb-ease-out, ease),
@@ -2045,42 +2036,45 @@
   width: 9px;
   height: 9px;
   fill: none;
-  stroke: var(--ui-foreground-muted);
+  stroke: rgba(0, 0, 0, 0.62);
   stroke-width: 1.5;
   stroke-linecap: round;
   transition: stroke var(--owb-duration-fast, 120ms) var(--owb-ease-out, ease);
 }
 
-.owb-wctl > svg rect {
-  fill: none;
-  stroke: var(--ui-foreground-muted);
-  stroke-width: 1.4;
-  transition: stroke var(--owb-duration-fast, 120ms) var(--owb-ease-out, ease);
-}
-
-.owb-wintitle:hover .owb-wctl > svg,
-.owb-wctl:focus-visible > svg,
-.owb-wintitle:hover .owb-wctl > svg rect,
-.owb-wctl:focus-visible > svg rect {
-  stroke: rgba(0, 0, 0, 0.62);
-}
-
-.owb-wintitle:hover .owb-wctl--close,
-.owb-wctl--close:focus-visible {
+/* 常显语义底色（light + dark 经 var 切换）。 */
+.owb-wctl--close {
   background: var(--ui-danger);
   border-color: var(--ui-danger);
 }
 
-.owb-wintitle:hover .owb-wctl--min,
-.owb-wctl--min:focus-visible {
+.owb-wctl--min {
   background: var(--ui-warning);
   border-color: var(--ui-warning);
 }
 
-.owb-wintitle:hover .owb-wctl--max,
-.owb-wctl--max:focus-visible {
+.owb-wctl--max {
   background: var(--ui-success);
   border-color: var(--ui-success);
+}
+
+/* hover/focus 加深一档，给出可点反馈。 */
+.owb-wintitle:hover .owb-wctl--close,
+.owb-wctl--close:focus-visible {
+  background: var(--ui-danger-strong);
+  border-color: var(--ui-danger-strong);
+}
+
+.owb-wintitle:hover .owb-wctl--min,
+.owb-wctl--min:focus-visible {
+  background: var(--ui-warning-strong);
+  border-color: var(--ui-warning-strong);
+}
+
+.owb-wintitle:hover .owb-wctl--max,
+.owb-wctl--max:focus-visible {
+  background: var(--ui-success-strong);
+  border-color: var(--ui-success-strong);
 }
 
 .owb-wctl:focus-visible {

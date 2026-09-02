@@ -805,7 +805,7 @@ export function App() {
         className="owb-wintitle"
         onDoubleClick={() => void window.owb.windowToggleMaximize?.()}
       >
-        <span className="owb-wintitle__mark" aria-hidden="true" />
+        {/* #248 小 UI 单①：左上只保留三个窗口控制钮，删品牌标；头像将来放右上，现在不加。 */}
         <WindowControls />
         <span className="owb-wintitle__name">org-workbench</span>
         <span className="owb-wintitle__spacer" />
@@ -1191,8 +1191,9 @@ function WindowControls() {
         title="最大化 / 还原"
         onClick={() => void window.owb.windowToggleMaximize?.()}
       >
+        {/* #248 小 UI 单②：fullscreen 为绿底斜杠 ⃠ glyph。 */}
         <svg viewBox="0 0 10 10" aria-hidden="true">
-          <rect x="2.6" y="2.6" width="4.8" height="4.8" rx="1" />
+          <path d="M2.8 7.2L7.2 2.8" />
         </svg>
       </button>
     </span>
