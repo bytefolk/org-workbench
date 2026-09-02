@@ -2403,8 +2403,12 @@
 
 /* #120：桌面宽度下岗位区和对话区要读成“一对”。旧的 0.92fr/1.14fr 让左栏恒
    窄一档；两轨不同的 px 下限（300/360）会在比例算不出来时接管轨道宽度，把
-   差值钉死，所以一并归零，等宽完全交给 1fr/1fr。 */
+   差值钉死，所以一并归零，等宽完全交给 1fr/1fr。
+   display 不能省：#130 单源化（issue #127）删掉了早先那个带 `display: grid` 的副本，之后
+   全文件再没有任何 .owb-workspace-grid 块声明 display，元素退回 display: block，
+   两栏变成上下堆叠、grid-template-columns 完全不生效。 */
 .owb-workspace-grid {
+  display: grid;
   height: 100%;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   gap: 14px;
@@ -2431,17 +2435,8 @@
  * 卡片吃剩余高度，裁撤行留列底，正文溢出交给 .owb-pos-body 自滚。 */
 .owb-position-column {
   min-height: 0;
-  /* 不显式声明 align-self：父级 .owb-workspace-grid 的 align-items: stretch
-     已让两栏等高（#120 AC-002 测试断言此处 align-self 必须 null/auto；
-     #127 panel-parity 测试断言若声明则只能 stretch，二者兼容于"不声明"）。 */
+  align-self: stretch;
   grid-template-rows: minmax(0, 1fr) auto;
-}
-
-/* 拉伸带来的副作用：未选中岗位时卡片里只有一行提示，多出来的高度全堆在它下面。
-   复用 `.owb-groups__panel > .owb-panel__notice` 那两行，让提示吃满卡片并居中。 */
-.owb-position-column > .ui-org-position-card > .owb-panel__notice {
-  flex: 1;
-  align-content: center;
 }
 
 /* ---------- 通用面板（取代 antd Card 作为内容卡壳层） ---------- */

@@ -164,6 +164,12 @@ test("position region and conversation panel are equal width on desktop (#120 AC
   const rules = stylesheetRules();
 
   for (const viewport of [VIEWPORTS.desktop, VIEWPORTS.desktopEdge]) {
+    assert.equal(
+      valueAt(rules, ".owb-workspace-grid", "display", viewport),
+      "grid",
+      `${viewport.width}px: without display: grid the two children stack as blocks, so every track assertion below describes a layout that never renders`,
+    );
+
     const tracks = trackList(valueAt(rules, ".owb-workspace-grid", "grid-template-columns", viewport));
     assert.equal(tracks.length, 2, `${viewport.width}px must keep the two-column pair`);
     const [left, right] = tracks.map(normalizeTrack);
