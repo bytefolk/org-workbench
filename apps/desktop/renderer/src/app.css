@@ -2435,6 +2435,13 @@
   grid-template-rows: minmax(0, 1fr) auto;
 }
 
+/* 拉伸带来的副作用：未选中岗位时卡片里只有一行提示，多出来的高度全堆在它下面。
+   复用 `.owb-groups__panel > .owb-panel__notice` 那两行，让提示吃满卡片并居中。 */
+.owb-position-column > .ui-org-position-card > .owb-panel__notice {
+  flex: 1;
+  align-content: center;
+}
+
 /* ---------- 通用面板（取代 antd Card 作为内容卡壳层） ---------- */
 
 .owb-panel {
