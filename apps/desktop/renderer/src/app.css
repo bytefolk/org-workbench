@@ -4262,20 +4262,40 @@
   display: flex;
   flex-direction: column;
   gap: 16px;
-  padding: 24px 28px 32px;
+  width: 100%;
+  max-width: 1180px;
+  margin-inline: auto;
+  padding: 8px 12px 28px;
   background: var(--ui-canvas);
   min-height: 100%;
 }
 
 .owb-approval-queue__hero {
+  position: relative;
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
   gap: 24px;
-  padding: 20px 24px;
+  min-height: 138px;
+  padding: 24px 28px;
   border: 1px solid var(--ui-border);
   border-radius: var(--ui-radius-lg, 14px);
-  background: var(--ui-surface);
+  background:
+    linear-gradient(120deg, color-mix(in srgb, var(--ui-primary-soft) 56%, transparent), transparent 46%),
+    var(--ui-surface);
+  overflow: hidden;
+}
+
+.owb-approval-queue__hero::before {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 3px;
+  content: "";
+  background: var(--ui-primary);
+}
+
+.owb-approval-queue__hero-copy {
+  min-width: 0;
 }
 
 .owb-approval-queue__eyebrow {
@@ -4288,39 +4308,123 @@
 }
 
 .owb-approval-queue__title {
-  margin: 4px 0 6px;
-  font-family: var(--owb-font-display, "Space Grotesk", "Inter", sans-serif);
-  font-size: 22px;
+  margin: 4px 0 0;
+  font-family: var(--owb-font-display);
+  font-size: 24px;
+  line-height: 1.15;
   font-weight: 600;
   color: var(--ui-foreground);
+}
+
+.owb-approval-queue__title-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.owb-approval-queue__state {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  border: 1px solid var(--ui-border);
+  border-radius: 999px;
+  background: var(--ui-surface-raised);
+  color: var(--ui-foreground-muted);
+  font-size: 11px;
+  line-height: 1;
+}
+
+.owb-approval-queue__state > span {
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--ui-success);
+}
+
+.owb-approval-queue__state.is-not-connected {
+  border-color: var(--ui-warning);
+  color: var(--ui-warning-strong);
+}
+
+.owb-approval-queue__state.is-not-connected > span {
+  background: var(--ui-warning);
 }
 
 .owb-approval-queue__lede {
   margin: 0;
   color: var(--ui-foreground-muted);
-  font-size: 12px;
-  max-width: 62ch;
+  font-size: 13px;
+  line-height: 1.65;
+  max-width: 76ch;
 }
 
-.owb-approval-queue__lede code {
-  background: var(--ui-surface-inset);
-  border-radius: var(--ui-radius-sm, 6px);
-  padding: 1px 4px;
-  font-family: var(--ui-font-mono);
-  font-size: 11px;
-}
-
-.owb-approval-queue__badge {
-  display: inline-flex;
+.owb-approval-queue__metric {
+  display: flex;
+  flex: none;
   align-items: center;
-  justify-content: center;
-  padding: 6px;
+  gap: 10px;
+  min-width: 118px;
+  padding: 12px 14px;
+  border: 1px solid var(--ui-border);
+  border-radius: var(--ui-radius-md, 10px);
+  background: color-mix(in srgb, var(--ui-surface-inset) 72%, transparent);
+}
+
+.owb-approval-queue__metric-icon {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: var(--ui-radius-sm, 6px);
+  background: var(--ui-primary-soft);
+  color: var(--ui-primary);
+}
+
+.owb-approval-queue__metric-copy {
+  display: grid;
+  gap: 1px;
+}
+
+.owb-approval-queue__metric-copy strong {
+  color: var(--ui-foreground);
+  font-family: var(--ui-font-mono);
+  font-size: 21px;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+
+.owb-approval-queue__metric-copy span {
+  color: var(--ui-foreground-muted);
+  font-size: 11px;
 }
 
 .owb-approval-queue__toolbar {
   display: flex;
-  gap: 12px;
   align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 12px;
+  border: 1px solid var(--ui-border);
+  border-radius: var(--ui-radius-md, 10px);
+  background: var(--ui-surface-raised);
+}
+
+.owb-approval-queue__filter-label {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--ui-foreground-subtle);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.owb-approval-queue__count {
+  color: var(--ui-foreground-subtle);
+  font-family: var(--ui-font-mono);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
 }
 
 .owb-approval-queue__banner {
@@ -4343,13 +4447,132 @@
   border: none !important;
 }
 
+.owb-approval-queue__empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 56px 28px 52px;
+  border: 1px dashed var(--ui-border-strong);
+  border-radius: var(--ui-radius-lg, 14px);
+  background: var(--ui-surface);
+  text-align: center;
+}
+
+.owb-approval-queue__empty.is-disconnected {
+  border-color: var(--ui-warning);
+  background: linear-gradient(135deg, var(--ui-warning-soft), var(--ui-surface));
+}
+
+.owb-approval-queue__empty-icon {
+  display: grid;
+  place-items: center;
+  width: 52px;
+  height: 52px;
+  margin-bottom: 14px;
+  border: 1px solid var(--ui-border);
+  border-radius: 50%;
+  background: var(--ui-surface-inset);
+  color: var(--ui-success);
+}
+
+.owb-approval-queue__empty.is-disconnected .owb-approval-queue__empty-icon {
+  color: var(--ui-warning);
+}
+
+.owb-approval-queue__empty-kicker {
+  color: var(--ui-foreground-subtle);
+  font-family: var(--ui-font-mono);
+  font-size: 10px;
+  letter-spacing: 0.09em;
+}
+
+.owb-approval-queue__empty h2 {
+  margin: 8px 0;
+  color: var(--ui-foreground);
+  font-family: var(--owb-font-display);
+  font-size: 18px;
+  font-weight: 600;
+}
+
+.owb-approval-queue__empty > p {
+  max-width: 620px;
+  margin: 0;
+  color: var(--ui-foreground-muted);
+  font-size: 13px;
+  line-height: 1.7;
+}
+
+.owb-approval-queue__rules {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  width: min(720px, 100%);
+  margin: 24px 0;
+  text-align: start;
+}
+
+.owb-approval-queue__rules > div {
+  display: grid;
+  gap: 4px;
+  padding: 12px 14px;
+  border: 1px solid var(--ui-border);
+  border-radius: var(--ui-radius-md, 10px);
+  background: var(--ui-surface-raised);
+}
+
+.owb-approval-queue__rules strong {
+  color: var(--ui-foreground);
+  font-size: 11px;
+}
+
+.owb-approval-queue__rules span {
+  color: var(--ui-foreground-muted);
+  font-size: 11px;
+  line-height: 1.55;
+}
+
+.owb-approval-queue__empty .ant-btn {
+  min-width: 132px;
+}
+
+@media (max-width: 720px) {
+  .owb-approval-queue {
+    padding-inline: 8px;
+  }
+
+  .owb-approval-queue__hero {
+    flex-direction: column;
+    padding: 20px;
+  }
+
+  .owb-approval-queue__metric {
+    align-self: stretch;
+  }
+
+  .owb-approval-queue__toolbar {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .owb-approval-queue__filter-label {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .owb-approval-queue__rules {
+    grid-template-columns: 1fr;
+  }
+}
+
 .owb-approval-card {
   width: 100%;
   border: 1px solid var(--ui-border);
   border-left-width: 3px;
   border-radius: var(--ui-radius-md, 10px);
   background: var(--ui-surface);
-  transition: background 120ms ease-out, border-color 160ms ease-out;
+  transition:
+    background-color var(--owb-duration-fast) var(--owb-ease-out),
+    border-color var(--owb-duration-mid) var(--owb-ease-out);
 }
 
 .owb-approval-card[data-decision-state="pending"] {
@@ -4357,11 +4580,11 @@
 }
 
 .owb-approval-card[data-decision-state="granted"] {
-  border-left-color: var(--ui-success, #3f7d4e);
+  border-left-color: var(--ui-success);
 }
 
 .owb-approval-card[data-decision-state="denied"] {
-  border-left-color: var(--ui-danger, #c04a3e);
+  border-left-color: var(--ui-danger);
 }
 
 .owb-approval-card[data-decision-state="expired"] {
@@ -4371,7 +4594,13 @@
 }
 
 .owb-approval-card[data-overreach="true"] {
-  background: var(--ui-danger-soft, var(--ui-surface));
+  background: var(--ui-danger-soft);
+}
+
+.owb-approval-card:hover {
+  border-top-color: var(--ui-border-strong);
+  border-right-color: var(--ui-border-strong);
+  border-bottom-color: var(--ui-border-strong);
 }
 
 .owb-approval-card__row {
@@ -4409,6 +4638,7 @@
 
 .owb-approval-card__tags {
   display: inline-flex;
+  justify-content: flex-end;
   gap: 4px;
   flex-wrap: wrap;
 }
@@ -4421,9 +4651,13 @@
 }
 
 .owb-approval-card__title strong {
+  min-width: 0;
+  overflow: hidden;
   font-size: 14px;
   font-weight: 600;
   color: var(--ui-foreground);
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .owb-approval-card__pid,
@@ -4455,8 +4689,15 @@
 
 .owb-approval-card__meta {
   display: flex;
+  align-items: center;
+  flex-wrap: wrap;
   gap: 12px;
   margin: 0;
+}
+
+.owb-approval-card__expires {
+  color: var(--ui-foreground-subtle);
+  font-size: 11px;
 }
 /* ================================================================
    Turn / 审计时间线（AuditTimeline）— design-spec §6

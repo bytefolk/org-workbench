@@ -61,6 +61,7 @@
 
 ### Fixed
 
+- 审批中心现在明确说明用途与数据接入状态；未接入回合历史/事件流时不再把空列表误报为“所有回合都在界内运行”，并提供返回组织模块的入口。审批岗位、动作描述与目标中的多层 Unicode 转义也会在展示层恢复为可读中文。
 - #137 组织页主区重构为两列工作区：左列上下堆叠组织图与岗位档案（同宽对齐），右列由本地对话面板独占整列高度，回合流拿回被全宽组织图压掉的纵向空间。`.owb-workspace-grid` 包装层移除，布局单源挂在 `.owb-org-module`（grid 两列 + `__left` flex 列）；组织图在半宽左列内横向溢出改为列内滚动（`overflow-x: auto`），纵向仍自然撑开；980px 单栏堆叠与 720px 竖向压缩断点按新选择器等价重述。`org-panel-sizing` / `panel-parity` 两套 CSS 契约测试同步换选择器，并新增 #137 左列配对断言（chart flex none + 档案卡 flex 1 + 模块级 stretch）。契约面未触碰。
 
 - #128 桌面本地对话模块 UX 收敛：① 导轨「记忆」项曾无 `onSelect` 也无渲染分支，用户点击后毫无反馈；在 mem plane 未接入桌面前，直接从导轨移除该假入口而非保留占位（AC-004）。② 对话文本框 `onKeyDown` 现在识别 `nativeEvent.isComposing` 与 legacy `keyCode === 229`，中文候选窗提交 Enter 时即便手指还在 ⌘/Ctrl 上，也不会误发送回合；提示条 `⌘↵ 发送` 与非组合期行为保持不变（AC-003）。③ `TurnThread` 空态首行不再固定读作「从一个明确任务开始」，改由 caller 传入 `emptyPrompt`，`TurnPanel` 将其绑定到 `disabledReason`，因此空态与下方 composer 提示不再互相打脸（AC-002）。④ 新增 vitest 用例锁定：树点岗位→对话面板 combobox 同步、IME 组合期 ⌘↵ 不发送、空态口径与 disabledReason 一致（AC-001/002/003）。契约不变（`turn-envelope.v1` / `workbench-session.v1` 未触碰），后端 D3 主链路仍是 `smoke:package:macos` 的既有绿证。

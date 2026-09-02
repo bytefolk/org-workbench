@@ -22,6 +22,23 @@ function makeItem(over: Partial<ApprovalQueueItem> = {}): ApprovalQueueItem {
 const noop = () => {};
 
 describe("P0 \u5ba1\u6279\u961f\u5217 (\u2461)", () => {
+  it("数据未接入时不把 0 误报成安全结论，并提供回到组织模块的入口", () => {
+    const onNavigateToOrg = vi.fn();
+    render(
+      <ApprovalQueue
+        items={[]}
+        dataState="not-connected"
+        onNavigateToOrg={onNavigateToOrg}
+        onApprove={noop}
+        onDeny={noop}
+      />,
+    );
+    expect(screen.getByText("审批列表还未接入回合数据")).toBeInTheDocument();
+    expect(screen.getByText(/这里的 0 不代表系统已经确认没有审批/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "返回组织模块" }));
+    expect(onNavigateToOrg).toHaveBeenCalledTimes(1);
+  });
+
   it("\u7a7a\u6001\uff1a\u5f85\u88c1\u51b3\u4e3a 0 \u6e32\u67d3 Empty \u6b63\u5411\u6587\u6848\uff0c\u4e0d\u7ed9\u7ea2\u70b9", () => {
     render(<ApprovalQueue items={[]} onApprove={noop} onDeny={noop} />);
     expect(
@@ -40,6 +57,23 @@ describe("P0 \u5ba1\u6279\u961f\u5217 (\u2461)", () => {
     // The card carries the pending state marker.
     const card = screen.getByTestId("approval-card-appr-abc");
     expect(card.getAttribute("data-decision-state")).toBe("pending");
+  });
+
+  it("展示层会修复被多编码一层的中文，不修改审批契约字段", () => {
+    render(
+      <ApprovalQueue
+        items={[makeItem({
+          positionName: "\\u5185\\u5bb9\\u5199\\u4f5c\\u5458",
+          description: "\\u8bf7\\u6c42\\u5199\\u5165 report.md",
+          target: "\\u76ee\\u6807/report.md",
+        })]}
+        onApprove={noop}
+        onDeny={noop}
+      />,
+    );
+    expect(screen.getByText("内容写作员")).toBeInTheDocument();
+    expect(screen.getByText("请求写入 report.md")).toBeInTheDocument();
+    expect(screen.getByText("目标/report.md")).toBeInTheDocument();
   });
 
   it("\u8d8a\u6743\u5f90\u6807\uff1aread_only \u5c97\u4f4d\u53d1\u8d77 write \u547d\u4e2d\uff0c\u666e\u901a\u5c97\u4f4d\u4e0d\u547d\u4e2d", () => {
