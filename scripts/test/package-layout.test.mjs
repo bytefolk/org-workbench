@@ -244,6 +244,45 @@ test("native staging jobs remain read-only and separate from required checks", (
   assert.doesNotMatch(workflow, /smoke:package:windows:behavior/);
 });
 
+test("a third-party runtime dependency is either packaged or not required", () => {
+  // The manifest maps only the workspace-local shared package into node_modules.
+  // There is no third-party node_modules set, which is deliberate -- the packaged
+  // tree is a boundary, and the layout comment forbids replacing these filters
+  // with node_modules-wide globs. So a bare require in shipped desktop source is
+  // a packaging claim, and it has to be backed by a file set that ships it.
+  const { RUNTIME_FILE_SETS } = require("../../apps/desktop/packaging/runtime-layout.cjs");
+  const shipped = new Set(
+    RUNTIME_FILE_SETS.flatMap((set) => {
+      const to = String(set.to);
+      if (!to.includes("node_modules")) return [];
+      const after = to.slice(to.indexOf("node_modules") + "node_modules/".length);
+      return after.length > 0 ? [after] : [];
+    }),
+  );
+
+  const desktop = RUNTIME_FILE_SETS.find((set) => set.from === "apps/desktop");
+  const builtIn = /^(node:|electron$)/;
+  const unpackaged = [];
+
+  for (const relative of desktop.filter.filter((file) => /^src\/.*\.(js|cjs)$/.test(file))) {
+    const source = fs.readFileSync(path.join(projectRoot, "apps", "desktop", relative), "utf8");
+    for (const match of source.matchAll(/require\("([^".][^"]*)"\)/g)) {
+      const specifier = match[1];
+      if (specifier.startsWith(".") || builtIn.test(specifier)) continue;
+      const owner = specifier.startsWith("@")
+        ? specifier.split("/").slice(0, 2).join("/")
+        : specifier.split("/")[0];
+      if (!shipped.has(owner)) unpackaged.push(`${relative} requires ${specifier}`);
+    }
+  }
+
+  assert.deepEqual(
+    unpackaged,
+    [],
+    `shipped desktop source requires packages the staging manifest does not ship:\n  ${unpackaged.join("\n  ")}`,
+  );
+});
+
 test("installer jobs are additive and claim no signing or publish authority", () => {
   const workflow = fs
     .readFileSync(path.join(projectRoot, ".github/workflows/verify.yml"), "utf8")
