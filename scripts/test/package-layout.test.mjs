@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
+import { builtinModules } from "node:module";
 import test from "node:test";
 import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
@@ -245,6 +246,10 @@ test("native staging jobs remain read-only and separate from required checks", (
 });
 
 test("a third-party runtime dependency is either packaged or not required", () => {
+  // Scanning the generated vendor bundle is deliberate, not incidental: it is the
+  // check that the bundle is self-contained. If esbuild ever left a third-party
+  // require behind, the packaged app would fail at that require rather than here.
+  //
   // The manifest maps only the workspace-local shared package into node_modules.
   // There is no third-party node_modules set, which is deliberate -- the packaged
   // tree is a boundary, and the layout comment forbids replacing these filters
@@ -261,14 +266,26 @@ test("a third-party runtime dependency is either packaged or not required", () =
   );
 
   const desktop = RUNTIME_FILE_SETS.find((set) => set.from === "apps/desktop");
-  const builtIn = /^(node:|electron$)/;
+  // Node built-ins appear both bare and `node:`-prefixed -- esbuild output uses
+  // the bare form. `electron` is provided by the runtime and never packaged.
+  const runtimeProvided = new Set([...builtinModules, "electron"]);
   const unpackaged = [];
 
+  const missing = [];
   for (const relative of desktop.filter.filter((file) => /^src\/.*\.(js|cjs)$/.test(file))) {
-    const source = fs.readFileSync(path.join(projectRoot, "apps", "desktop", relative), "utf8");
+    const absolute = path.join(projectRoot, "apps", "desktop", relative);
+    if (!fs.existsSync(absolute)) {
+      // A manifest entry with no file is a packaging defect on its own -- the
+      // build would ship an incomplete tree. Report it as that, rather than
+      // failing with an unexplained ENOENT.
+      missing.push(relative);
+      continue;
+    }
+    const source = fs.readFileSync(absolute, "utf8");
     for (const match of source.matchAll(/require\("([^".][^"]*)"\)/g)) {
       const specifier = match[1];
-      if (specifier.startsWith(".") || builtIn.test(specifier)) continue;
+      const bare = specifier.startsWith("node:") ? specifier.slice("node:".length) : specifier;
+      if (specifier.startsWith(".") || runtimeProvided.has(bare)) continue;
       const owner = specifier.startsWith("@")
         ? specifier.split("/").slice(0, 2).join("/")
         : specifier.split("/")[0];
@@ -276,6 +293,11 @@ test("a third-party runtime dependency is either packaged or not required", () =
     }
   }
 
+  assert.deepEqual(
+    missing,
+    [],
+    `the manifest names desktop sources that do not exist. Generated files need their build step to have run -- try \`npm run prepare:updater\`:\n  ${missing.join("\n  ")}`,
+  );
   assert.deepEqual(
     unpackaged,
     [],
