@@ -38,6 +38,9 @@ test("staging config is unpacked-only and cannot sign or publish", () => {
   assert.deepEqual(config.files, RUNTIME_FILE_SETS);
   assert.equal(config.mac.identity, null);
   assert.equal(config.win.signExecutable, false);
+  assert.equal(config.nsis.oneClick, true);
+  assert.equal(config.nsis.perMachine, false);
+  assert.equal("allowToChangeInstallationDirectory" in config.nsis, false);
   assert.equal("target" in config.mac, false);
   assert.equal("target" in config.win, false);
   assert.equal("publish" in config, false);
@@ -239,6 +242,46 @@ test("native staging jobs remain read-only and separate from required checks", (
   }
   assert.doesNotMatch(workflow, /contents: write|pull_request_target|\$\{\{\s*secrets\./);
   assert.doesNotMatch(workflow, /smoke:package:windows:behavior/);
+});
+
+test("installer jobs are additive and claim no signing or publish authority", () => {
+  const workflow = fs
+    .readFileSync(path.join(projectRoot, ".github/workflows/verify.yml"), "utf8")
+    .replaceAll("\r\n", "\n");
+
+  // Additive: the staging jobs keep their own commands. #132 adds artifacts, it
+  // does not repurpose the lane that proves the unpacked tree.
+  assert.match(workflow, /installers-macos-arm64:[\s\S]*?runs-on: macos-15/);
+  assert.match(workflow, /installers-windows-x64:[\s\S]*?runs-on: windows-latest/);
+  for (const command of ["package:dist:macos", "verify:dist:macos", "package:dist:windows", "verify:dist:windows"]) {
+    assert.match(workflow, new RegExp(`npm run ${command.replaceAll(":", "\\:")}`));
+  }
+  for (const command of ["package:staging:macos", "smoke:package:windows"]) {
+    assert.match(workflow, new RegExp(`npm run ${command.replaceAll(":", "\\:")}`));
+  }
+
+  // No release target may appear until its own slice. An installer is not a
+  // release: producing an artifact and publishing it are separate authorities.
+  assert.doesNotMatch(workflow, /--publish (?!never)/);
+  assert.doesNotMatch(workflow, /softprops\/action-gh-release|gh release|actions\/upload-release/);
+});
+
+test("every package command refuses publish authority", () => {
+  const scripts = require("../../package.json").scripts;
+  const packaging = Object.entries(scripts).filter(([name]) => name.startsWith("package:"));
+  assert.ok(packaging.length >= 4, "expected the staging and installer package commands");
+
+  for (const [name, command] of packaging) {
+    // A wrapper delegates to another package script rather than invoking the
+    // builder itself, so the guarantee is inherited rather than restated.
+    const delegates = /npm run package:/.test(command);
+    const invokesBuilder = /electron-builder/.test(command);
+    assert.equal(
+      invokesBuilder ? command.includes("--publish never") : delegates,
+      true,
+      `${name} neither carries --publish never nor delegates to a command that does`,
+    );
+  }
 });
 
 test("every module the desktop entry requires is named in the runtime manifest", () => {

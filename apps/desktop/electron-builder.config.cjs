@@ -15,6 +15,11 @@ module.exports = {
     main: "apps/desktop/src/main.js",
   },
   files: RUNTIME_FILE_SETS,
+  // Pinned so the asset-set validator can name what it expects rather than
+  // pattern-match. `name` rather than `productName`: the product name contains a
+  // space, and a space in an artifact filename has already cost this lane one
+  // round of Windows shell defects.
+  artifactName: "${name}-${version}-${arch}.${ext}",
   mac: {
     category: "public.app-category.developer-tools",
     identity: null,
@@ -23,5 +28,13 @@ module.exports = {
   // CSC_LINK/WIN_CSC_LINK. Keep PE metadata editing, but never enter signing.
   win: {
     signExecutable: false,
+  },
+  nsis: {
+    // Strictly per-user install. Assisted mode exposes an all-users choice and
+    // can elevate; one-click mode with perMachine=false keeps this unsigned lane
+    // out of that path. Installation-directory choice is intentionally disabled
+    // because electron-builder only supports it for assisted installers.
+    oneClick: true,
+    perMachine: false,
   },
 };
