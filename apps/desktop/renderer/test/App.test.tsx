@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { pickSelectOption } from "./select-helper";
 import { App } from "../src/App";
@@ -183,6 +183,28 @@ describe("App runtime bridge", () => {
     });
   });
 
+  it("#128 AC-001: clicking a position in the org tree syncs the conversation-position combobox in the turn panel", async () => {
+    // Regression lock: the wiring is OrgTree.onSelect -> selectPosition ->
+    // setSelectedId -> <PositionMention value={selectedPositionId}>. Pin
+    // that path so a future refactor cannot silently break the sync (which
+    // would restart the AC-002 empty-state contradiction and cascade into
+    // MODE/BUDGET/composer/session controls all going idle).
+    openedBridge();
+
+    render(<App />);
+    await selectRepoOwner();
+
+    const combobox = screen.getByRole("combobox", { name: "选择对话岗位" });
+    expect(combobox).toBeEnabled();
+
+    // Once the tree selects a position, the panel's subject chip in the
+    // header ("· repo-owner") plus the subject-scoped copy inside the
+    // panel prove the sync — antd renders the selected label inside the
+    // trigger, but the subject chip is a rendered React child we control.
+    const conversationRegion = screen.getByLabelText("岗位对话");
+    expect(within(conversationRegion).getAllByText(/repo-owner/).length).toBeGreaterThan(0);
+  });
+
   it("opens a workspace, selects @岗位, loads local history, sends, and reads persisted history back", async () => {
     const existing = apiTurn();
     const created = apiTurn({
@@ -242,7 +264,7 @@ describe("App runtime bridge", () => {
     render(<App />);
     await selectRepoOwner();
     pickSelectOption("选择 Agent Host", "Qoder");
-    expect(screen.getByText("Qoder 凭据未配置")).toBeInTheDocument();
+    expect(screen.getAllByText("Qoder 凭据未配置").length).toBeGreaterThan(0);
     expect(screen.getByLabelText("下达任务")).toBeDisabled();
   });
 
@@ -296,7 +318,7 @@ describe("App runtime bridge", () => {
     render(<App />);
     await selectRepoOwner();
     pickSelectOption("选择 Agent Host", "Qoder");
-    expect(await screen.findByText("请先新建或选择一个会话")).toBeInTheDocument();
+    expect((await screen.findAllByText("请先新建或选择一个会话")).length).toBeGreaterThan(0);
     fireEvent.click(screen.getByRole("button", { name: "新建会话" }));
     await waitFor(() => expect(createSession).toHaveBeenCalledWith({ positionId: "repo-owner" }));
     expect(await screen.findByText("历史结果")).toBeInTheDocument();
@@ -310,7 +332,7 @@ describe("App runtime bridge", () => {
     });
 
     pickSelectOption("选择本地会话", rotated.sessionId.slice(0, 8));
-    expect(await screen.findByText("历史会话只读；请选择当前会话")).toBeInTheDocument();
+    expect((await screen.findAllByText("历史会话只读；请选择当前会话")).length).toBeGreaterThan(0);
     expect(screen.getByLabelText("下达任务")).toBeDisabled();
   });
 

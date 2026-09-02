@@ -24,7 +24,7 @@ import type {
   WorkbenchSessionList,
   WorkspaceInfoResponse,
 } from "@org-workbench/shared";
-import { FileChartColumn, FolderTree, History, Network, Plus, ShieldAlert, UsersRound } from "lucide-react";
+import { FileChartColumn, FolderTree, Network, Plus, ShieldAlert, UsersRound } from "lucide-react";
 import { ThemeToggle, useThemeMode } from "./theme-toggle";
 import {
   EMPTY_TURN_STREAM,
@@ -838,7 +838,14 @@ export function App() {
               active: activeModule === "approvals",
               onSelect: () => setActiveModule("approvals"),
             },
-            { id: "memory", label: "记忆", icon: <History aria-hidden="true" size={16} /> },
+            // #128 AC-004: the previous `memory` rail item rendered without
+            // an `onSelect` handler and without a matching render branch, so
+            // clicking it did nothing — a dead entry that misled users into
+            // thinking the whole lower region was broken. The mem plane is
+            // still an upstream dependency (see the desktop app has no wired
+            // access yet), so the rail item is dropped rather than shown as a
+            // "coming soon" placeholder that would compete visually with the
+            // real modules. Restore the entry once mem plane wiring lands.
             { id: "docs", label: "文档", icon: <FolderTree aria-hidden="true" size={16} />, active: activeModule === "docs", onSelect: () => setActiveModule("docs") },
           ]}
         />
