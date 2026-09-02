@@ -85,6 +85,48 @@ function closeSmokeReportReservation(request) {
   closeQuietly(reportFd);
 }
 
+/**
+ * The harness holds a lease file for as long as it still needs the staged process
+ * tree standing. The app closes when the lease is released rather than on a fixed
+ * timer: the external oracle's cost is platform-dependent (a native process inventory
+ * is milliseconds on macOS and seconds on Windows), so any constant here is a race
+ * on some platform. The cap only exists so an abandoned harness cannot leak the app.
+ */
+const HARNESS_LEASE_SUFFIX = ".hold";
+const HARNESS_LEASE_CAP_MS = 120000;
+const HARNESS_LEASE_POLL_MS = 100;
+/** Kept for the case where no lease was taken, matching the previous behaviour. */
+const UNLEASED_CLOSE_DELAY_MS = 2500;
+
+function harnessLeasePath(reportPath) {
+  return `${reportPath}${HARNESS_LEASE_SUFFIX}`;
+}
+
+function awaitHarnessRelease(
+  reportPath,
+  { capMs = HARNESS_LEASE_CAP_MS, pollMs = HARNESS_LEASE_POLL_MS, unleasedDelayMs = UNLEASED_CLOSE_DELAY_MS } = {},
+) {
+  const lease = harnessLeasePath(reportPath);
+  if (!fs.existsSync(lease)) {
+    return new Promise((resolve) => setTimeout(() => resolve("unleased"), unleasedDelayMs));
+  }
+  return new Promise((resolve) => {
+    const deadline = Date.now() + capMs;
+    const tick = () => {
+      if (!fs.existsSync(lease)) {
+        resolve("released");
+        return;
+      }
+      if (Date.now() >= deadline) {
+        resolve("expired");
+        return;
+      }
+      setTimeout(tick, pollMs);
+    };
+    tick();
+  });
+}
+
 function assertReservedReport(request) {
   if (
     request === null ||
@@ -355,7 +397,10 @@ async function runPackagedSmoke({
 }
 
 module.exports = {
+  HARNESS_LEASE_SUFFIX,
   PACKAGED_SMOKE_SCRIPT,
+  awaitHarnessRelease,
+  harnessLeasePath,
   PACKAGED_SMOKE_QUERY_KEY,
   closeSmokeReportReservation,
   createPackagedSmokeLifecycle,

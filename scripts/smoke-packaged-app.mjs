@@ -10,6 +10,7 @@ import { verifyPackagedApp } from "./verify-packaged-app.mjs";
 
 const require = createRequire(import.meta.url);
 const { platformLayout } = require("../apps/desktop/packaging/runtime-layout.cjs");
+const { harnessLeasePath } = require("../apps/desktop/src/packaged-smoke.cjs");
 const {
   bindNativeProcessIdentities,
   descendantProcesses,
@@ -369,6 +370,9 @@ export async function smokePackagedApp(platform, candidate, options = {}) {
   let spawnProvenance = null;
   let completedReport = null;
   let primaryError = null;
+  // Held across the try so a failing assertion still releases the app instead of
+  // leaving it parked until the lease cap expires.
+  let releaseLease = async () => {};
 
   try {
     const stagedApp = platform === "macos"
@@ -441,6 +445,14 @@ export async function smokePackagedApp(platform, candidate, options = {}) {
 
     const executable = path.join(canonicalStagedApp, layout.executableRelative);
     const launch = options.launch ?? launchApp;
+    // Taken before launch so it is already present when the app writes its report
+    // and looks for it. Released once this harness is done reading the process tree.
+    const lease = mode === "static" ? harnessLeasePath(report) : null;
+    if (lease !== null) await fs.writeFile(lease, "held\n", { flag: "wx" });
+    releaseLease = async () => {
+      if (lease === null) return;
+      await fs.rm(lease, { force: true });
+    };
     const { child, closed } = launch(executable, stagingRoot, launchEnvironment);
     assert.equal(Number.isInteger(child.pid), true, "staged app did not receive a process id");
     // Preserve the kernel-created detached group/origin before any identity
@@ -504,6 +516,13 @@ export async function smokePackagedApp(platform, candidate, options = {}) {
     const liveInventory = listNativeProcesses();
     const liveDescendants = descendantProcesses(liveInventory, appIdentity.pid);
     const liveIdentities = bindVisibleProcesses(liveDescendants);
+    // The app is held open by the harness lease, so an empty descendant set here is a
+    // real finding rather than a snapshot that arrived after the app closed.
+    assert.notEqual(
+      liveDescendants.length,
+      0,
+      "staged app reported no descendants while still held open",
+    );
     const liveQoderDescendants = liveDescendants.filter(({ command }) => /qoder(?:-engine|cli)?/i.test(command));
     assert.equal(
       liveQoderDescendants.length,
@@ -511,6 +530,8 @@ export async function smokePackagedApp(platform, candidate, options = {}) {
       `${mode} smoke left a Qoder/Host child alive after reporting`,
     );
 
+    // Everything that needs the tree standing has been read; let the app close.
+    await releaseLease();
     const exit = await waitForClose(closed);
     assert.equal(exit.code, 0, `staged app exited ${exit.code ?? exit.signal}\n${exit.output}`);
     const trackedIdentities = [appIdentity, ...liveIdentities];
@@ -556,6 +577,11 @@ export async function smokePackagedApp(platform, candidate, options = {}) {
   } catch (error) {
     primaryError = error;
   }
+
+  // Release unconditionally: on the failure path the app is still waiting on it.
+  try {
+    await releaseLease();
+  } catch {}
 
   let cleanupError = null;
   try {

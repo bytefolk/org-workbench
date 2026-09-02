@@ -13,6 +13,8 @@ const {
   packagedSmokeRequest,
   startPackagedSmokeLifecycle,
   writeSmokeReport,
+  awaitHarnessRelease,
+  harnessLeasePath,
 } = require("../src/packaged-smoke.cjs");
 const {
   bindNativeProcessIdentity,
@@ -757,4 +759,41 @@ test("batch binding accepts exactly what per-process binding accepts", async (t)
 
   // ...and invalid entries are filtered the same way by both.
   assert.equal(bindNativeProcessIdentities([null, { pid: 1 }, { pid: 0 }]).length, 0);
+});
+
+test("the app waits for the harness lease instead of a fixed delay", async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "owb-lease-"));
+  t.after(() => fs.rmSync(root, { force: true, recursive: true }));
+  const report = path.join(root, "report.json");
+  const lease = harnessLeasePath(report);
+  assert.equal(lease, `${report}.hold`);
+
+  fs.writeFileSync(lease, "held\n");
+  const waiting = awaitHarnessRelease(report, { capMs: 5000, pollMs: 10 });
+  // Still held: the app must not close on its own while the oracle is working.
+  await new Promise((resolve) => setTimeout(resolve, 120));
+  let settled = false;
+  void waiting.then(() => { settled = true; });
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  assert.equal(settled, false, "app stopped waiting while the lease was still held");
+
+  fs.rmSync(lease);
+  assert.equal(await waiting, "released");
+});
+
+test("the harness lease has a cap so an abandoned harness cannot park the app", async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "owb-lease-cap-"));
+  t.after(() => fs.rmSync(root, { force: true, recursive: true }));
+  const report = path.join(root, "report.json");
+  fs.writeFileSync(harnessLeasePath(report), "held\n");
+  assert.equal(await awaitHarnessRelease(report, { capMs: 60, pollMs: 10 }), "expired");
+});
+
+test("no lease falls back to the previous fixed delay", async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "owb-lease-none-"));
+  t.after(() => fs.rmSync(root, { force: true, recursive: true }));
+  const started = Date.now();
+  const outcome = await awaitHarnessRelease(path.join(root, "report.json"), { unleasedDelayMs: 40 });
+  assert.equal(outcome, "unleased");
+  assert.ok(Date.now() - started >= 35, "unleased close should still be delayed");
 });

@@ -27,6 +27,7 @@ const {
   runPackagedBehaviorSmoke,
 } = require("./packaged-behavior-smoke.cjs");
 const {
+  awaitHarnessRelease,
   packagedSmokeLoadOptions,
   runPackagedSmoke,
   startPackagedSmokeLifecycle,
@@ -607,12 +608,16 @@ function createWindow() {
         serverPort: controlPlane?.port,
         resourcesPath: process.resourcesPath,
         onReportWritten: () => lifecycle.markReportWritten(),
-        // Keep the process tree alive briefly after the create-exclusive
-        // report write so the external native oracle can snapshot descendants.
-        close: () => setTimeout(() => {
-          lifecycle.beginIntentionalClose();
-          mainWindow?.close();
-        }, 2500),
+        // Stay up while the harness still holds its lease, so the external native
+        // oracle can finish snapshotting descendants. Its cost is milliseconds on
+        // macOS and seconds on Windows, so a fixed delay here races on one platform
+        // or wastes time on the other; the harness releases when it is actually done.
+        close: () => {
+          void awaitHarnessRelease(smokeRequest.report).then(() => {
+            lifecycle.beginIntentionalClose();
+            mainWindow?.close();
+          });
+        },
       }),
     });
   } else if (behaviorSmokeRequest !== null) {
