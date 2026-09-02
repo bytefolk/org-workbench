@@ -391,6 +391,9 @@ export function GroupsPanel({
       </div>
 
       <div className="owb-groups__panel">
+        {/* #116 REQ-003: the alert must be reachable before a group exists —
+         * a rejected create has no selection to hide behind. */}
+        {panelError ? <p className="owb-groups__error" role="alert">{panelError}</p> : null}
         {selectedGroup === null ? (
           <p className="owb-panel__notice">选择或新建一个群聊；@提及决定谁被显式路由。</p>
         ) : (
@@ -448,8 +451,6 @@ export function GroupsPanel({
                 />
               </label>
             </div>
-
-            {panelError ? <p className="owb-groups__error" role="alert">{panelError}</p> : null}
 
             <div className="owb-groups__panel-body">
               <aside className="owb-groups__roster" aria-label="群成员">

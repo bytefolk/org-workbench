@@ -3,7 +3,13 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import test from "node:test";
 import { routes } from "@org-workbench/shared";
-import type { GroupConversation, GroupTimeline, TurnRecord } from "@org-workbench/shared";
+import type {
+  GroupConversation,
+  GroupTimeline,
+  TurnRecord,
+  WorkbenchSession,
+  WorkbenchSessionList,
+} from "@org-workbench/shared";
 import { api, connectSse, copyExampleWorkspace, startTestServer } from "./helpers.js";
 
 async function openWorkspace(baseUrl: string, token: string, dir: string): Promise<void> {
@@ -79,6 +85,89 @@ test("group create anchors a real session, persists 0o700/0o600 state, and lists
     });
     assert.equal(unsafeRef.status, 400);
     assert.equal((unsafeRef.body as { code: string }).code, "group_request_invalid");
+  } finally {
+    await server.close();
+  }
+});
+
+test("group create reuses an already-active member session as its anchor (#116)", async () => {
+  const server = await startTestServer();
+  const workspace = await copyExampleWorkspace();
+  try {
+    await openWorkspace(server.baseUrl, server.token, workspace);
+    const personal = await api(server.baseUrl, "/sessions", {
+      method: "POST",
+      token: server.token,
+      body: { positionId: "repo-owner" },
+    });
+    assert.equal(personal.status, 201);
+    const anchor = personal.body as WorkbenchSession;
+
+    // AC-001: the create that used to answer 409 session_conflict now answers
+    // 201 and binds the session the member already had.
+    const created = await api(server.baseUrl, routes.groups, {
+      method: "POST",
+      token: server.token,
+      body: { memberPositionIds: ["repo-owner", "release-engineer"] },
+    });
+    assert.equal(created.status, 201);
+    const group = created.body as GroupConversation;
+    assert.equal(group.sessionId, anchor.sessionId);
+
+    // AC-002: reuse is read-only — one session, still active, untouched.
+    const listed = await api(server.baseUrl, "/sessions?positionId=repo-owner", {
+      token: server.token,
+    });
+    assert.equal(listed.status, 200);
+    const state = listed.body as WorkbenchSessionList;
+    assert.equal(state.activeSessionId, anchor.sessionId);
+    assert.deepEqual(state.sessions.map((session) => session.sessionId), [anchor.sessionId]);
+    assert.equal(state.sessions[0]?.status, "active");
+    assert.equal(state.sessions[0]?.rotatedAt, null);
+    assert.equal(state.sessions[0]?.rotatedTo, null);
+
+    // AC-002: the member keeps reserving and completing work on that session.
+    const turn = await api(server.baseUrl, `/sessions/${anchor.sessionId}/turns`, {
+      method: "POST",
+      token: server.token,
+      body: { input: "still my personal session", engine: "qoder" },
+    });
+    assert.equal(turn.status, 200);
+    const history = await api(server.baseUrl, `/sessions/${anchor.sessionId}/turns`, {
+      token: server.token,
+    });
+    assert.equal((history.body as { turns: unknown[] }).turns.length, 1);
+
+    // REQ-001/002 boundary: only the eager group anchor adopts an active
+    // session. Asking for a new one still conflicts, rotation still required.
+    const explicit = await api(server.baseUrl, "/sessions", {
+      method: "POST",
+      token: server.token,
+      body: { positionId: "repo-owner" },
+    });
+    assert.equal(explicit.status, 409);
+    assert.equal((explicit.body as { code: string }).code, "session_conflict");
+
+    // Reuse must not mint a session per group, not even under concurrency.
+    const second = await createGroup(server.baseUrl, server.token, ["repo-owner", "issue-researcher"]);
+    assert.equal(second.sessionId, anchor.sessionId);
+    const raced = await Promise.all([
+      api(server.baseUrl, routes.groups, {
+        method: "POST",
+        token: server.token,
+        body: { memberPositionIds: ["release-engineer", "repo-owner"] },
+      }),
+      api(server.baseUrl, routes.groups, {
+        method: "POST",
+        token: server.token,
+        body: { memberPositionIds: ["release-engineer", "issue-researcher"] },
+      }),
+    ]);
+    assert.deepEqual(raced.map((response) => response.status), [201, 201]);
+    const racedIds = raced.map((response) => (response.body as GroupConversation).sessionId);
+    assert.equal(new Set(racedIds).size, 1, "concurrent creates must not fork a second active session");
+    const after = await api(server.baseUrl, "/sessions?positionId=release-engineer", { token: server.token });
+    assert.equal((after.body as WorkbenchSessionList).sessions.length, 1);
   } finally {
     await server.close();
   }
