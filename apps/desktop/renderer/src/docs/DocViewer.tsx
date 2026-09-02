@@ -1,5 +1,6 @@
 import { Card, Tag, Typography } from "antd";
 import ReactMarkdown from "react-markdown";
+import { useT } from "@org-workbench/ui";
 import { splitFrontmatter } from "./frontmatter";
 
 export interface DocViewerProps {
@@ -11,26 +12,27 @@ export interface DocViewerProps {
   title?: string;
 }
 
-const META_LABEL: Record<string, string> = {
-  name: "名称",
-  description: "描述",
+const META_LABEL_KEYS: Record<string, string> = {
+  name: "docs.metaName",
+  description: "docs.metaDescription",
 };
 
 export function DocViewer({ source, version, title }: DocViewerProps) {
+  const t = useT();
   const { data, body, hasFrontmatter } = splitFrontmatter(source);
-  const heading = title ?? data.name ?? "文档";
+  const heading = title ?? data.name ?? t("docs.untitled");
   const metaEntries = Object.entries(data).filter(([key]) => key !== "name");
   return (
     <Card
       className="owb-doc-viewer"
       title={<Typography.Text strong>{heading}</Typography.Text>}
-      extra={version !== undefined ? <Tag bordered>版本 {version}</Tag> : null}
+      extra={version !== undefined ? <Tag bordered>{t("docs.version", { version })}</Tag> : null}
     >
       {hasFrontmatter && metaEntries.length > 0 ? (
         <dl className="owb-doc-viewer__meta">
           {metaEntries.map(([key, value]) => (
             <div key={key}>
-              <Typography.Text type="secondary">{META_LABEL[key] ?? key}</Typography.Text>{" "}
+              <Typography.Text type="secondary">{META_LABEL_KEYS[key] !== undefined ? t(META_LABEL_KEYS[key]) : key}</Typography.Text>{" "}
               <Typography.Text>{value}</Typography.Text>
             </div>
           ))}

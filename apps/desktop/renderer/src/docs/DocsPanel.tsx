@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Alert, Empty, List, Spin, message } from "antd";
 import { formatDocRefUri } from "@org-workbench/shared/docs";
+import { useT } from "@org-workbench/ui";
 import type { DocsFileEntry, DocsFileListResponse, DocsFileResponse } from "@org-workbench/shared";
 import { DocViewer } from "./DocViewer";
 
@@ -20,6 +21,7 @@ export interface DocsPanelProps {
 }
 
 export function DocsPanel({ positionId, listDocs, readDoc, reloadToken = 0 }: DocsPanelProps) {
+  const t = useT();
   const [files, setFiles] = useState<DocsFileEntry[]>([]);
   const [listing, setListing] = useState(false);
   const [listError, setListError] = useState<string | null>(null);
@@ -78,25 +80,25 @@ export function DocsPanel({ positionId, listDocs, readDoc, reloadToken = 0 }: Do
     });
     try {
       await navigator.clipboard.writeText(ref);
-      message.success("引用已复制");
+      message.success(t("docs.refCopied"));
     } catch {
-      message.error("剪贴板不可用");
+      message.error(t("docs.clipboardUnavailable"));
     }
   };
 
   return (
-    <section className="owb-docs-panel" aria-label="岗位文档">
+    <section className="owb-docs-panel" aria-label={t("docs.panelAria")}>
       {positionId === null ? (
-        <Empty description="先从组织树选择岗位" />
+        <Empty description={t("docs.pickFromTree")} />
       ) : (
         <>
-          {listing ? <Spin aria-label="文档列表加载中" /> : null}
+          {listing ? <Spin aria-label={t("docs.listing")} /> : null}
           {listError !== null ? <Alert type="error" message={listError} /> : null}
           {!listing && listError === null ? (
             <List
               size="small"
               dataSource={files}
-              locale={{ emptyText: "该岗位暂无文档" }}
+              locale={{ emptyText: t("docs.empty") }}
               renderItem={(entry) => (
                 <List.Item
                   key={entry.path}
@@ -105,10 +107,10 @@ export function DocsPanel({ positionId, listDocs, readDoc, reloadToken = 0 }: Do
                       key="copy-ref"
                       type="button"
                       className="owb-docs-panel__copy-ref"
-                      aria-label={`复制引用 ${entry.path}`}
+                      aria-label={t("docs.copyRefAria", { path: entry.path })}
                       onClick={() => copyRef(entry)}
                     >
-                      复制引用
+                      {t("docs.copyRef")}
                     </button>,
                   ]}
                 >
@@ -124,7 +126,7 @@ export function DocsPanel({ positionId, listDocs, readDoc, reloadToken = 0 }: Do
               )}
             />
           ) : null}
-          {reading ? <Spin aria-label="文档加载中" /> : null}
+          {reading ? <Spin aria-label={t("docs.reading")} /> : null}
           {readError !== null ? <Alert type="error" message={readError} /> : null}
           {doc !== null ? <DocViewer source={doc.content} version={doc.version} title={doc.path} /> : null}
         </>

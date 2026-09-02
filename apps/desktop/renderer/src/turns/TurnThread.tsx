@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 import { Empty } from "antd";
 import { AlertTriangle, Check, Clock3, RotateCcw, ShieldAlert, ShieldQuestion } from "lucide-react";
-import { engineLabel } from "./TurnPanel";
+import { useT } from "@org-workbench/ui";
+import { useEngineLabel } from "./TurnPanel";
 import { EngineIcon } from "./engine-icon";
 import type { TurnRecord, TurnStatus } from "./types";
 
@@ -22,20 +23,6 @@ export interface TurnThreadProps {
    * contradictory verdicts after a history reload. */
   decidedApprovalIds?: ReadonlySet<string>;
 }
-
-const STATUS_COPY: Record<TurnStatus, string> = {
-  running: "运行中",
-  completed: "已完成",
-  failed: "失败",
-  indeterminate: "状态未知",
-};
-
-const APPROVAL_KIND_COPY: Record<string, string> = {
-  exec: "命令执行",
-  write: "写入操作",
-  network: "网络访问",
-  tool: "工具调用",
-};
 
 function StatusIcon({ status }: { status: TurnStatus }) {
   if (status === "completed") return <Check aria-hidden="true" size={13} />;
@@ -75,6 +62,8 @@ function settledDuration(turn: TurnRecord): string | null {
  * turns show the sealed duration and a truthful terminal word (可信终态 vs
  * 不确定/失败) — the indeterminate word is never upgraded to a success. */
 function StatusLine({ turn }: { turn: TurnRecord }) {
+  const t = useT();
+  const engineLabel = useEngineLabel();
   const running = turn.status === "running";
   const duration = running ? null : settledDuration(turn);
   return (
@@ -93,13 +82,13 @@ function StatusLine({ turn }: { turn: TurnRecord }) {
       ) : null}
       <span aria-hidden="true">·</span>
       {turn.status === "completed" ? (
-        <span className="is-ok">● 可信终态</span>
+        <span className="is-ok">● {t("turn.trusted")}</span>
       ) : turn.status === "running" ? (
         <span className="is-ok">running</span>
       ) : turn.status === "indeterminate" ? (
-        <span className="is-bad">▲ 不确定</span>
+        <span className="is-bad">▲ {t("turn.untrusted")}</span>
       ) : (
-        <span className="is-bad">▲ 失败</span>
+        <span className="is-bad">▲ {t("turn.failed")}</span>
       )}
     </p>
   );
@@ -109,6 +98,7 @@ function StatusLine({ turn }: { turn: TurnRecord }) {
  * mono chips. The full digest stays reachable via title/expansion; evidence
  * is never dropped (auditability red line). */
 function EvidenceStamps({ turn }: { turn: TurnRecord }) {
+  const t = useT();
   const [open, setOpen] = useState(false);
   const hasDigest = Boolean(turn.envelopeDigest) || Boolean(turn.evidenceDigest);
   return (
@@ -118,7 +108,7 @@ function EvidenceStamps({ turn }: { turn: TurnRecord }) {
           type="button"
           className="owb-ev owb-ev--button"
           aria-expanded={open}
-          aria-label={open ? "收起回合证据全值" : "展开回合证据全值"}
+          aria-label={open ? t("turn.evCollapse") : t("turn.evExpand")}
           title={turn.envelopeDigest}
           onClick={() => setOpen((current) => !current)}
         >
@@ -144,6 +134,7 @@ function EvidenceStamps({ turn }: { turn: TurnRecord }) {
  * stagger, 1.05s ease-out loop — 处方4 聊天例外（见 ADR-0007）。Screen-reader
  * copy stays intact. */
 export function TypingIndicator() {
+  const t = useT();
   return (
     <span className="owb-bubble__typing" role="status">
       <span className="owb-bubble__typing-dots" aria-hidden="true">
@@ -151,7 +142,7 @@ export function TypingIndicator() {
         <i />
         <i />
       </span>
-      正在等待岗位完成本回合…
+      {t("turn.waiting")}
     </span>
   );
 }
@@ -170,15 +161,22 @@ function ApprovalCard({
   decided: boolean;
   onVerdict: (turn: TurnRecord, decision: "granted" | "denied", reason?: string) => void;
 }) {
+  const t = useT();
+  const kindCopy: Record<string, string> = {
+    exec: t("apr.kind.exec"),
+    write: t("apr.kind.write"),
+    network: t("apr.kind.network"),
+    tool: t("apr.kind.tool"),
+  };
   const [reason, setReason] = useState("");
   const request = turn.approvalRequest;
   if (request === undefined) return null;
   const trimmedReason = reason.trim();
   return (
-    <div className={`owb-turn__approval${decided ? " is-decided" : ""}`} role="group" aria-label="审批请求">
+    <div className={`owb-turn__approval${decided ? " is-decided" : ""}`} role="group" aria-label={t("apr.request")}>
       <p className="owb-turn__approval-title">
         <ShieldAlert aria-hidden="true" size={13} />
-        {decided ? "已裁决" : "等待审批"} · {APPROVAL_KIND_COPY[request.kind] ?? request.kind}
+        {decided ? t("apr.decided") : t("apr.pending")} · {kindCopy[request.kind] ?? request.kind}
       </p>
       <p className="owb-turn__approval-description owb-clamp-2" title={request.description}>
         {request.description}
@@ -187,16 +185,16 @@ function ApprovalCard({
         <p className="owb-turn__approval-target" title={request.target}>{request.target}</p>
       ) : null}
       {request.expiresAt ? (
-        <p className="owb-turn__approval-expires">过期时间 {new Date(request.expiresAt).toLocaleString()}</p>
+        <p className="owb-turn__approval-expires">{t("apr.expiresAt", { date: new Date(request.expiresAt).toLocaleString() })}</p>
       ) : null}
       {decided ? (
-        <p className="owb-turn__approval-decided">裁决已随新回合发出，同一审批不再接受重复裁决</p>
+        <p className="owb-turn__approval-decided">{t("apr.decidedNote")}</p>
       ) : (
         <>
           <input
             className="owb-turn__approval-reason"
-            aria-label="拒绝理由（可选）"
-            placeholder="拒绝理由（可选）"
+            aria-label={t("apr.reasonOptional")}
+            placeholder={t("apr.reasonOptional")}
             value={reason}
             disabled={busy}
             onChange={(event) => setReason(event.target.value)}
@@ -208,7 +206,7 @@ function ApprovalCard({
               disabled={busy}
               onClick={() => onVerdict(turn, "granted")}
             >
-              批准并继续
+              {t("apr.grant")}
             </button>
             <button
               type="button"
@@ -216,7 +214,7 @@ function ApprovalCard({
               disabled={busy}
               onClick={() => onVerdict(turn, "denied", trimmedReason.length > 0 ? trimmedReason : undefined)}
             >
-              拒绝
+              {t("apr.deny")}
             </button>
           </div>
         </>
@@ -235,6 +233,14 @@ function ApprovalCard({
  * terminal state. (Supersedes the #61 bubble layout for this panel; the
  * `.owb-bubble*` classes stay in use by the group-chat timeline.) */
 export function TurnThread({ turns, retrying = false, emptyPrompt, canRetry, onRetry, onVerdict, decidedApprovalIds }: TurnThreadProps) {
+  const t = useT();
+  const engineLabel = useEngineLabel();
+  const statusCopy: Record<TurnStatus, string> = {
+    running: t("turn.statusRunning"),
+    completed: t("turn.done"),
+    failed: t("turn.failed"),
+    indeterminate: t("turn.statusUnknown"),
+  };
   if (turns.length === 0) {
     return (
       <div className="owb-turn-thread owb-turn-thread--empty">
@@ -242,8 +248,8 @@ export function TurnThread({ turns, retrying = false, emptyPrompt, canRetry, onR
           image={Empty.PRESENTED_IMAGE_SIMPLE}
           description={
             <>
-              <strong>{emptyPrompt ?? "从一个明确任务开始"}</strong>
-              <p>消息会发送给当前选择的岗位；这里仅展示本地保存的回合。</p>
+              <strong>{emptyPrompt ?? t("turn.emptyStart")}</strong>
+              <p>{t("turn.emptyStartBody")}</p>
             </>
           }
         />
@@ -252,7 +258,7 @@ export function TurnThread({ turns, retrying = false, emptyPrompt, canRetry, onR
   }
 
   return (
-    <ol className="owb-turn-thread" role="log" aria-live="polite" aria-label="本地回合历史">
+    <ol className="owb-turn-thread" role="log" aria-live="polite" aria-label={t("turn.threadAria")}>
       {turns.map((turn) => {
         const retryable = turn.status === "failed" || turn.status === "indeterminate";
         const stateClass =
@@ -286,7 +292,7 @@ export function TurnThread({ turns, retrying = false, emptyPrompt, canRetry, onR
                 </span>
                 <span className="owb-turn__status">
                   <StatusIcon status={turn.status} />
-                  {STATUS_COPY[turn.status]}
+                  {statusCopy[turn.status]}
                 </span>
                 <time className="owb-tc-head__time" dateTime={turn.createdAt}>
                   {new Date(turn.createdAt).toLocaleTimeString()}
@@ -304,9 +310,9 @@ export function TurnThread({ turns, retrying = false, emptyPrompt, canRetry, onR
                 <div className="owb-bubble__error owb-clamp-2" title={turn.error}>{turn.error}</div>
               ) : null}
               {turn.status === "indeterminate" ? (
-                <p className="owb-turn__warning owb-clamp-2" title="运行器未返回可信终态。为避免重复执行，系统不会自动重试。">
+                <p className="owb-turn__warning owb-clamp-2" title={t("turn.untrustedWarning")}>
                   <ShieldQuestion aria-hidden="true" size={13} />
-                  运行器未返回可信终态。为避免重复执行，系统不会自动重试。
+                  {t("turn.untrustedWarning")}
                 </p>
               ) : null}
 
@@ -330,7 +336,7 @@ export function TurnThread({ turns, retrying = false, emptyPrompt, canRetry, onR
                     onClick={() => onRetry(turn)}
                   >
                     <RotateCcw aria-hidden="true" size={13} />
-                    创建新回合重试
+                    {t("turn.retry")}
                   </button>
                 </div>
               ) : null}

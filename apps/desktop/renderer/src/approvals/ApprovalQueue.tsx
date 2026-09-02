@@ -14,8 +14,8 @@
 import { useMemo, useState } from "react";
 import { Alert, Badge, Empty, List, Segmented, Tag, Tooltip } from "antd";
 import { ShieldAlert, ShieldCheck } from "lucide-react";
+import { useT, type OwbT } from "@org-workbench/ui";
 import {
-  APPROVAL_CATEGORY_LABEL,
   isDecided,
   isPermissionOverreach,
   type ApprovalCategory,
@@ -35,10 +35,10 @@ export interface ApprovalQueueProps extends ApprovalQueueCallbacks {
   defaultFilter?: ApprovalQueueFilter;
 }
 
-const FILTER_OPTIONS: { label: string; value: ApprovalQueueFilter }[] = [
-  { label: "\u5f85\u88c1\u51b3", value: "pending" },
-  { label: "\u5df2\u88c1\u51b3", value: "decided" },
-  { label: "\u5168\u90e8", value: "all" },
+const FILTER_OPTIONS: { labelKey: string; value: ApprovalQueueFilter }[] = [
+  { labelKey: "apr.filterPending", value: "pending" },
+  { labelKey: "apr.filterDecided", value: "decided" },
+  { labelKey: "apr.filterAll", value: "all" },
 ];
 
 const CATEGORY_TAG_COLOR: Record<ApprovalCategory, string> = {
@@ -48,16 +48,16 @@ const CATEGORY_TAG_COLOR: Record<ApprovalCategory, string> = {
   tool: "default",
 };
 
-function decisionLabel(item: ApprovalQueueItem): string {
+function decisionLabel(item: ApprovalQueueItem, t: OwbT): string {
   switch (item.decision.kind) {
     case "pending":
-      return "\u5f85\u88c1\u51b3";
+      return t("apr.filterPending");
     case "granted":
-      return "\u5df2\u6279\u51c6";
+      return t("apr.decisionGranted");
     case "denied":
-      return "\u5df2\u62d2\u7edd";
+      return t("apr.decisionDenied");
     case "expired":
-      return "\u5df2\u8fc7\u671f";
+      return t("apr.decisionExpired");
   }
 }
 
@@ -73,6 +73,7 @@ export function ApprovalQueue({
   onApprove,
   onDeny,
 }: ApprovalQueueProps) {
+  const t = useT();
   const [filter, setFilter] = useState<ApprovalQueueFilter>(defaultFilter);
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
@@ -93,29 +94,29 @@ export function ApprovalQueue({
   );
 
   return (
-    <section className="owb-approval-queue" aria-label="\u5ba1\u6279\u961f\u5217">
+    <section className="owb-approval-queue" aria-label={t("apr.queue")}>
       <header className="owb-approval-queue__hero">
         <div>
           <span className="owb-approval-queue__eyebrow">LOCAL CONTROL PLANE</span>
-          <h1 className="owb-approval-queue__title">\u5ba1\u6279\u961f\u5217</h1>
+          <h1 className="owb-approval-queue__title">{t("apr.queue")}</h1>
           <p className="owb-approval-queue__lede">
-            \u6c47\u603b\u6563\u843d\u5728\u5404\u5c97\u4f4d\u56de\u5408\u91cc\u7684 <code>approval.requested</code>\uff1b\u6279\u51c6 / \u62d2\u7edd\u968f\u4e0b\u4e00\u56de\u5408\u7684
-            <code> pendingApproval</code> \u4e0b\u53d1\uff0c\u672c\u9875\u4e0d\u53d1\u8fd0\u884c\u4e2d\u901a\u9053\u3002
+            {t("apr.queueLedeA")}<code>approval.requested</code>{t("apr.queueLedeB")}
+            <code> pendingApproval</code>{t("apr.queueLedeC")}
           </p>
         </div>
-        <div className="owb-approval-queue__badge" aria-label={`\u5f85\u88c1\u51b3 ${pendingCount}`}>
+        <div className="owb-approval-queue__badge" aria-label={t("apr.pendingBadge", { count: pendingCount })}>
           <Badge count={pendingCount} showZero={false} color="var(--ui-primary)">
             <ShieldAlert aria-hidden="true" size={22} />
           </Badge>
         </div>
       </header>
 
-      <div className="owb-approval-queue__toolbar" role="toolbar" aria-label="\u5ba1\u6279\u8fc7\u6ee4">
+      <div className="owb-approval-queue__toolbar" role="toolbar" aria-label={t("apr.filterAria")}>
         <Segmented
           value={filter}
           onChange={(value) => setFilter(value as ApprovalQueueFilter)}
-          options={FILTER_OPTIONS}
-          aria-label="\u6309\u72b6\u6001\u8fc7\u6ee4"
+          options={FILTER_OPTIONS.map((option) => ({ label: t(option.labelKey), value: option.value }))}
+          aria-label={t("apr.filterStateAria")}
         />
       </div>
 
@@ -123,14 +124,14 @@ export function ApprovalQueue({
         <Alert
           type="warning"
           showIcon
-          message="\u63a7\u5236\u9762\u4e0d\u53ef\u8fbe\uff0c\u961f\u5217\u6682\u505c\u5237\u65b0"
+          message={t("apr.offlineBanner")}
           description={errorMessage}
           className="owb-approval-queue__banner"
         />
       ) : null}
 
       {loading ? (
-        <div className="owb-approval-queue__loading" aria-label="\u5ba1\u6279\u961f\u5217\u52a0\u8f7d\u4e2d">
+        <div className="owb-approval-queue__loading" aria-label={t("apr.queueLoading")}>
           <List
             dataSource={[0, 1, 2]}
             renderItem={(key) => (
@@ -145,8 +146,8 @@ export function ApprovalQueue({
           image={<ShieldCheck aria-hidden="true" size={40} />}
           description={
             filter === "pending"
-              ? "\u6ca1\u6709\u7b49\u5f85\u5ba1\u6279\u7684\u52a8\u4f5c \u2014\u2014 \u6240\u6709\u56de\u5408\u90fd\u5728\u754c\u5185\u8fd0\u884c"
-              : "\u8be5\u8fc7\u6ee4\u4e0b\u6ca1\u6709\u6761\u76ee"
+              ? t("apr.emptyPending")
+              : t("apr.emptyFiltered")
           }
         />
       ) : (
@@ -182,6 +183,7 @@ interface ApprovalCardProps {
 }
 
 function ApprovalCard({ item, onOpen }: ApprovalCardProps) {
+  const t = useT();
   const overreach = isPermissionOverreach(item);
   const decided = isDecided(item);
   const decisionTagColor = !decided
@@ -205,25 +207,25 @@ function ApprovalCard({ item, onOpen }: ApprovalCardProps) {
         type="button"
         className="owb-approval-card__row"
         onClick={onOpen}
-        aria-label={`\u5ba1\u6279 ${item.approvalId}`}
+        aria-label={t("apr.cardAria", { id: item.approvalId })}
       >
         <div className="owb-approval-card__head">
           <span className="owb-approval-card__eyebrow">APPROVAL \u00b7 CAPABILITY GATE</span>
           <span className="owb-approval-card__tags">
             <Tag color={CATEGORY_TAG_COLOR[item.category]}>
-              {APPROVAL_CATEGORY_LABEL[item.category]}
+              {t(`apr.kind.${item.category}`)}
             </Tag>
             {overreach ? (
               <Tag color="red" data-testid="approval-overreach-tag">
-                \u8d8a\u6743\u5c1d\u8bd5
+                {t("apr.overreach")}
               </Tag>
             ) : null}
             {item.positionMode ? (
               <Tag color={item.positionMode === "read_only" ? "default" : "purple"}>
-                \u6a21\u5f0f {item.positionMode === "read_only" ? "\u53ea\u8bfb" : "\u9700\u6279\u51c6"}
+                {t("apr.modeTag", { mode: item.positionMode === "read_only" ? t("pos.readOnly") : t("pos.approval") })}
               </Tag>
             ) : null}
-            <Tag color={decisionTagColor}>{decisionLabel(item)}</Tag>
+            <Tag color={decisionTagColor}>{decisionLabel(item, t)}</Tag>
           </span>
         </div>
         <div className="owb-approval-card__title">
@@ -241,7 +243,7 @@ function ApprovalCard({ item, onOpen }: ApprovalCardProps) {
         <p className="owb-approval-card__meta">
           {item.expiresAt ? (
             <Tooltip title={item.expiresAt}>
-              <span className="owb-approval-card__expires">\u8fc7\u671f {item.expiresAt}</span>
+              <span className="owb-approval-card__expires">{t("apr.expires", { at: item.expiresAt })}</span>
             </Tooltip>
           ) : null}
           <span className="owb-approval-card__aid">{item.approvalId}</span>

@@ -1,16 +1,18 @@
+import { zhText } from "@org-workbench/ui";
 import type {
   TurnHistory as ApiTurnHistory,
   TurnRecord as ApiTurnRecord,
 } from "@org-workbench/shared";
 import type { TurnApprovalRequest, TurnRecord } from "./types";
 
-function renderOutput(output: unknown): string | undefined {
+/** #146：展示兜底文案走目录；裸调用（测试/无 Provider）回退 zh 词。 */
+function renderOutput(output: unknown, unrenderable: string): string | undefined {
   if (output === undefined) return undefined;
   if (typeof output === "string") return output;
   try {
     return JSON.stringify(output, null, 2);
   } catch {
-    return "[无法显示的结构化输出]";
+    return unrenderable;
   }
 }
 
@@ -40,7 +42,11 @@ function approvalRequest(record: ApiTurnRecord): TurnApprovalRequest | undefined
  * Explicit presentation adapter. The renderer never persists or reconstructs
  * turn-record.v1; it only gives the server-owned record a display shape.
  */
-export function adaptTurnRecord(record: ApiTurnRecord, positionName: string): TurnRecord {
+export function adaptTurnRecord(
+  record: ApiTurnRecord,
+  positionName: string,
+  unrenderableOutput: string = zhText("turn.unrenderableOutput"),
+): TurnRecord {
   const pendingApproval = approvalRequest(record);
   return {
     id: record.turnId,
@@ -51,7 +57,7 @@ export function adaptTurnRecord(record: ApiTurnRecord, positionName: string): Tu
     status: record.status,
     createdAt: record.createdAt,
     ...(record.status !== "running" ? { completedAt: record.updatedAt } : {}),
-    ...(record.output !== undefined ? { output: renderOutput(record.output) } : {}),
+    ...(record.output !== undefined ? { output: renderOutput(record.output, unrenderableOutput) } : {}),
     ...(record.runId !== undefined ? { runId: record.runId } : {}),
     ...(record.error !== undefined
       ? { error: `${record.error.code}: ${record.error.message}` }
@@ -64,6 +70,7 @@ export function adaptTurnRecord(record: ApiTurnRecord, positionName: string): Tu
 export function adaptTurnHistory(
   history: ApiTurnHistory,
   positionName: string,
+  unrenderableOutput?: string,
 ): TurnRecord[] {
-  return history.turns.map((record) => adaptTurnRecord(record, positionName));
+  return history.turns.map((record) => adaptTurnRecord(record, positionName, unrenderableOutput));
 }

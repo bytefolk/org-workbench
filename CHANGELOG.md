@@ -8,6 +8,9 @@
 含 PR #3（feat(d1): 组织树只读）与 PR #7（fix(examples)）。
 
 ### Added
+### Added
+
+- #146 国际化骨架与全量迁移：`@org-workbench/ui` 新增 `OwbI18nProvider` / `useT` / `zhText` 与 zh-CN/en 双目录（440 key，parity 门强制 key 集合一致）；标题栏新增语言切换钮（恰好两态，持久化，默认 zh-CN，antd ConfigProvider locale 同步切换）；renderer 与 ui 包全部用户可见文案迁入目录，`i18n-cjk-gate` 测试扫描源码字符串字面量内的 CJK 防绕过；数据层（turn 原文、信封、组织文件、裁决输入）不翻译。
 
 - #132：新增 macOS arm64 DMG/ZIP 与 Windows x64 NSIS 安装包构建；保持无签名、Windows per-user 和 `--publish never`。安装/启动/卸载行为验证仍待后续切片。
 - **D2 目录提案编排**：招聘直接生成嵌套岗位包与 0600 原子写 `budget.json`，调岗整目录 rename，裁撤移至树外 `.digital-employee/backup/<id>-<stamp>/`；支持移至根和 `maxDepth=8` 防御上限。
