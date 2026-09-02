@@ -38,6 +38,11 @@ export const routes = {
   assetsList: "/assets/list",
   assetsRead: "/assets/read",
   assetsCreate: "/assets/create",
+  /** Additive drive (mem) plane proxy — MVP list/detail/upload; the workbench
+   * never mirrors mem storage, it only forwards to the configured MEM_URL. */
+  driveList: "/drive/list",
+  driveDetail: "/drive/detail",
+  driveUpload: "/drive/upload",
   events: "/events",
 } as const;
 

@@ -36,6 +36,11 @@ const {
   validateDocsReadRequest,
   validateDocsResolveRequest,
 } = require("./docs-ipc.cjs");
+const {
+  validateDriveListRequest,
+  validateDriveDetailRequest,
+  validateDriveUploadRequest,
+} = require("./drive-ipc.cjs");
 const { validateHireRequest } = require("./hire-ipc.cjs");
 const { turnHistoryPath, validateCancelRequest, validateCreateTurnRequest } = require("./turn-ipc.cjs");
 const {
@@ -474,6 +479,44 @@ ipcMain.handle("owb:group:timeline", async (_event, conversationRef) => {
     return { status: 400, body: { code: "group_request_invalid", message: "conversationRef is invalid", retryable: false } };
   }
   return apiRequest(`/groups/${encodeURIComponent(conversationRef)}/turns`);
+});
+
+// Drive plane (bytefolk/mem proxy): whitelisted list/detail reads and a
+// stubbed upload seam. The desktop shell owns the OS file picker so an
+// absolute path never crosses the renderer boundary unvalidated.
+ipcMain.handle("owb:drive:list", async (_event, query) => {
+  const validated = validateDriveListRequest(query);
+  if (!validated.ok) return validated.response;
+  return apiRequest(validated.pathname);
+});
+
+ipcMain.handle("owb:drive:detail", async (_event, id) => {
+  const validated = validateDriveDetailRequest(id);
+  if (!validated.ok) return validated.response;
+  return apiRequest(validated.pathname);
+});
+
+ipcMain.handle("owb:drive:upload", async (_event, filePath) => {
+  const validated = validateDriveUploadRequest(filePath);
+  if (!validated.ok) return validated.response;
+  // TODO(mem-upload): once mem's multipart PUT to /v1/files is contract-frozen,
+  // read validated.request.filePath here and stream it upstream. Until then
+  // the server route also returns a stub payload, keeping the seam honest.
+  return apiRequest("/drive/upload", { method: "POST", body: validated.request });
+});
+
+ipcMain.handle("owb:drive:pick-and-upload", async () => {
+  const options = {
+    title: "选择要上传到 mem 的文件",
+    properties: ["openFile"],
+  };
+  const picked = mainWindow
+    ? await dialog.showOpenDialog(mainWindow, options)
+    : await dialog.showOpenDialog(options);
+  if (picked.canceled || picked.filePaths.length === 0) return { canceled: true };
+  const validated = validateDriveUploadRequest(picked.filePaths[0]);
+  if (!validated.ok) return validated.response;
+  return apiRequest("/drive/upload", { method: "POST", body: validated.request });
 });
 
 ipcMain.handle("owb:sse-status:get", async () => currentSseStatus);

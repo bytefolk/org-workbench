@@ -10,6 +10,9 @@ import type {
   DocsFileListResponse,
   DocsFileResponse,
   DocsResolveResponse,
+  DriveObjectDetailResponse,
+  DriveObjectListResponse,
+  DriveUploadResponse,
   GroupConversation,
   GroupConversationList,
   GroupTimeline,
@@ -76,6 +79,12 @@ export interface OwbBridge {
   addGroupMember(request: { conversationRef: string; positionId: string }): Promise<OwbApiResponse<GroupConversation>>;
   createGroupTurn(request: { conversationRef: string; input: string; engine: TurnEngine; mentions: string[] }): Promise<OwbApiResponse<{ conversationRef: string; messageId: string; spawns: Array<{ turnId: string; positionId: string }> }>>;
   groupTimeline(conversationRef: string): Promise<OwbApiResponse<GroupTimeline>>;
+  drive: {
+    list(q?: string): Promise<OwbApiResponse<DriveObjectListResponse>>;
+    detail(id: string): Promise<OwbApiResponse<DriveObjectDetailResponse>>;
+    upload(filePath: string): Promise<OwbApiResponse<DriveUploadResponse>>;
+    pickAndUpload(): Promise<OwbApiResponse<DriveUploadResponse> | { canceled: true }>;
+  };
   sseStatus(): Promise<"connecting" | "connected">;
   /** #73 custom title bar controls (frameless window). */
   windowMinimize(): Promise<{ ok: boolean }>;

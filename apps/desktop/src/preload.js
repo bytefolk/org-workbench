@@ -35,6 +35,12 @@ contextBridge.exposeInMainWorld("owb", {
   addGroupMember: (request) => ipcRenderer.invoke("owb:group:member:add", request),
   createGroupTurn: (request) => ipcRenderer.invoke("owb:group:turn:create", request),
   groupTimeline: (conversationRef) => ipcRenderer.invoke("owb:group:timeline", conversationRef),
+  drive: {
+    list: (q) => ipcRenderer.invoke("owb:drive:list", q),
+    detail: (id) => ipcRenderer.invoke("owb:drive:detail", id),
+    upload: (filePath) => ipcRenderer.invoke("owb:drive:upload", filePath),
+    pickAndUpload: () => ipcRenderer.invoke("owb:drive:pick-and-upload"),
+  },
   sseStatus: () => ipcRenderer.invoke("owb:sse-status:get"),
   // #73 custom title bar controls (设计稿 .wintitle): enumerated, no generic
   // window channel — the renderer can only minimize / toggle-maximize / close.
