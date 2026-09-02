@@ -16,6 +16,7 @@ const {
 } = require("../src/packaged-smoke.cjs");
 const {
   bindNativeProcessIdentity,
+  bindNativeProcessIdentities,
   descendantProcesses,
   listNativeProcesses,
   residualProcesses,
@@ -723,4 +724,37 @@ test("windows powershell scripts parse", { skip: powerShellParser() === null ? "
     );
     assert.equal(parsed.status, 0, `${name} failed to parse:\n${parsed.stdout}${parsed.stderr}`);
   }
+});
+
+
+test("batch binding accepts exactly what per-process binding accepts", async (t) => {
+  const children = [
+    spawn(process.execPath, ["-e", "process.stdout.write('x');setInterval(()=>{},1000)"]),
+    spawn(process.execPath, ["-e", "process.stdout.write('x');setInterval(()=>{},1000)"]),
+  ];
+  t.after(() => {
+    for (const child of children) {
+      try { child.kill("SIGKILL"); } catch {}
+    }
+  });
+  await Promise.all(children.map((child) => once(child.stdout, "data")));
+
+  const inventory = listNativeProcesses();
+  const observed = children.map((child) => inventory.find(({ pid }) => pid === child.pid));
+  assert.equal(observed.every((entry) => entry !== undefined), true, "spawned children must be visible");
+
+  const batch = bindNativeProcessIdentities(observed);
+  assert.equal(batch.length, children.length, "every live child should bind");
+  assert.deepEqual(
+    batch.map(({ pid }) => pid).sort((a, b) => a - b),
+    children.map(({ pid }) => pid).sort((a, b) => a - b),
+  );
+
+  // The batch form must not widen acceptance: a stale observation is still rejected.
+  const stale = { ...observed[0], startTime: "1" };
+  assert.equal(bindNativeProcessIdentities([stale]).length, 0, "batch accepted a stale identity");
+  assert.equal(bindNativeProcessIdentity(stale), null, "per-process accepted a stale identity");
+
+  // ...and invalid entries are filtered the same way by both.
+  assert.equal(bindNativeProcessIdentities([null, { pid: 1 }, { pid: 0 }]).length, 0);
 });

@@ -136,6 +136,32 @@ const IDENTITY_SCRIPT = [
   "} | ConvertTo-Json -Compress",
 ].join("\n");
 
+const IDENTITIES_SCRIPT = [
+  "$targets = @($env:OWB_TARGET_PIDS -split ',' | Where-Object { $_ -ne '' } | ForEach-Object { [int]$_ })",
+  "$rows = @()",
+  "if ($targets.Count -gt 0) {",
+  "  $filter = ($targets | ForEach-Object { \"ProcessId=$_\" }) -join ' or '",
+  "  $index = @{}",
+  "  foreach ($entry in @(Get-CimInstance Win32_Process -Filter $filter)) { $index[[int]$entry.ProcessId] = $entry }",
+  "  foreach ($target in $targets) {",
+  "    $cim = $index[$target]",
+  "    if ($null -eq $cim) { continue }",
+  "    try { $process = [Diagnostics.Process]::GetProcessById($target) } catch { continue }",
+  "    try {",
+  "      $rows += [pscustomobject]@{",
+  "        ProcessId=$cim.ProcessId",
+  "        ParentProcessId=$cim.ParentProcessId",
+  "        StartIdentity=$cim.CreationDate.ToUniversalTime().Ticks.ToString()",
+  "        HandleStartIdentity=$process.StartTime.ToUniversalTime().Ticks.ToString()",
+  "        ExecutablePath=$process.MainModule.FileName",
+  "        CommandLine=$cim.CommandLine",
+  "      }",
+  "    } catch { continue }",
+  "  }",
+  "}",
+  "$rows | ConvertTo-Json -Compress",
+].join("\n");
+
 const TERMINATE_SCRIPT = [
   "$TargetPid = [int]$env:OWB_TARGET_PID",
   "$HandleStart = [string]$env:OWB_HANDLE_START",
@@ -177,7 +203,10 @@ function readWindowsBoundIdentity(pid) {
   const result = windowsPowerShell(script, { OWB_TARGET_PID: String(pid) });
   if (result.status === 3) return null;
   if (result.status !== 0) throw new Error(`process identity failed: ${result.stderr ?? "unknown error"}`);
-  const row = JSON.parse(result.stdout);
+  return boundIdentityFromRow(JSON.parse(result.stdout));
+}
+
+function boundIdentityFromRow(row) {
   return {
     pid: Number(row.ProcessId),
     ppid: Number(row.ParentProcessId),
@@ -187,6 +216,50 @@ function readWindowsBoundIdentity(pid) {
     executable: String(row.ExecutablePath),
     command: String(row.CommandLine ?? ""),
   };
+}
+
+/**
+ * Bind a whole set of pids in one shell round trip.
+ *
+ * The per-pid path costs a PowerShell start plus a filtered CIM query each, so a
+ * snapshot of an Electron tree ran to several seconds -- longer than the window the
+ * packaged app holds itself open for the external oracle. One filtered query covers
+ * every target instead. Nothing about the identity is weakened: CreationDate is still
+ * read fresh from CIM at bind time, and HandleStartIdentity still comes from an open
+ * .NET handle, only now from a single process rather than one per pid.
+ */
+function readWindowsBoundIdentities(pids) {
+  if (pids.length === 0) return [];
+  const result = windowsPowerShell(IDENTITIES_SCRIPT, { OWB_TARGET_PIDS: pids.join(",") });
+  if (result.status !== 0) {
+    throw new Error(`process identity batch failed: ${result.stderr ?? "unknown error"}`);
+  }
+  const parsed = JSON.parse(result.stdout || "[]");
+  return (Array.isArray(parsed) ? parsed : [parsed]).map(boundIdentityFromRow);
+}
+
+/**
+ * Batch form of bindNativeProcessIdentity. Same acceptance rule per process -- an
+ * entry survives only when the freshly read identity still matches what the caller
+ * observed -- applied across the set.
+ */
+function bindNativeProcessIdentities(processInfos) {
+  const candidates = processInfos.filter(
+    (processInfo) => processInfo && Number.isInteger(processInfo.pid) && processInfo.pid > 1,
+  );
+  if (process.platform !== "win32") {
+    return candidates.map((processInfo) => bindNativeProcessIdentity(processInfo)).filter((identity) => identity !== null);
+  }
+  const bound = new Map();
+  for (const identity of readWindowsBoundIdentities(candidates.map(({ pid }) => pid))) {
+    bound.set(identity.pid, identity);
+  }
+  const identities = [];
+  for (const processInfo of candidates) {
+    const identity = bound.get(processInfo.pid);
+    if (identity !== undefined && identityCoreMatches(processInfo, identity)) identities.push(identity);
+  }
+  return identities;
 }
 
 function bindNativeProcessIdentity(processInfo) {
@@ -472,9 +545,11 @@ module.exports = {
   WINDOWS_POWERSHELL_SCRIPTS: {
     inventory: INVENTORY_SCRIPT,
     identity: IDENTITY_SCRIPT,
+    identities: IDENTITIES_SCRIPT,
     terminate: TERMINATE_SCRIPT,
   },
   bindNativeProcessIdentity,
+  bindNativeProcessIdentities,
   windowsPowerShellInvocation,
   descendantProcesses,
   listNativeProcesses,

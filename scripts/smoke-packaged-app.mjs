@@ -11,7 +11,7 @@ import { verifyPackagedApp } from "./verify-packaged-app.mjs";
 const require = createRequire(import.meta.url);
 const { platformLayout } = require("../apps/desktop/packaging/runtime-layout.cjs");
 const {
-  bindNativeProcessIdentity,
+  bindNativeProcessIdentities,
   descendantProcesses,
   listNativeProcesses,
   terminateNativeProcessTree,
@@ -291,13 +291,10 @@ export async function cleanupSmokeStaging({
   if (errors.length > 1) throw new AggregateError(errors, "staged process and directory cleanup both failed");
 }
 
+// Runs inside the window the packaged app holds open for this snapshot, so the
+// whole set is bound in one shell round trip rather than one per process.
 function bindVisibleProcesses(processes) {
-  const identities = [];
-  for (const processInfo of processes) {
-    const identity = bindNativeProcessIdentity(processInfo);
-    if (identity !== null) identities.push(identity);
-  }
-  return identities;
+  return bindNativeProcessIdentities(processes);
 }
 
 export async function smokePackagedApp(platform, candidate, options = {}) {
