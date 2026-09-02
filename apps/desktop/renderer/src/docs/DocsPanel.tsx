@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { Alert, Empty, List, Spin, message } from "antd";
+import { Copy, FileCode2, FolderOpen, LoaderCircle } from "lucide-react";
 import { formatDocRefUri } from "@org-workbench/shared/docs";
 import type { DocsFileEntry, DocsFileListResponse, DocsFileResponse } from "@org-workbench/shared";
 import { DocViewer } from "./DocViewer";
@@ -84,48 +85,111 @@ export function DocsPanel({ positionId, listDocs, readDoc, reloadToken = 0 }: Do
     }
   };
 
+  const formatSize = (size: number): string => {
+    if (size < 1024) return `${size} B`;
+    if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`;
+    return `${(size / (1024 * 1024)).toFixed(1)} MB`;
+  };
+
+  const fileExtension = (path: string): string => {
+    const extension = path.split(".").pop();
+    return extension && extension !== path ? extension.toUpperCase() : "FILE";
+  };
+
+  const renderFilePath = (path: string) => {
+    const separator = path.lastIndexOf("/");
+    if (separator < 0) return <span className="owb-docs-panel__file-name">{path}</span>;
+    return (
+      <>
+        <span className="owb-docs-panel__file-parent">{path.slice(0, separator)}/</span>
+        <span className="owb-docs-panel__file-name">{path.slice(separator + 1)}</span>
+      </>
+    );
+  };
+
   return (
     <section className="owb-docs-panel" aria-label="岗位文档">
       {positionId === null ? (
         <Empty description="先从组织树选择岗位" />
       ) : (
         <>
-          {listing ? <Spin aria-label="文档列表加载中" /> : null}
-          {listError !== null ? <Alert type="error" message={listError} /> : null}
+          <header className="owb-docs-panel__header">
+            <div>
+              <span className="owb-docs-panel__eyebrow">WORKSPACE FILES</span>
+              <h2>文档清单</h2>
+            </div>
+            <span className="owb-docs-panel__count" aria-label={`${files.length} 个文档`}>
+              {files.length.toString().padStart(2, "0")} <small>FILES</small>
+            </span>
+          </header>
+          {listing ? (
+            <div className="owb-docs-panel__loading" role="status">
+              <LoaderCircle aria-hidden="true" size={15} />
+              <span>正在同步文件清单…</span>
+              <Spin aria-label="文档列表加载中" size="small" />
+            </div>
+          ) : null}
+          {listError !== null ? <Alert className="owb-docs-panel__error" type="error" showIcon message={listError} /> : null}
           {!listing && listError === null ? (
             <List
+              className="owb-docs-panel__list"
               size="small"
               dataSource={files}
-              locale={{ emptyText: "该岗位暂无文档" }}
+              locale={{
+                emptyText: (
+                  <div className="owb-docs-panel__empty">
+                    <span className="owb-docs-panel__empty-icon" aria-hidden="true">
+                      <FolderOpen size={18} strokeWidth={1.7} />
+                    </span>
+                    <strong>该岗位暂无文档</strong>
+                    <span>创建一个空文档，作为这个岗位的工作入口。</span>
+                  </div>
+                ),
+              }}
               renderItem={(entry) => (
                 <List.Item
                   key={entry.path}
-                  actions={[
-                    <button
-                      key="copy-ref"
-                      type="button"
-                      className="owb-docs-panel__copy-ref"
-                      aria-label={`复制引用 ${entry.path}`}
-                      onClick={() => copyRef(entry)}
-                    >
-                      复制引用
-                    </button>,
-                  ]}
+                  className="owb-docs-panel__item"
                 >
+                  <div className="owb-docs-panel__item-main">
+                    <span className="owb-docs-panel__file-icon" aria-hidden="true">
+                      <FileCode2 size={17} strokeWidth={1.8} />
+                    </span>
+                    <button
+                      type="button"
+                      className="owb-docs-panel__file"
+                      aria-label={entry.path}
+                      aria-pressed={selected === entry.path}
+                      onClick={() => openFile(entry.path)}
+                    >
+                      {renderFilePath(entry.path)}
+                    </button>
+                  </div>
+                  <div className="owb-docs-panel__item-meta" aria-hidden="true">
+                    <span className="owb-docs-panel__file-type">{fileExtension(entry.path)}</span>
+                    <span>{formatSize(entry.size)}</span>
+                  </div>
                   <button
                     type="button"
-                    className="owb-docs-panel__file"
-                    aria-pressed={selected === entry.path}
-                    onClick={() => openFile(entry.path)}
+                    className="owb-docs-panel__copy-ref"
+                    aria-label={`复制引用 ${entry.path}`}
+                    title={`复制引用 ${entry.path}`}
+                    onClick={() => copyRef(entry)}
                   >
-                    {entry.path}
+                    <Copy aria-hidden="true" size={14} strokeWidth={1.9} />
+                    <span>复制引用</span>
                   </button>
                 </List.Item>
               )}
             />
           ) : null}
-          {reading ? <Spin aria-label="文档加载中" /> : null}
-          {readError !== null ? <Alert type="error" message={readError} /> : null}
+          {reading ? (
+            <div className="owb-docs-panel__reading" role="status">
+              <Spin aria-label="文档加载中" size="small" />
+              <span>正在打开文档…</span>
+            </div>
+          ) : null}
+          {readError !== null ? <Alert className="owb-docs-panel__error" type="error" showIcon message={readError} /> : null}
           {doc !== null ? <DocViewer source={doc.content} version={doc.version} title={doc.path} /> : null}
         </>
       )}
