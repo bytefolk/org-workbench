@@ -4,7 +4,7 @@
 // taking the left column's remaining height and the dismiss action pinned to
 // the bottom of the column.
 //
-// Two declarations shipped it broken: `.owb-workspace-grid` sized its tracks
+// Two declarations shipped it broken: `.owb-org-module` sized its tracks
 // `minmax(300px, .92fr) minmax(360px, 1.14fr)` (left permanently narrower, and
 // the unequal 300/360 px floors pinned that ratio once the fr maths stopped
 // dominating), and `.owb-position-column` opted out of the row with
@@ -168,12 +168,12 @@ test("position region and conversation panel are equal width on desktop (#120 AC
 
   for (const viewport of [VIEWPORTS.desktop, VIEWPORTS.desktopEdge]) {
     assert.equal(
-      valueAt(rules, ".owb-workspace-grid", "display", viewport),
+      valueAt(rules, ".owb-org-module", "display", viewport),
       "grid",
       `${viewport.width}px: without display: grid the two children stack as blocks, so every track assertion below describes a layout that never renders`,
     );
 
-    const tracks = trackList(valueAt(rules, ".owb-workspace-grid", "grid-template-columns", viewport));
+    const tracks = trackList(valueAt(rules, ".owb-org-module", "grid-template-columns", viewport));
     assert.equal(tracks.length, 2, `${viewport.width}px must keep the two-column pair`);
     const [left, right] = tracks.map(normalizeTrack);
     assert.equal(
@@ -192,7 +192,7 @@ test("position column stretches to the row and pins dismiss to the bottom (#120 
   const viewport = VIEWPORTS.desktop;
 
   assert.equal(
-    valueAt(rules, ".owb-workspace-grid", "align-items", viewport),
+    valueAt(rules, ".owb-org-module", "align-items", viewport),
     "stretch",
     "the grid must stretch its items, otherwise equal row height depends on every column sizing itself",
   );
@@ -209,7 +209,7 @@ test("position column stretches to the row and pins dismiss to the bottom (#120 
   assert.equal(normalizeTrack(rows[1]), "auto", `dismiss row "${rows[1]}" must stay content-sized at the bottom`);
 
   assert.ok(
-    flexGrows(valueAt(rules, ".owb-org-module > .owb-workspace-grid", "flex", viewport)),
+    flexGrows(valueAt(rules, ".owb-main > .owb-org-module", "flex", viewport)),
     "the Org page has to give the grid the window's remaining height, or there is no row to share",
   );
 });
@@ -249,11 +249,43 @@ test("position content and dismiss action stay reachable under vertical pressure
   );
 });
 
+test("left column pairs the chart and the position record; conversation owns the right column (#137 AC-001/003)", () => {
+  const rules = stylesheetRules();
+  const viewport = VIEWPORTS.desktop;
+
+  assert.equal(
+    valueAt(rules, ".owb-org-module__left", "display", viewport),
+    "flex",
+    "the left column is a flex stack: chart on top, position record below, same width by construction",
+  );
+  assert.equal(
+    valueAt(rules, ".owb-org-module__left", "flex-direction", viewport),
+    "column",
+    "chart and position record must stack vertically in one column",
+  );
+  assert.ok(
+    !flexGrows(valueAt(rules, ".owb-org-module__left > .owb-org-chart", "flex", viewport)),
+    "the chart keeps its content height inside the left column",
+  );
+  assert.ok(
+    flexGrows(valueAt(rules, ".owb-org-module__left > .owb-position-column", "flex", viewport)),
+    "the position record absorbs the left column's remaining height so the column fills the module row",
+  );
+  // Right column: the turn panel is a direct grid item of .owb-org-module and
+  // the module stretches its items, so the conversation panel owns the full
+  // module height (structural guarantee; jsdom-free CSS contract).
+  assert.equal(
+    valueAt(rules, ".owb-org-module", "align-items", viewport),
+    "stretch",
+    "module-level stretch is what lets the conversation panel own the right column height",
+  );
+});
+
 test("the pair stacks in one column at 980px and below, without unequal-width tracks (#120 AC-004)", () => {
   const rules = stylesheetRules();
 
   for (const viewport of [VIEWPORTS.stackedAt980, VIEWPORTS.stackedNarrow]) {
-    const tracks = trackList(valueAt(rules, ".owb-workspace-grid", "grid-template-columns", viewport));
+    const tracks = trackList(valueAt(rules, ".owb-org-module", "grid-template-columns", viewport));
     assert.equal(
       tracks.length,
       1,
@@ -261,7 +293,7 @@ test("the pair stacks in one column at 980px and below, without unequal-width tr
     );
   }
 
-  const minWidth = valueAt(rules, ".owb-workspace-grid > *", "min-width", VIEWPORTS.desktop);
+  const minWidth = valueAt(rules, ".owb-org-module > *", "min-width", VIEWPORTS.desktop);
   assert.equal(
     minWidth,
     "0",

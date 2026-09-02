@@ -538,7 +538,7 @@
 
 
 @media (max-width: 1080px) {
-  .owb-workspace-grid { grid-template-columns: minmax(240px, .65fr) minmax(380px, 1.35fr); }
+  .owb-org-module { grid-template-columns: minmax(240px, .65fr) minmax(380px, 1.35fr); }
   .owb-form-grid { grid-template-columns: 1fr; }
   .owb-form-grid__wide { grid-column: auto; }
 }
@@ -575,7 +575,7 @@
   font-size: var(--ui-text-sm, 13px);
 }
 
-/* #127 AC-001: `.owb-workspace-grid` and `.owb-workspace-grid > .owb-turn-panel`
+/* #127 AC-001: `.owb-org-module` and `.owb-org-module > .owb-turn-panel` (formerly .owb-workspace-grid)
  * were previously declared here with `align-items: start` and a viewport-
  * driven `height: calc(100vh - 116px)`, and again a few thousand lines below
  * with `align-items: stretch` and `height: auto`. The later block won in the
@@ -1345,11 +1345,11 @@
 }
 
 @media (max-width: 760px) {
-  .owb-workspace-grid {
+  .owb-org-module {
     grid-template-columns: 1fr;
   }
 
-  .owb-workspace-grid > .owb-turn-panel {
+  .owb-org-module > .owb-turn-panel {
     height: auto;
   }
 
@@ -2404,10 +2404,9 @@
 /* #120：桌面宽度下岗位区和对话区要读成“一对”。旧的 0.92fr/1.14fr 让左栏恒
    窄一档；两轨不同的 px 下限（300/360）会在比例算不出来时接管轨道宽度，把
    差值钉死，所以一并归零，等宽完全交给 1fr/1fr。
-   display 不能省：#130 单源化（issue #127）删掉了早先那个带 `display: grid` 的副本，之后
-   全文件再没有任何 .owb-workspace-grid 块声明 display，元素退回 display: block，
-   两栏变成上下堆叠、grid-template-columns 完全不生效。 */
-.owb-workspace-grid {
+   display 不能省：#130 单源化（issue #127）删掉了早先那个带 `display: grid` 的副本。
+   #137 起该块改挂在 .owb-org-module 上（两列工作区：左列图+档案、右列对话）。 */
+.owb-org-module {
   display: grid;
   height: 100%;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
@@ -2417,12 +2416,12 @@
 
 /* minmax(0, …) 只保证轨道等宽。栅格项的自动最小尺寸是 min-content，轨道比
    它窄时内容会顶出轨道，所以项自己放弃这个下限。 */
-.owb-workspace-grid > * {
+.owb-org-module > * {
   min-width: 0;
   min-height: 0;
 }
 
-.owb-workspace-grid > .owb-turn-panel {
+.owb-org-module > .owb-turn-panel {
   height: auto;
   min-height: 0;
 }
@@ -3086,7 +3085,7 @@
  * -------------------------------------------------------------------------*/
 
 /* 宽窗：内容区给一个可读上限并居中，避免超宽屏下两栏被拉成大片空白。 */
-.owb-main > .owb-workspace-grid,
+.owb-main > .owb-org-module,
 .owb-main > .owb-reports,
 .owb-main > .owb-groups {
   width: 100%;
@@ -3095,7 +3094,7 @@
 }
 
 /* 竖向填充链：.ui-app-shell__main 是 grid 的 1fr 行（高度确定），但 .owb-main
-   自身没有高度，于是 .owb-workspace-grid 的 height:100% 落空、两栏只有内容
+   自身没有高度，于是 .owb-org-module 的 height:100% 落空、两栏只有内容
    高度，窗口下半部整片空着（"组织页很空"的根因）。逐级 flex:1 打通。 */
 .owb-app .ui-app-shell__main {
   display: flex;
@@ -3108,14 +3107,14 @@
   min-height: 0;
 }
 
-.owb-main > .owb-workspace-grid,
+.owb-main > .owb-org-module,
 .owb-main > .owb-groups,
 .owb-main > .owb-docs-module {
   flex: 1;
   min-height: 0;
 }
 
-/* #127 AC-001: `.owb-workspace-grid { align-items: stretch }` and
+/* #127 AC-001: `.owb-org-module { align-items: stretch }` and
  * `.owb-position-column { gap }` used to be re-declared here, duplicating
  * the definitive blocks near "主区：14px padding + 两栏". Merged into the
  * canonical location; only truly scoped/specific rules remain below. */
@@ -3130,14 +3129,14 @@
     --ui-sidebar-width: 252px;
   }
 
-  .owb-workspace-grid {
+  .owb-org-module {
     grid-template-columns: 1fr;
   }
 
   /* 单栏堆叠时给两栏各自可用的最小高度；选择器特异性必须对齐前面的
-     `.owb-workspace-grid > .owb-turn-panel { min-height: 0 }`，否则被压掉。 */
-  .owb-workspace-grid > .owb-position-column,
-  .owb-workspace-grid > .owb-turn-panel {
+     `.owb-org-module > .owb-turn-panel { min-height: 0 }`，否则被压掉。 */
+  .owb-org-module__left > .owb-position-column,
+  .owb-org-module > .owb-turn-panel {
     min-height: 380px;
   }
 
@@ -3184,8 +3183,8 @@
 
 /* 竖向压缩（窗口被压扁）：面板不再抢固定最小高度，交给滚动。 */
 @media (max-height: 720px) {
-  .owb-workspace-grid > .owb-position-column,
-  .owb-workspace-grid > .owb-turn-panel {
+  .owb-org-module__left > .owb-position-column,
+  .owb-org-module > .owb-turn-panel {
     min-height: 0;
   }
 
@@ -3244,21 +3243,21 @@
  * 走线色取 --ui-border-strong（两主题都有定义）；卡面沿用暖纸色阶与
  * 6/10 圆角、120ms ease-out 动效纪律（与 DS-73-001 同口径）。 */
 
-/* 组织页主区包壳：组织图在上（收缩），原工作区网格在下（占满剩余高）。 */
-.owb-org-module {
+/* #137 左列：组织图保持内容高度，岗位档案卡吃掉左列剩余高度，
+ * 使左列始终填满模块行（与右列对话面板对齐）。 */
+.owb-org-module__left {
   display: flex;
   flex-direction: column;
   gap: 14px;
-  height: 100%;
+  min-width: 0;
   min-height: 0;
 }
 
-.owb-org-module > .owb-org-chart {
+.owb-org-module__left > .owb-org-chart {
   flex: none;
 }
 
-.owb-org-module > .owb-workspace-grid {
-  height: auto;
+.owb-org-module__left > .owb-position-column {
   flex: 1;
   min-height: 0;
 }
@@ -3317,9 +3316,11 @@
 
 /* 不设固定高度上限——组织图按实际深度自然撑开，深层组织不再被硬顶掉根节点；
  * 选中岗位变化时会自动滚动定位（见 OrgChart.tsx 的 scrollIntoView 效果）。
- * 想省空间就用头部折叠按钮，而不是靠系统偷偷裁掉内容。 */
+ * 想省空间就用头部折叠按钮，而不是靠系统偷偷裁掉内容。
+ * #137 起组织图住在半宽左列：横向溢出改在列内滚动（stage 比容器宽时出
+ * 横向滚动条），纵向仍自然撑开。 */
 .owb-org-chart__body {
-  overflow: visible;
+  overflow-x: auto;
   padding: 4px 14px 14px;
 }
 

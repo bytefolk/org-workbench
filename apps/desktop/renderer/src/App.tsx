@@ -1055,6 +1055,11 @@ export function App() {
             selectedPositionId={selectedId}
           />
         ) : <div className="owb-org-module">
+          {/* #137 two-column workspace: the left column stacks the org chart
+              and the position-record card (aligned, one column); the right
+              column is owned solely by the conversation panel so the turn
+              stream gets the full module height. */}
+          <div className="owb-org-module__left">
           {/* P0 组织图：应用态汇报树节点图（纯展示，数据与侧栏树同源）。 */}
           <OrgChart
             snapshot={snapshot}
@@ -1066,7 +1071,6 @@ export function App() {
             selectedId={selectedId}
             onSelect={openConversation}
           />
-          <div className="owb-workspace-grid">
           <div className="owb-position-column">
             <PositionCard
               position={card.data}
@@ -1077,6 +1081,7 @@ export function App() {
               onRefresh={() => void refresh()}
             />
             {selectedPosition && selectedId && selectedId !== snapshot?.owner ? <div className="owb-position-actions"><DismissPositionDialog positionName={selectedPosition.name} positionId={selectedId} descendantCount={selectedNode ? countDescendants(selectedNode) : 0} busy={orgBusy} onDismiss={() => dismissPosition(selectedId)} /></div> : null}
+          </div>
           </div>
           <TurnPanel
             workspaceOpen={workspaceInfo?.open === true}
@@ -1103,7 +1108,6 @@ export function App() {
             onCreateSession={createSession}
             onRotateSession={rotateSession}
           />
-          </div>
         </div>}
       </div>
     </AppShell>

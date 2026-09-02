@@ -1,7 +1,7 @@
-// #127 AC-001/002: single-source workspace-grid layout & responsive breakpoint pins.
+// #127 AC-001/002: single-source org-module layout & responsive breakpoint pins.
 //
-// The renderer stylesheet used to declare `.owb-workspace-grid` and
-// `.owb-workspace-grid > .owb-turn-panel` in TWO places — an earlier block
+// The renderer stylesheet used to declare `.owb-org-module` and
+// `.owb-org-module > .owb-turn-panel` in TWO places — an earlier block
 // with `align-items: start` + `height: calc(100vh - 116px)`, and a later
 // block with `align-items: stretch` + `height: auto`. The later block won
 // in the cascade, but the earlier dead-code copies stayed in the file and
@@ -60,14 +60,14 @@ function topLevelRuleBlocksMatching(selector) {
   return matches;
 }
 
-test("#127 AC-001: `.owb-workspace-grid` is defined exactly once at the top level and prescribes stretch alignment", () => {
-  const rules = topLevelRuleBlocksMatching(".owb-workspace-grid");
+test("#127 AC-001: `.owb-org-module` is defined exactly once at the top level and prescribes stretch alignment", () => {
+  const rules = topLevelRuleBlocksMatching(".owb-org-module");
   assert.equal(rules.length, 1, "workspace grid rule must be single-sourced at the top level (no earlier dead-code copy)");
   assert.equal(firstDecl(rules[0], "align-items"), "stretch");
 });
 
-test("#127 AC-001: `.owb-workspace-grid > .owb-turn-panel` is defined exactly once at the top level and lets the turn panel grow (no viewport-driven height)", () => {
-  const rules = topLevelRuleBlocksMatching(".owb-workspace-grid > .owb-turn-panel");
+test("#127 AC-001: `.owb-org-module > .owb-turn-panel` is defined exactly once at the top level and lets the turn panel grow (no viewport-driven height)", () => {
+  const rules = topLevelRuleBlocksMatching(".owb-org-module > .owb-turn-panel");
   assert.equal(rules.length, 1, "turn-panel-in-grid rule must be single-sourced at the top level");
   assert.equal(firstDecl(rules[0], "height"), "auto");
   assert.equal(firstDecl(rules[0], "min-height"), "0");
@@ -86,7 +86,7 @@ test("#127 AC-001: `.owb-position-column` never opts out of the row stretch", ()
       `position column declares align-self: ${alignSelf}; only inherited stretch or explicit stretch/auto keep the pair equal-height`,
     );
   }
-  const grid = topLevelRuleBlocksMatching(".owb-workspace-grid")[0];
+  const grid = topLevelRuleBlocksMatching(".owb-org-module")[0];
   assert.equal(firstDecl(grid, "align-items"), "stretch");
 });
 
@@ -98,8 +98,8 @@ test("#127 AC-002: single-column stacking (≤980px) preserves the min-height fl
     at.walkRules((rule) => {
       const selectors = rule.selectors.map((sel) => sel.trim());
       if (
-        selectors.includes(".owb-workspace-grid > .owb-position-column") &&
-        selectors.includes(".owb-workspace-grid > .owb-turn-panel")
+        selectors.includes(".owb-org-module__left > .owb-position-column") &&
+        selectors.includes(".owb-org-module > .owb-turn-panel")
       ) {
         stackingRules.push(rule);
       }
@@ -117,8 +117,8 @@ test("#127 AC-002: vertical-tight viewport (≤720px height) drops the min-heigh
     at.walkRules((rule) => {
       const selectors = rule.selectors.map((sel) => sel.trim());
       if (
-        selectors.includes(".owb-workspace-grid > .owb-position-column") &&
-        selectors.includes(".owb-workspace-grid > .owb-turn-panel")
+        selectors.includes(".owb-org-module__left > .owb-position-column") &&
+        selectors.includes(".owb-org-module > .owb-turn-panel")
       ) {
         dropRules.push(rule);
       }
