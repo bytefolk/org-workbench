@@ -130,7 +130,7 @@ test("claude-local Host health is binary+version preflight, never a credential c
   assert.equal(supportedClaudeVersion("no-version-here"), false);
 });
 
-test("Qoder local probe accepts only the 1.1.x family and fails closed for missing, unsupported, and timed-out binaries", async (t) => {
+test("Qoder local probe accepts only the 1.1.x family and fails closed for missing, unsupported, and timed-out binaries", { skip: process.platform === "win32" ? "requires POSIX exec of a #!/bin/sh probe fixture" : false }, async (t) => {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), "owb-qoder-probe-"));
   t.after(() => fs.rm(dir, { recursive: true, force: true }));
   const supportedBin = path.join(dir, "qoder-supported");
@@ -175,7 +175,7 @@ test("Qoder local probe accepts only the 1.1.x family and fails closed for missi
   assert.equal(supportedQoderVersion(null), false);
 });
 
-test("Qoder local probe receives only the non-secret runtime environment allowlist", async (t) => {
+test("Qoder local probe receives only the non-secret runtime environment allowlist", { skip: process.platform === "win32" ? "requires POSIX exec of a #!/bin/sh probe fixture" : false }, async (t) => {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), "owb-qoder-probe-env-"));
   const qoderBin = path.join(dir, "qoder-no-electron-flag");
   const envFile = path.join(dir, "probe-env.txt");
@@ -244,7 +244,7 @@ printf '%s\\n' '1.1.31'
   }
 });
 
-test("Qoder local probe forcibly reaps a version check that ignores SIGTERM", async (t) => {
+test("Qoder local probe forcibly reaps a version check that ignores SIGTERM", { skip: process.platform === "win32" ? "requires POSIX signal semantics and a #!/bin/sh fixture" : false }, async (t) => {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), "owb-qoder-sigterm-"));
   const pidFile = path.join(dir, "probe.pid");
   const signalTrappingBin = path.join(dir, "qoder-ignore-sigterm");
@@ -277,7 +277,7 @@ printf '1.1.31\\n'
   assert.throws(() => process.kill(pid, 0), { code: "ESRCH" }, "timed-out Qoder probe must not remain alive");
 });
 
-test("Qoder binary resolution is explicit-first, shell-free, and Finder-safe on supported macOS locations", async (t) => {
+test("Qoder binary resolution is explicit-first, shell-free, and Finder-safe on supported macOS locations", { skip: process.platform === "win32" ? "requires POSIX X_OK/symlink semantics and #!/bin/sh fixtures" : false }, async (t) => {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), "owb-qoder-resolve-"));
   t.after(() => fs.rm(dir, { recursive: true, force: true }));
   const home = path.join(dir, "home");
@@ -349,7 +349,7 @@ test("Qoder binary resolution is explicit-first, shell-free, and Finder-safe on 
   assert.deepEqual(finderProbe, { installed: true, version: "1.1.31", supported: true });
 });
 
-test("GET /health recognizes only the bundled qoder-engine local preflight and never exposes probe output", async (t) => {
+test("GET /health recognizes only the bundled qoder-engine local preflight and never exposes probe output", { skip: process.platform === "win32" ? "requires POSIX exec of a #!/bin/sh probe fixture" : false }, async (t) => {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), "owb-qoder-health-"));
   t.after(() => fs.rm(dir, { recursive: true, force: true }));
   const bundledEngine = path.join(dir, "qoder-engine-fixture");
@@ -410,7 +410,7 @@ test("GET /health recognizes only the bundled qoder-engine local preflight and n
   }
 });
 
-test("claude-local probe reads the version with only non-secret runtime environment", async (t) => {
+test("claude-local probe reads the version with only non-secret runtime environment", { skip: process.platform === "win32" ? "requires POSIX exec of a #!/bin/sh probe fixture" : false }, async (t) => {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), "owb-claude-probe-"));
   const bin = path.join(dir, "claude-fixture");
   const envFile = path.join(dir, "claude-env.txt");
