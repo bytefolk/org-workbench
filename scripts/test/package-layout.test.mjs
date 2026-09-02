@@ -220,10 +220,10 @@ test("native staging jobs remain read-only and separate from required checks", (
     .readFileSync(path.join(projectRoot, ".github/workflows/verify.yml"), "utf8")
     .replaceAll("\r\n", "\n");
   assert.match(workflow, /permissions:\n  contents: read/);
-  // The required matrix now includes windows-latest, folded in from #122: the
-  // staging jobs prove the packaged artifact, and this leg proves `npm run check`
-  // itself is portable. They remain separate jobs with separate purposes.
-  assert.match(workflow, /matrix:\n\s+os: \[ubuntu-latest, macos-14, windows-latest\]/);
+  // POSIX-only by decision, not by omission. A windows-latest leg was added and
+  // reverted; see the rationale in the workflow. Windows is proved by the staging
+  // job below, not by running a suite written against POSIX semantics.
+  assert.match(workflow, /matrix:\n\s+os: \[ubuntu-latest, macos-14\]/);
   assert.match(workflow, /staging-macos-arm64:[\s\S]*?runs-on: macos-15/);
   assert.match(workflow, /staging-windows-x64:[\s\S]*?runs-on: windows-latest/);
   for (const command of [

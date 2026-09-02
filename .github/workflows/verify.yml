@@ -11,14 +11,21 @@ permissions:
 jobs:
   check:
     name: Node 24 / ${{ matrix.os }}
-    # The staging jobs have always been bounded; this one was not, which only
-    # mattered once windows-latest joined the matrix and a hang could run to the
-    # six-hour default. Per-test bounds live in the node --test invocations.
+    # This matrix is deliberately POSIX-only. Running the whole suite on
+    # windows-latest was tried and reverted: the suite is written against POSIX
+    # process and filesystem semantics, and the leg hung on `npm run check` for
+    # over an hour with no bounded failure to point at. Windows is covered by a
+    # purpose-built leg instead -- staging package, verify and smoke -- which is
+    # green. Re-adding this platform means porting the suite first, not just
+    # adding the runner.
+    #
+    # The bound below stays regardless: the staging jobs were always bounded and
+    # this one was not. Per-test bounds live in the node --test invocations.
     timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-14, windows-latest]
+        os: [ubuntu-latest, macos-14]
     runs-on: ${{ matrix.os }}
     steps:
       - name: Check out org-workbench
