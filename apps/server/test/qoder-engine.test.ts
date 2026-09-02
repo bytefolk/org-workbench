@@ -153,6 +153,37 @@ async function writeFakeQoder(dir: string, script: string): Promise<string> {
   return file;
 }
 
+test("qoder-engine Windows launcher invocation escapes untrusted argv without shell=true", async () => {
+  const module = await import(pathToFileURL(ADAPTER).href) as {
+    createQoderSpawnSpec: (
+      command: string,
+      args: string[],
+      env: NodeJS.ProcessEnv,
+      platform?: NodeJS.Platform,
+    ) => {
+      command: string;
+      args: string[];
+      options: { env: NodeJS.ProcessEnv; shell: boolean; windowsVerbatimArguments?: boolean };
+    };
+  };
+  const prompt = 'review "release" & whoami | echo injected > marker.txt';
+  const spec = module.createQoderSpawnSpec(
+    "C:\\Users\\Alice\\AppData\\Local\\Qoder\\qoder.cmd",
+    ["-p", prompt],
+    { ComSpec: "C:\\Windows\\System32\\cmd.exe" },
+    "win32",
+  );
+
+  assert.equal(spec.command, "C:\\Windows\\System32\\cmd.exe");
+  assert.deepEqual(spec.args.slice(0, 3), ["/d", "/s", "/c"]);
+  assert.equal(spec.options.shell, false);
+  assert.equal(spec.options.windowsVerbatimArguments, true);
+  assert.match(spec.args[3]!, /\^&/);
+  assert.match(spec.args[3]!, /\^\|/);
+  assert.match(spec.args[3]!, /\^>/);
+  assert.doesNotMatch(spec.args[3]!, / & whoami/);
+});
+
 test("qoder-engine: --version satisfies the driver probe surface", async () => {
   const result = await runAdapter(["--version"]);
   assert.equal(result.code, 0);

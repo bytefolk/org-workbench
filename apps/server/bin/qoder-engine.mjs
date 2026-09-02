@@ -66,6 +66,78 @@ function qoderChildEnvironment(source) {
   }
   return environment;
 }
+
+/*
+ * The Windows CMD escaping below is adapted from cross-spawn 7.0.6
+ * (MIT; Copyright (c) 2018 Made With MOXY Lda <hello@moxy.studio>):
+ * https://github.com/moxystudio/node-cross-spawn
+ *
+ * Permission is hereby granted, free of charge, to any person obtaining a
+ * copy of this software and associated documentation files (the "Software"),
+ * to deal in the Software without restriction, including without limitation
+ * the rights to use, copy, modify, merge, publish, distribute, sublicense,
+ * and/or sell copies of the Software, and to permit persons to whom the
+ * Software is furnished to do so, subject to the following conditions: the
+ * above copyright notice and this permission notice shall be included in all
+ * copies or substantial portions of the Software. THE SOFTWARE IS PROVIDED
+ * "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT
+ * NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR
+ * PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT
+ * HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN
+ * ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
+ * CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+ *
+ * qoder-engine is a standalone packaged entrypoint, so the escaping stays
+ * local instead of adding a third-party runtime dependency just for .cmd/.bat
+ * launchers.
+ */
+const WINDOWS_CMD_META_CHARS = /([()\][%!^"`<>&|;, *?])/g;
+const WINDOWS_CMD_SHIM_PATTERN = /node_modules[\\/]\.bin[\\/][^\\/]+\.cmd$/i;
+
+function escapeWindowsCommand(value) {
+  return String(value).replace(WINDOWS_CMD_META_CHARS, "^$1");
+}
+
+function escapeWindowsArgument(value, doubleEscapeMetaChars = false) {
+  let argument = String(value);
+  argument = argument.replace(/(?=(\\+?)?)\1"/g, "$1$1\\\"");
+  argument = argument.replace(/(?=(\\+?)?)\1$/g, "$1$1");
+  argument = `"${argument}"`;
+  argument = argument.replace(WINDOWS_CMD_META_CHARS, "^$1");
+  if (doubleEscapeMetaChars) argument = argument.replace(WINDOWS_CMD_META_CHARS, "^$1");
+  return argument;
+}
+
+/**
+ * Build a child_process.spawn spec without passing raw user input to Node's
+ * shell option. Windows batch launchers still require cmd.exe, so the entire
+ * command line is escaped and handed to cmd.exe as one verbatim /c argument.
+ *
+ * @param {string} command
+ * @param {string[]} args
+ * @param {NodeJS.ProcessEnv} env
+ * @param {NodeJS.Platform} [platform]
+ * @returns {{ command: string, args: string[], options: Record<string, unknown> }}
+ */
+export function createQoderSpawnSpec(command, args, env, platform = process.platform) {
+  const needsWindowsShell = platform === "win32" && /\.(bat|cmd)$/i.test(command);
+  if (!needsWindowsShell) {
+    return { command, args, options: { env, shell: false } };
+  }
+
+  const commandText = escapeWindowsCommand(command);
+  const doubleEscapeMetaChars = WINDOWS_CMD_SHIM_PATTERN.test(command);
+  const shellCommand = [commandText, ...args.map((arg) => escapeWindowsArgument(arg, doubleEscapeMetaChars))].join(" ");
+  return {
+    command: env.ComSpec ?? env.COMSPEC ?? "cmd.exe",
+    args: ["/d", "/s", "/c", `"${shellCommand}"`],
+    options: {
+      env,
+      shell: false,
+      windowsVerbatimArguments: true,
+    },
+  };
+}
 const HIRE_REQUEST_SCHEMA_VERSION = "hire-request.v1alpha1";
 const HIRE_REQUEST_MAX_BYTES = 256 * 1024;
 const HIRE_ID_MAX_LENGTH = 256;
@@ -584,13 +656,9 @@ function turnRun(workspaceDir, positionId) {
       // tokens, and arbitrary server configuration stop here. Qoder and any
       // MCP descendants receive only their explicit runtime/credential contract.
       const qoderEnvironment = qoderChildEnvironment(process.env);
-      // Node refuses to exec Windows .bat/.cmd launcher scripts without a
-      // shell (CVE-2024-27980 hardening). Route exactly those resolved
-      // targets through cmd.exe; every other target keeps the shell-free spawn.
-      const needsWindowsShell = process.platform === "win32" && /\.(bat|cmd)$/i.test(qoderBin);
-      child = spawn(qoderBin, args, {
-        env: qoderEnvironment,
-        shell: needsWindowsShell,
+      const spawnSpec = createQoderSpawnSpec(qoderBin, args, qoderEnvironment);
+      child = spawn(spawnSpec.command, spawnSpec.args, {
+        ...spawnSpec.options,
         stdio: ["ignore", "pipe", "pipe"],
       });
     } catch {
