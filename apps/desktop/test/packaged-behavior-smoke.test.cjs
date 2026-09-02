@@ -10,7 +10,11 @@ const {
   reservePackagedSmokeRequests,
   runPackagedBehaviorSmoke,
 } = require("../src/packaged-behavior-smoke.cjs");
-const { closeSmokeReportReservation } = require("../src/packaged-smoke.cjs");
+const {
+  closeSmokeReportReservation,
+  packagedSmokeRequest,
+  runPackagedSmoke,
+} = require("../src/packaged-smoke.cjs");
 
 const NONCE = "a".repeat(64);
 
@@ -264,4 +268,52 @@ test("behavior qualification is business-facing but separate from static smoke",
     2,
     "static and behavior modes must use the same production lifecycle gate",
   );
+});
+
+test("both smoke reports carry the fields the external oracle probes", async (t) => {
+  // The harness probes the control plane over HTTP in either mode, so a field the
+  // static report carries and the behavior report omits is not a cosmetic mismatch:
+  // it makes the probe build `http://127.0.0.1:undefined/health` and fail the run.
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "owb-clean-staging-"));
+  t.after(() => fs.rmSync(root, { force: true, recursive: true }));
+
+  const staticPath = path.join(root, "smoke-report.json");
+  const staticRequest = packagedSmokeRequest({
+    ORG_WORKBENCH_PACKAGED_SMOKE_NONCE: NONCE,
+    ORG_WORKBENCH_PACKAGED_SMOKE_REPORT: staticPath,
+    ORG_WORKBENCH_PACKAGED_SMOKE_ROOT: root,
+  });
+  assert.notEqual(staticRequest, null);
+  await runPackagedSmoke({
+    reportRequest: staticRequest,
+    webContents: { executeJavaScript: async () => ({ rendererMounted: true, preloadBridge: true }) },
+    appPid: process.pid,
+    serverPid: 4242,
+    serverPort: 51515,
+    resourcesPath: root,
+    close: () => {},
+  });
+
+  const behaviorPath = path.join(root, "behavior-report.json");
+  const behaviorRequest = packagedBehaviorSmokeRequest(behaviorEnv(root, behaviorPath));
+  assert.notEqual(behaviorRequest, null);
+  await runPackagedBehaviorSmoke({
+    reportRequest: behaviorRequest,
+    webContents: { executeJavaScript: async () => ({ qoderReady: true }) },
+    serverPid: 4242,
+    serverPort: 51515,
+    resourcesPath: root,
+    quit: () => {},
+  });
+
+  for (const [label, file] of [["static", staticPath], ["behavior", behaviorPath]]) {
+    const report = JSON.parse(fs.readFileSync(file, "utf8"));
+    for (const field of ["serverPid", "serverPort"]) {
+      assert.equal(
+        Number.isInteger(report[field]),
+        true,
+        `${label} report is missing ${field}, which the control plane probe requires`,
+      );
+    }
+  }
 });

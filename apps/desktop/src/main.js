@@ -644,6 +644,7 @@ function createWindow() {
         reportRequest: behaviorSmokeRequest,
         webContents: mainWindow.webContents,
         serverPid: controlPlane?.child?.pid,
+        serverPort: controlPlane?.port,
         resourcesPath: process.resourcesPath,
         onReportWritten: () => lifecycle.markReportWritten(),
         // Keep the behavior-qualified tree alive long enough for the same

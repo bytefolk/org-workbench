@@ -162,6 +162,7 @@ async function runPackagedBehaviorSmoke({
   reportRequest,
   webContents,
   serverPid,
+  serverPort,
   resourcesPath,
   onReportWritten = () => {},
   quit,
@@ -175,6 +176,7 @@ async function runPackagedBehaviorSmoke({
       nonce: reportRequest.nonce,
       ...renderer,
       serverPid: Number.isInteger(serverPid) ? serverPid : null,
+      serverPort: Number.isInteger(serverPort) ? serverPort : null,
       resourcesPath,
     };
   } catch (error) {
@@ -184,6 +186,7 @@ async function runPackagedBehaviorSmoke({
       nonce: reportRequest.nonce,
       error: safeError(error),
       serverPid: Number.isInteger(serverPid) ? serverPid : null,
+      serverPort: Number.isInteger(serverPort) ? serverPort : null,
       resourcesPath,
     };
   }
