@@ -86,9 +86,12 @@ function mediaMatches(params, viewport) {
           throw new Error(`mediaMatches: unsupported @media condition "${token}" — extend this matcher rather than guessing`);
         }
         const [, bound, name, rawPx] = feature;
+        if (bound === undefined) {
+          throw new Error(`mediaMatches: bare @media feature "${token}" is exact-match in MQ3, not min-width — extend this matcher rather than guessing`);
+        }
         const px = Number(rawPx);
         const size = name.toLowerCase() === "width" ? viewport.width : viewport.height;
-        return (bound ?? "min").toLowerCase() === "max" ? size <= px : size >= px;
+        return bound.toLowerCase() === "max" ? size <= px : size >= px;
       }),
   );
 }
@@ -263,5 +266,24 @@ test("the pair stacks in one column at 980px and below, without unequal-width tr
     minWidth,
     "0",
     "grid items keep an automatic min-content floor; without min-width: 0 an equal track pair can be pushed apart by wide content",
+  );
+});
+
+// Not an AC: stretching the column made the no-position-selected card show one
+// line of guidance with the leftover height below it. Product called this in
+// during the #120 review, so it is gated here rather than left to the eye.
+test("the empty position card fills the height it was stretched to (#120 review note)", () => {
+  const rules = stylesheetRules();
+  const viewport = VIEWPORTS.desktop;
+  const notice = ".owb-position-column > .ui-org-position-card > .owb-panel__notice";
+
+  assert.ok(
+    flexGrows(valueAt(rules, notice, "flex", viewport)),
+    "the guidance row has to take the card's leftover height, or the empty state shows a dead block under itself",
+  );
+  assert.equal(
+    valueAt(rules, notice, "align-content", viewport),
+    "center",
+    "the guidance row is a grid box, so its single auto row must sit in the middle of the space it grew into",
   );
 });
