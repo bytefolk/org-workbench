@@ -213,7 +213,12 @@ test("root staging scripts clean, build, and request only native unpacked output
 });
 
 test("native staging jobs remain read-only and separate from required checks", () => {
-  const workflow = fs.readFileSync(path.join(projectRoot, ".github/workflows/verify.yml"), "utf8");
+  // Normalize line endings before matching. git checks this file out with CRLF on
+  // Windows, and the assertions below anchor on `\n`; the required matrix now runs on
+  // windows-latest, which is exactly how that mismatch surfaced.
+  const workflow = fs
+    .readFileSync(path.join(projectRoot, ".github/workflows/verify.yml"), "utf8")
+    .replaceAll("\r\n", "\n");
   assert.match(workflow, /permissions:\n  contents: read/);
   // The required matrix now includes windows-latest, folded in from #122: the
   // staging jobs prove the packaged artifact, and this leg proves `npm run check`
