@@ -4041,3 +4041,42 @@
 @media (prefers-reduced-motion: reduce) {
   .owb-timeline__skeleton { animation: none; }
 }
+
+/* #248 R2 ③：对话岗位 / 新建会话 / Agent Host 降级为默认收起的「会话设置」，
+   不挡在聊天输入前面；展开后才显示完整配置。 */
+.owb-turn-panel__settings {
+  margin-top: 10px;
+  border-top: 1px solid var(--owb-line, rgba(28, 25, 23, 0.1));
+}
+.owb-turn-panel__settings-summary {
+  cursor: pointer;
+  padding: 8px 2px;
+  font-size: 12px;
+  color: var(--owb-ink-soft, #6b675f);
+  user-select: none;
+  list-style: none;
+}
+.owb-turn-panel__settings-summary::-webkit-details-marker { display: none; }
+.owb-turn-panel__settings-summary::before {
+  content: "▸";
+  display: inline-block;
+  margin-right: 6px;
+  transition: transform 120ms ease;
+}
+.owb-turn-panel__settings[open] .owb-turn-panel__settings-summary::before {
+  transform: rotate(90deg);
+}
+.owb-turn-panel__settings-body {
+  display: grid;
+  gap: 10px;
+  padding: 4px 2px 10px;
+}
+
+/* #248 R2 ④：D3 对话线程——操作员气泡靠右、岗位气泡靠左，回合成对成线程。 */
+.owb-turn-thread .owb-turn {
+  display: grid;
+  gap: 6px;
+}
+.owb-turn-thread .owb-bubble--employee.owb-tc {
+  width: 100%;
+}

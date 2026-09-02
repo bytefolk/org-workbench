@@ -248,104 +248,6 @@ export function TurnPanel({
         </div>
       </header>
 
-      <div className="owb-turn-panel__controls">
-        <PositionMention
-          positions={positions}
-          value={selectedPositionId}
-          disabled={!workspaceOpen || positions.length === 0}
-          onChange={onSelectPosition}
-        />
-        <label className="owb-turn-engine">
-          <span className="owb-turn-control__label">Agent Host</span>
-          <EngineSelect
-            engines={Object.keys(ENGINE_LABEL) as TurnEngine[]}
-            engineAvailability={engineAvailability}
-            value={engine}
-            disabled={!workspaceOpen}
-            onChange={onSelectEngine}
-          />
-        </label>
-      </div>
-
-      {sessionMode && selectedSession ? (
-        <div className="owb-session-row" aria-label="当前会话">
-          <div className="owb-session-chip">
-            <span
-              className={selectedSession.status === "active" ? "owb-led owb-led--running" : "owb-led owb-led--off"}
-              aria-hidden="true"
-            />
-            <span className="owb-session-chip__kind">session</span>
-            <span className="owb-session-chip__id">
-              {selectedSession.sessionId.slice(0, 8)} · {selectedSession.status === "active" ? "active" : "只读"}
-              {selectedPosition ? ` · ${selectedPosition.id}` : ""}
-            </span>
-          </div>
-        </div>
-      ) : null}
-
-      {sessionMode ? (
-        <div className="owb-session-controls" aria-label="岗位会话">
-          <label>
-            <span className="owb-turn-control__label">本地会话</span>
-            <AntSelect
-              aria-label="选择本地会话"
-              value={selectedSessionId ?? undefined}
-              placeholder="尚未创建会话"
-              disabled={!workspaceOpen || !selectedPosition || sessionBusy || sessions.length === 0}
-              onChange={(next) => {
-                if (next) onSelectSession?.(next);
-              }}
-              options={sessions.map((session, index) => ({
-                value: session.sessionId,
-                label: `${session.status === "active" ? "当前" : "只读"} · 会话 ${sessions.length - index} · ${session.sessionId.slice(0, 8)}`,
-              }))}
-            />
-          </label>
-          {activeSession ? (
-            <AntButton
-              disabled={sessionBusy || busy}
-              onClick={() => void onRotateSession?.(activeSession.sessionId)}
-              icon={<RefreshCw aria-hidden="true" size={13} />}
-            >
-              轮换当前会话
-            </AntButton>
-          ) : (
-            <AntButton
-              disabled={!workspaceOpen || !selectedPosition || sessionBusy}
-              onClick={() => void onCreateSession?.()}
-              icon={<Plus aria-hidden="true" size={13} />}
-            >
-              新建会话
-            </AntButton>
-          )}
-        </div>
-      ) : null}
-
-      {/* 设计稿 .boundaries：host / mode / budget 三枚实况 chip。全部来自
-          /health 与 /positions/:id 的事实，缺失即显示 —，不猜。 */}
-      <div className="owb-turn-panel__boundaries" aria-label="能力边界">
-        <span className="owb-boundary">
-          <b>host</b>
-          {engineLabel(engine)} — {engineAvailability[engine].ready
-            ? "available"
-            : engineAvailability[engine].configured
-              ? "blocked"
-              : "idle"}
-        </span>
-        <span className="owb-boundary">
-          <b>mode</b>
-          {selectedMode === null
-            ? "—"
-            : selectedMode === "read_only"
-              ? "read_only · 只读"
-              : "approval_required · 需批准"}
-        </span>
-        <span className="owb-boundary">
-          <b>budget</b>
-          {selectedBudgetLabel ?? "—"}
-        </span>
-      </div>
-
       <TurnThread
         turns={turns}
         retrying={busy || sending}
@@ -411,6 +313,111 @@ export function TurnPanel({
             : disabledReason ?? "⌘↵ 发送 · ⌘. 中断 · 回合只在本机留痕"}
         </p>
       </form>
+
+      {/* #248 R2 ③：对话岗位 / 新建会话 / Agent Host 降级为默认收起的会话设置，
+          值由点人即聊自动填充，不挡在聊天输入前面。 */}
+      <details className="owb-turn-panel__settings">
+        <summary className="owb-turn-panel__settings-summary">会话设置</summary>
+        <div className="owb-turn-panel__settings-body">
+          <div className="owb-turn-panel__controls">
+            <PositionMention
+              positions={positions}
+              value={selectedPositionId}
+              disabled={!workspaceOpen || positions.length === 0}
+              onChange={onSelectPosition}
+            />
+            <label className="owb-turn-engine">
+              <span className="owb-turn-control__label">Agent Host</span>
+              <EngineSelect
+                engines={Object.keys(ENGINE_LABEL) as TurnEngine[]}
+                engineAvailability={engineAvailability}
+                value={engine}
+                disabled={!workspaceOpen}
+                onChange={onSelectEngine}
+              />
+            </label>
+          </div>
+
+          {sessionMode && selectedSession ? (
+            <div className="owb-session-row" aria-label="当前会话">
+              <div className="owb-session-chip">
+                <span
+                  className={selectedSession.status === "active" ? "owb-led owb-led--running" : "owb-led owb-led--off"}
+                  aria-hidden="true"
+                />
+                <span className="owb-session-chip__kind">session</span>
+                <span className="owb-session-chip__id">
+                  {selectedSession.sessionId.slice(0, 8)} · {selectedSession.status === "active" ? "active" : "只读"}
+                  {selectedPosition ? ` · ${selectedPosition.id}` : ""}
+                </span>
+              </div>
+            </div>
+          ) : null}
+
+          {sessionMode ? (
+            <div className="owb-session-controls" aria-label="岗位会话">
+              <label>
+                <span className="owb-turn-control__label">本地会话</span>
+                <AntSelect
+                  aria-label="选择本地会话"
+                  value={selectedSessionId ?? undefined}
+                  placeholder="尚未创建会话"
+                  disabled={!workspaceOpen || !selectedPosition || sessionBusy || sessions.length === 0}
+                  onChange={(next) => {
+                    if (next) onSelectSession?.(next);
+                  }}
+                  options={sessions.map((session, index) => ({
+                    value: session.sessionId,
+                    label: `${session.status === "active" ? "当前" : "只读"} · 会话 ${sessions.length - index} · ${session.sessionId.slice(0, 8)}`,
+                  }))}
+                />
+              </label>
+              {activeSession ? (
+                <AntButton
+                  disabled={sessionBusy || busy}
+                  onClick={() => void onRotateSession?.(activeSession.sessionId)}
+                  icon={<RefreshCw aria-hidden="true" size={13} />}
+                >
+                  轮换当前会话
+                </AntButton>
+              ) : (
+                <AntButton
+                  disabled={!workspaceOpen || !selectedPosition || sessionBusy}
+                  onClick={() => void onCreateSession?.()}
+                  icon={<Plus aria-hidden="true" size={13} />}
+                >
+                  新建会话
+                </AntButton>
+              )}
+            </div>
+          ) : null}
+
+          {/* 设计稿 .boundaries：host / mode / budget 三枚实况 chip。全部来自
+              /health 与 /positions/:id 的事实，缺失即显示 —，不猜。 */}
+          <div className="owb-turn-panel__boundaries" aria-label="能力边界">
+            <span className="owb-boundary">
+              <b>host</b>
+              {engineLabel(engine)} — {engineAvailability[engine].ready
+                ? "available"
+                : engineAvailability[engine].configured
+                  ? "blocked"
+                  : "idle"}
+            </span>
+            <span className="owb-boundary">
+              <b>mode</b>
+              {selectedMode === null
+                ? "—"
+                : selectedMode === "read_only"
+                  ? "read_only · 只读"
+                  : "approval_required · 需批准"}
+            </span>
+            <span className="owb-boundary">
+              <b>budget</b>
+              {selectedBudgetLabel ?? "—"}
+            </span>
+          </div>
+        </div>
+      </details>
     </section>
   );
 }

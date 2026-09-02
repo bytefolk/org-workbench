@@ -34,7 +34,8 @@ describe("issue #20 two-line clamp + tooltip", () => {
   // 两行截断 + title 全文的契约不变。
   it("clamps long turn input and output and keeps the full text in title", () => {
     const { container } = render(<TurnThread turns={[longTurn]} />);
-    const input = container.querySelector(".owb-tc__task .owb-clamp-2");
+    // #248 R2 ④: 下达任务改为操作员气泡（右），截断+title 契约不变。
+    const input = container.querySelector(".owb-bubble--operator .owb-clamp-2");
     const output = container.querySelector(".owb-tc__out");
     expect(input).not.toBeNull();
     expect(input?.className).toContain("owb-clamp-2");
@@ -46,7 +47,7 @@ describe("issue #20 two-line clamp + tooltip", () => {
 
   it("keeps the clamp class on short text without altering it", () => {
     const { container } = render(<TurnThread turns={[shortTurn]} />);
-    const input = container.querySelector(".owb-tc__task .owb-clamp-2");
+    const input = container.querySelector(".owb-bubble--operator .owb-clamp-2");
     expect(input?.getAttribute("title")).toBe("检查发布");
     expect(input?.textContent).toBe("检查发布");
   });
