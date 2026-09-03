@@ -55,6 +55,7 @@ const SERVER_RUNTIME_FILES = [
   "dist/src/org/undo.js",
   "dist/src/qoder-binary.js",
   "dist/src/routes/assets.js",
+  "dist/src/routes/doc-plane.js",
   "dist/src/routes/docs.js",
   "dist/src/routes/drive.js",
   "dist/src/routes/events.js",

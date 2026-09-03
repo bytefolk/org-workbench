@@ -166,6 +166,25 @@ printf '%s\\n' '__ORG_WORKBENCH_LOGIN_PATH__=${smokeBin}:/usr/bin:/bin:/usr/sbin
   return { homeDir, loginShell, qoderPidFile, tempDir };
 }
 
+export function createLayoutLaunchEnvironment(platform, { stagingRoot, workspace, report }) {
+  // #127 AC-004: full-app layout smoke. Deliberately NO packaged-smoke nonce:
+  // the renderer must render the REAL app (two-column org workspace), not the
+  // minimal static smoke entry. Main measures the layout and writes the report.
+  const base = createLaunchEnvironment(platform, {
+    stagingRoot,
+    workspace,
+    report,
+    nonce: "0".repeat(64),
+  });
+  const {
+    ORG_WORKBENCH_PACKAGED_SMOKE_NONCE: _nonce,
+    ORG_WORKBENCH_PACKAGED_SMOKE_REPORT: _report,
+    ORG_WORKBENCH_PACKAGED_SMOKE_ROOT: _root,
+    ...rest
+  } = base;
+  return { ...rest, ORG_WORKBENCH_LAYOUT_REPORT: report };
+}
+
 export function createBehaviorLaunchEnvironment({ stagingRoot, workspace, report, nonce, fixtures }) {
   return {
     HOME: fixtures.homeDir,
@@ -354,7 +373,7 @@ function bindVisibleProcesses(processes) {
 
 export async function smokePackagedApp(platform, candidate, options = {}) {
   const mode = options.mode ?? "static";
-  assert.equal(["static", "behavior"].includes(mode), true, `unsupported smoke mode: ${mode}`);
+  assert.equal(["static", "behavior", "layout"].includes(mode), true, `unsupported smoke mode: ${mode}`);
   if (mode === "behavior") {
     assert.equal(platform, "macos", "#111 behavior smoke is qualified only on native macOS");
   }
@@ -405,9 +424,19 @@ export async function smokePackagedApp(platform, candidate, options = {}) {
     const nonce = crypto.randomBytes(32).toString("hex");
     const reportPath = path.join(
       stagingRoot,
-      mode === "static" ? "smoke-report.json" : "behavior-report.json",
+      mode === "static"
+        ? "smoke-report.json"
+        : mode === "behavior"
+          ? "behavior-report.json"
+          : "layout-report.json",
     );
-    const launchEnvironment = mode === "static"
+    const launchEnvironment = mode === "layout"
+      ? createLayoutLaunchEnvironment(platform, {
+        stagingRoot,
+        workspace,
+        report: reportPath,
+      })
+      : mode === "static"
       ? createLaunchEnvironment(platform, {
         stagingRoot,
         workspace,
@@ -472,6 +501,16 @@ export async function smokePackagedApp(platform, candidate, options = {}) {
 
     const smoke = await waitForReport(reportPath, closed);
     assert.equal(smoke.ok, true, smoke.error ?? `packaged ${mode} smoke failed`);
+    if (mode === "layout") {
+      // #127 AC-004: the layout report feeds the cross-platform parity job;
+      // a null layout means the two-column module never rendered. The layout
+      // app exits right after writing its report, so the liveness/process-tree
+      // proofs below (static/behavior only) are skipped for this mode.
+      assert.notEqual(smoke.layout, null, "layout smoke did not measure the two-column org workspace");
+      completedReport = { ...smoke };
+      const layoutPublish = process.env.ORG_WORKBENCH_LAYOUT_REPORT_PUBLISH;
+      if (layoutPublish) await fs.copyFile(reportPath, layoutPublish);
+    } else {
     assert.equal(smoke.rendererMounted, true);
     assert.equal(smoke.preloadBridge, true);
     assert.equal(smoke.controlPlaneReady, true);
@@ -574,6 +613,7 @@ export async function smokePackagedApp(platform, candidate, options = {}) {
         historyReadback: true,
         sessionHistoryReadback: true,
       };
+    }
   } catch (error) {
     primaryError = error;
   }
@@ -607,6 +647,12 @@ export async function smokePackagedApp(platform, candidate, options = {}) {
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
-  const report = await smokePackagedApp(process.argv[2], process.argv[3]);
+  const args = process.argv.slice(2);
+  const modeIndex = args.indexOf("--mode");
+  const mode = modeIndex >= 0 ? args[modeIndex + 1] : undefined;
+  const positional = args.filter(
+    (_, index) => index !== modeIndex && index !== modeIndex + 1,
+  );
+  const report = await smokePackagedApp(positional[0], positional[1], mode ? { mode } : {});
   process.stdout.write(`${JSON.stringify(report)}\n`);
 }
