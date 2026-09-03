@@ -307,32 +307,8 @@
   min-width: 0;
 }
 
-.owb-reports__eyebrow {
-  display: flex;
-  align-items: center;
-  gap: 9px;
-}
 
-.owb-reports__eyebrow span,
-.owb-budget-deck__eyebrow {
-  color: var(--ui-primary);
-  font-family: var(--ui-font-mono, monospace);
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: .14em;
-}
 
-.owb-reports__eyebrow em {
-  border: 1px solid var(--ui-border-strong);
-  border-radius: var(--ui-radius-full, 999px);
-  color: var(--ui-foreground-subtle);
-  padding: 2px 7px;
-  font-family: var(--ui-font-mono, monospace);
-  font-size: 9px;
-  font-style: normal;
-  font-weight: 600;
-  letter-spacing: .08em;
-}
 
 .owb-reports__hero h1 {
   margin: 6px 0 5px;
@@ -798,7 +774,6 @@
   font-weight: 600;
 }
 
-.owb-turn-panel__eyebrow,
 .owb-turn-panel__history-kind,
 .owb-turn-control__label {
   color: var(--ui-foreground-muted);
@@ -2167,16 +2142,6 @@
   padding: 4px 2px 0;
 }
 
-.owb-docs-module__eyebrow,
-.owb-docs-panel__eyebrow {
-  display: block;
-  color: var(--ui-primary);
-  font-family: var(--ui-font-mono, monospace);
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.12em;
-  line-height: 1.2;
-}
 
 .owb-docs-module__header h1 {
   margin: 5px 0 3px;
@@ -3146,14 +3111,6 @@
   min-width: 0;
 }
 
-.owb-panel-head__eyebrow {
-  color: var(--ui-foreground-subtle);
-  font-family: var(--ui-font-mono);
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-}
 
 .owb-panel-head h2 {
   display: flex;
@@ -3410,13 +3367,6 @@
   padding: 14px 16px 10px;
 }
 
-.owb-turn-panel__eyebrow {
-  display: block;
-  color: var(--ui-foreground-subtle);
-  font-family: var(--ui-font-mono);
-  font-size: 10px;
-  letter-spacing: 0.12em;
-}
 
 .owb-turn-panel__header h2 {
   margin: 3px 0 0;
@@ -4389,14 +4339,6 @@
   min-width: 0;
 }
 
-.owb-approval-queue__eyebrow {
-  display: inline-block;
-  color: var(--ui-foreground-subtle);
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-}
 
 .owb-approval-queue__title {
   margin: 4px 0 0;
@@ -4719,13 +4661,6 @@
   margin-bottom: 6px;
 }
 
-.owb-approval-card__eyebrow {
-  color: var(--ui-foreground-subtle);
-  font-size: 10px;
-  font-weight: 600;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-}
 
 .owb-approval-card__tags {
   display: inline-flex;
@@ -5158,15 +5093,6 @@
   padding: 4px 2px 0;
 }
 
-.owb-drive-module__eyebrow {
-  display: block;
-  color: var(--ui-primary);
-  font-family: var(--ui-font-mono, monospace);
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.12em;
-  line-height: 1.2;
-}
 
 .owb-drive-module__header h1 {
   margin: 5px 0 3px;

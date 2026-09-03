@@ -33,7 +33,6 @@ export function ReportsCenter({ reports, loading, positionNames, positionColors,
     <section className="owb-reports" aria-label={t("rep.center")}>
       <header className="owb-reports__hero">
         <div className="owb-reports__hero-copy">
-          <div className="owb-reports__eyebrow"><span>LOCAL CONTROL PLANE</span><em>READ-ONLY</em></div>
           <h1>{t("rep.center")}</h1>
           <p>{t("rep.lede")}</p>
         </div>
@@ -100,7 +99,7 @@ function BudgetDeck({ budgets, onViewAll }: { budgets: BudgetReport[]; onViewAll
   const t = useT();
   return <section className="owb-budget-deck" aria-label={t("rep.budgetSnapshot")}>
     <header className="owb-budget-deck__head">
-      <div><span className="owb-budget-deck__eyebrow">RESOURCE TELEMETRY</span><h2>{t("rep.budgetSnapshot")}</h2><p>{t("rep.budgetSnapshotHint")}</p></div>
+      <div><h2>{t("rep.budgetSnapshot")}</h2><p>{t("rep.budgetSnapshotHint")}</p></div>
       <button type="button" className="owb-budget-deck__link" onClick={onViewAll}>{t("rep.viewCostBoard")} <ArrowUpRight aria-hidden="true" size={13} /></button>
     </header>
     {budgets.length === 0 ? <p className="owb-budget-deck__empty">{t("rep.budgetDeckEmpty")}</p> : <div className="owb-budget-deck__grid">{budgets.map((budget) => {

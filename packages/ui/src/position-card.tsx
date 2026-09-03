@@ -27,8 +27,8 @@ export interface PositionCardProps {
  * PositionCard — read-only position record (#73 signature move ②「岗位即端点」).
  *
  * Rendered as the custom `.owb-panel` shell from
- * docs/design/control-plane-v2-preview.html, not an antd Card: eyebrow
- * (POSITION · DEVICE RECORD) + display-font title + role sub-line, a mode
+ * docs/design/control-plane-v2-preview.html, not an antd Card: display-font
+ * title + role sub-line, a mode
  * badge and a status light on the right, then three sections — budget gauge
  * (dual lane), permission chips, context sources. antd still supplies the
  * controls (Button/Empty/Skeleton) per DL5.
@@ -51,7 +51,6 @@ export function PositionCard({
       <section className={cn("owb-panel", "ui-org-position-card", className)} aria-label={t("pos.title")}>
         <header className="owb-panel-head">
           <div className="owb-panel-head__main">
-            <div className="owb-panel-head__eyebrow">POSITION · DEVICE RECORD</div>
             <div className="ui-org-position-card__skeleton-title">
               <Skeleton.Input active block size="small" />
             </div>
@@ -72,7 +71,6 @@ export function PositionCard({
       >
         <header className="owb-panel-head">
           <div className="owb-panel-head__main">
-            <div className="owb-panel-head__eyebrow">POSITION · DEVICE RECORD</div>
             <h2>{t("pos.unavailable")}</h2>
           </div>
           <div className="owb-panel-head__right">
@@ -100,7 +98,6 @@ export function PositionCard({
       >
         <header className="owb-panel-head">
           <div className="owb-panel-head__main">
-            <div className="owb-panel-head__eyebrow">POSITION · DEVICE RECORD</div>
             <h2>{t("pos.title")}</h2>
           </div>
         </header>
@@ -117,7 +114,6 @@ export function PositionCard({
     <section className={cn("owb-panel", "ui-org-position-card", className)} aria-label={t("pos.title")}>
       <header className="owb-panel-head">
         <div className="owb-panel-head__main">
-          <div className="owb-panel-head__eyebrow">POSITION · DEVICE RECORD</div>
           <h2>{position.name}</h2>
           <p className="owb-panel-head__sub">
             {position.id}
