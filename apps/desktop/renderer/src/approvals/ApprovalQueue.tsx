@@ -105,7 +105,6 @@ export function ApprovalQueue({
     <section className="owb-approval-queue" aria-label={t("apr.center")}>
       <header className="owb-approval-queue__hero">
         <div className="owb-approval-queue__hero-copy">
-          <span className="owb-approval-queue__eyebrow">LOCAL CONTROL PLANE</span>
           <div className="owb-approval-queue__title-row">
             <h1 className="owb-approval-queue__title">{t("apr.center")}</h1>
             <span className={`owb-approval-queue__state is-${dataState}`}>
@@ -285,7 +284,6 @@ function ApprovalCard({ item, onOpen }: ApprovalCardProps) {
         aria-label={t("apr.cardAria", { id: item.approvalId })}
       >
         <div className="owb-approval-card__head">
-          <span className="owb-approval-card__eyebrow">APPROVAL · CAPABILITY GATE</span>
           <span className="owb-approval-card__tags">
             <Tag color={CATEGORY_TAG_COLOR[item.category]}>
               {t(`apr.kind.${item.category}`)}

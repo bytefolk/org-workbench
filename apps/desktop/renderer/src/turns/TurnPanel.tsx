@@ -241,7 +241,6 @@ export function TurnPanel({
     <section className="owb-turn-panel owb-panel" aria-label={t("turn.panelAria")}>
       <header className="owb-turn-panel__header owb-panel-head">
         <div className="owb-panel-head__main">
-          <span className="owb-turn-panel__eyebrow">TURN STREAM · EVIDENCE-FIRST</span>
           <h2>
             <MessagesSquare aria-hidden="true" size={15} />
             {t("turn.title")}

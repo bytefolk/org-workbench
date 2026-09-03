@@ -112,7 +112,6 @@ export function DriveModule({ workspaceOpen }: DriveModuleProps) {
     <section className="owb-drive-module" aria-label={t("drive.moduleAria")}>
       <header className="owb-drive-module__header">
         <div>
-          <span className="owb-drive-module__eyebrow">MEM DRIVE · WORKBENCH</span>
           <h1>{t("drive.title")}</h1>
           <p>{t("drive.subtitle")}</p>
         </div>
@@ -155,7 +154,6 @@ export function DriveModule({ workspaceOpen }: DriveModuleProps) {
         <section className="owb-drive-module__list" aria-label={t("drive.listAria")}>
           <header className="owb-drive-module__list-header">
             <div>
-              <span className="owb-drive-module__eyebrow">WORKSPACE OBJECTS</span>
               <h2>{t("drive.listTitle")}</h2>
             </div>
             <span className="owb-drive-module__count">
@@ -210,7 +208,6 @@ export function DriveModule({ workspaceOpen }: DriveModuleProps) {
             <>
               <header className="owb-drive-module__detail-header">
                 <div>
-                  <span className="owb-drive-module__eyebrow">OBJECT DETAIL</span>
                   <h2>{(detail ?? selected).name}</h2>
                 </div>
                 <button type="button" aria-label={t("drive.closeDetail")} onClick={() => { setSelected(null); setDetail(null); }}>

@@ -271,7 +271,6 @@ export function DocsModule({ workspaceOpen, positions, selectedPositionId }: Doc
     <section className="owb-docs-module" aria-label={t("docs.moduleAria")}>
       <header className="owb-docs-module__header">
         <div>
-          <span className="owb-docs-module__eyebrow">POSITION DOCUMENTS</span>
           <h1>{t("docs.moduleTitle")}</h1>
           <p>{t("docs.moduleSubtitle")}</p>
         </div>

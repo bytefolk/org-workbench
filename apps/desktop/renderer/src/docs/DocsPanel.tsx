@@ -117,7 +117,6 @@ export function DocsPanel({ positionId, listDocs, readDoc, reloadToken = 0 }: Do
         <>
           <header className="owb-docs-panel__header">
             <div>
-              <span className="owb-docs-panel__eyebrow">WORKSPACE FILES</span>
               <h2>{t("docs.listTitle")}</h2>
             </div>
             <span className="owb-docs-panel__count" aria-label={t("docs.fileCount", { count: files.length })}>
