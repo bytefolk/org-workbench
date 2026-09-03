@@ -7,7 +7,7 @@
  * the agent host. Contract mirroring: engine.v1 / workspace-org semantics are
  * frozen elsewhere; this adapter only translates, never invents.
  */
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
 import { constants as fsConstants, realpathSync } from "node:fs";
 import fs from "node:fs/promises";
@@ -15,6 +15,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { TextDecoder } from "node:util";
 import { resolveQoderExecutable } from "../src/qoder-binary.js";
+import { resolveClaudeExecutable } from "../src/claude-binary.js";
 
 const VERSION = "0.2.0";
 const POSITION_ID_PATTERN = /^[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?$/;
@@ -65,6 +66,105 @@ function qoderChildEnvironment(source) {
     if (source[key] !== undefined) environment[key] = source[key];
   }
   return environment;
+}
+
+const CLAUDE_CODE_CHILD_ENV_KEYS = [
+  "PATH",
+  "PATHEXT",
+  "SYSTEMROOT",
+  "SystemRoot",
+  "WINDIR",
+  "ComSpec",
+  "HOME",
+  "USER",
+  "LOGNAME",
+  "TMPDIR",
+  "TMP",
+  "TEMP",
+  "LANG",
+  "LC_ALL",
+  "LC_CTYPE",
+  "SHELL",
+  "XDG_CONFIG_HOME",
+  "XDG_CACHE_HOME",
+  "ANTHROPIC_API_KEY",
+  "ANTHROPIC_BASE_URL",
+  "HTTP_PROXY",
+  "HTTPS_PROXY",
+  "NO_PROXY",
+  "http_proxy",
+  "https_proxy",
+  "no_proxy",
+  "NODE_EXTRA_CA_CERTS",
+  "SSL_CERT_FILE",
+  "SSL_CERT_DIR",
+];
+
+const CLAUDE_LOCAL_CHILD_ENV_KEYS = [
+  "PATH",
+  "PATHEXT",
+  "SYSTEMROOT",
+  "SystemRoot",
+  "WINDIR",
+  "ComSpec",
+  "HOME",
+  "USER",
+  "LOGNAME",
+  "TMPDIR",
+  "TMP",
+  "TEMP",
+  "LANG",
+  "LC_ALL",
+  "LC_CTYPE",
+  "SHELL",
+  "XDG_CONFIG_HOME",
+  "XDG_CACHE_HOME",
+  "DIGITAL_EMPLOYEE_CLAUDE_COMMAND",
+  "HTTP_PROXY",
+  "HTTPS_PROXY",
+  "NO_PROXY",
+  "http_proxy",
+  "https_proxy",
+  "no_proxy",
+  "NODE_EXTRA_CA_CERTS",
+  "SSL_CERT_FILE",
+  "SSL_CERT_DIR",
+];
+
+function claudeChildEnvironment(source, engineModel) {
+  const keys = engineModel === "claude-local" ? CLAUDE_LOCAL_CHILD_ENV_KEYS : CLAUDE_CODE_CHILD_ENV_KEYS;
+  const environment = {};
+  for (const key of keys) {
+    if (source[key] !== undefined) environment[key] = source[key];
+  }
+  return environment;
+}
+
+const CLAUDE_VERSION_MIN = [2, 1, 214];
+const CLAUDE_VERSION_MAX = [2, 2, 0];
+
+function parseClaudeVersion(announced) {
+  if (typeof announced !== "string") return null;
+  const match = /(\d+)\.(\d+)\.(\d+)/.exec(announced);
+  if (!match) return null;
+  const parts = [Number(match[1]), Number(match[2]), Number(match[3])];
+  if (parts.some((p) => !Number.isSafeInteger(p) || p < 0)) return null;
+  return parts;
+}
+
+function isClaudeVersionSupported(parts) {
+  for (let i = 0; i < 3; i++) {
+    if (parts[i] < CLAUDE_VERSION_MIN[i]) return false;
+    if (parts[i] > CLAUDE_VERSION_MIN[i]) break;
+  }
+  for (let i = 0; i < 3; i++) {
+    if (parts[i] > CLAUDE_VERSION_MAX[i]) return false;
+    if (parts[i] < CLAUDE_VERSION_MAX[i]) break;
+  }
+  for (let i = 0; i < 3; i++) {
+    if (parts[i] !== CLAUDE_VERSION_MAX[i]) return true;
+  }
+  return false;
 }
 
 /*
@@ -591,7 +691,6 @@ function emit(event) {
 }
 
 function turnRun(workspaceDir, positionId) {
-  const runId = randomUUID();
   let stdinText = "";
   process.stdin.setEncoding("utf8");
   process.stdin.on("data", (chunk) => {
@@ -604,7 +703,20 @@ function turnRun(workspaceDir, positionId) {
     } catch {
       input = "";
     }
-    emit({ type: "run.started", runId, timestamp: now() });
+    const engineModel = process.env.DIGITAL_EMPLOYEE_ENGINE_MODEL ?? "qoder";
+    switch (engineModel) {
+      case "claude-code":
+      case "claude-local":
+        return turnRunClaude(workspaceDir, positionId, input, engineModel);
+      default:
+        return turnRunQoder(workspaceDir, positionId, input);
+    }
+  });
+}
+
+function turnRunQoder(workspaceDir, positionId, input) {
+  const runId = randomUUID();
+  emit({ type: "run.started", runId, timestamp: now() });
 
     let terminalEmitted = false;
     const fail = (code, message, retryable) => {
@@ -724,6 +836,177 @@ function turnRun(workspaceDir, positionId) {
         fail("qoder.exit_nonzero", stderrTail.trim() || `qoder exited with code ${code}`, true);
       }
     });
+}
+
+function turnRunClaude(workspaceDir, positionId, input, engineModel) {
+  const runId = randomUUID();
+  emit({ type: "run.started", runId, timestamp: now() });
+
+  const fail = (code, message, retryable) => {
+    emit({
+      type: "run.failed",
+      runId,
+      timestamp: now(),
+      error: { code, message: message.slice(0, 2000), retryable, terminalReason: "engine_internal_error" },
+    });
+    process.exit(0);
+  };
+
+  const claudeBin = resolveClaudeExecutable(process.env);
+  if (claudeBin === null) {
+    fail("claude.binary_unresolved", "cannot resolve an executable Claude Code CLI; install claude or set DIGITAL_EMPLOYEE_CLAUDE_COMMAND", false);
+    return;
+  }
+
+  const versionProbe = spawnSync(claudeBin, ["--version"], {
+    encoding: "utf8",
+    timeout: 5000,
+    killSignal: "SIGKILL",
+    shell: false,
+    windowsHide: true,
+    env: claudeChildEnvironment(process.env, engineModel),
+  });
+  if (versionProbe.error !== undefined || versionProbe.status !== 0) {
+    fail("claude.binary_unresolved", "Claude Code version probe failed; ensure claude is executable and in PATH", false);
+    return;
+  }
+  const versionOutput = typeof versionProbe.stdout === "string" && versionProbe.stdout.trim().length > 0
+    ? versionProbe.stdout
+    : typeof versionProbe.stderr === "string"
+      ? versionProbe.stderr
+      : "";
+  const versionParts = parseClaudeVersion(versionOutput);
+  if (versionParts === null || !isClaudeVersionSupported(versionParts)) {
+    const announced = versionParts === null ? "unknown" : versionParts.join(".");
+    fail("claude.version_unsupported", `Claude Code version ${announced} is outside the supported window (>= 2.1.214, < 2.2.0)`, false);
+    return;
+  }
+
+  const safeInput = (input || "Execute your position duties for this turn.").replace(/@/g, "\\u0040");
+  const positionContext = `[Position: ${positionId}]\n[Workspace: ${workspaceDir}]\n\n`;
+  const args = [
+    "--bare",
+    "--print",
+    "--input-format", "text",
+    "--output-format", "stream-json",
+    "--verbose",
+    "--include-partial-messages",
+    "--permission-mode", "dontAsk",
+    "--tools", "",
+    "--setting-sources", "",
+    "--strict-mcp-config",
+    "--disable-slash-commands",
+    "--no-chrome",
+    "--no-session-persistence",
+    "--max-turns", "1",
+  ];
+
+  let child;
+  try {
+    const childEnv = claudeChildEnvironment(process.env, engineModel);
+    const spawnSpec = createQoderSpawnSpec(claudeBin, args, childEnv);
+    child = spawn(spawnSpec.command, spawnSpec.args, {
+      ...spawnSpec.options,
+      cwd: workspaceDir,
+      stdio: ["pipe", "pipe", "pipe"],
+    });
+  } catch {
+    fail("claude.spawn_failed", "cannot spawn the resolved Claude Code CLI", true);
+    return;
+  }
+
+  child.stdin.on("error", () => {});
+  child.stdin.write(positionContext + safeInput);
+  child.stdin.end();
+
+  let buffer = "";
+  let initSeen = false;
+  let textSnapshot = "";
+
+  child.stdout.on("data", (chunk) => {
+    buffer += String(chunk);
+    let newline = buffer.indexOf("\n");
+    while (newline >= 0) {
+      handleClaudeLine(buffer.slice(0, newline));
+      buffer = buffer.slice(newline + 1);
+      newline = buffer.indexOf("\n");
+    }
+  });
+  let stderrTail = "";
+  child.stderr.on("data", (chunk) => {
+    stderrTail = (stderrTail + String(chunk)).slice(-2000);
+  });
+
+  function handleClaudeLine(line) {
+    if (line.trim().length === 0) return;
+    let event;
+    try {
+      event = JSON.parse(line);
+    } catch {
+      return;
+    }
+
+    if (event?.type === "system" && event?.subtype === "init") {
+      initSeen = true;
+      return;
+    }
+
+    if (event?.type === "assistant" && Array.isArray(event?.message?.content)) {
+      for (const block of event.message.content) {
+        if (block?.type === "text" && typeof block.text === "string" && block.text.length > 0) {
+          const delta = block.text.length > textSnapshot.length
+            ? block.text.slice(textSnapshot.length)
+            : block.text;
+          textSnapshot = block.text;
+          if (delta.length > 0) {
+            emit({ type: "model.delta", runId, timestamp: now(), text: delta });
+          }
+        }
+      }
+      return;
+    }
+
+    if (event?.type === "stream_event" && event?.event?.type === "content_block_delta") {
+      const delta = event.event.delta;
+      if (delta?.type === "text_delta" && typeof delta.text === "string" && delta.text.length > 0) {
+        emit({ type: "model.delta", runId, timestamp: now(), text: delta.text });
+      }
+      return;
+    }
+
+    if (event?.type === "result") {
+      const usage = event?.usage && typeof event.usage === "object"
+        ? {
+            ...(Number.isInteger(event.usage.input_tokens) ? { inputTokens: event.usage.input_tokens } : {}),
+            ...(Number.isInteger(event.usage.output_tokens) ? { outputTokens: event.usage.output_tokens } : {}),
+          }
+        : null;
+      if (event.is_error === true || (typeof event.subtype === "string" && event.subtype !== "success")) {
+        const errorCode = event.subtype === "error_max_turns" ? "claude.max_turns_exceeded"
+          : event.subtype === "error_max_budget_usd" ? "claude.budget_exceeded"
+          : "claude.result_error";
+        fail(errorCode, typeof event.result === "string" ? event.result : stderrTail || "Claude Code reported an error result", false);
+      } else {
+        const output = typeof event.result === "string" ? event.result : "";
+        emit({ type: "usage", runId, timestamp: now(), ...usage });
+        emit({ type: "run.completed", runId, timestamp: now(), output, terminalReason: "goal_met" });
+        process.exit(0);
+      }
+    }
+  }
+
+  child.on("error", () => fail(
+    "claude.spawn_failed",
+    "cannot spawn the resolved Claude Code CLI; install claude or check DIGITAL_EMPLOYEE_CLAUDE_COMMAND",
+    true,
+  ));
+  child.on("close", (code) => {
+    if (code === 0) {
+      emit({ type: "run.completed", runId, timestamp: now(), output: "", terminalReason: "goal_met" });
+      process.exit(0);
+    } else {
+      fail("claude.exit_nonzero", stderrTail.trim() || `claude exited with code ${code}`, true);
+    }
   });
 }
 

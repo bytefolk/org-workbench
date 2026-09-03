@@ -700,3 +700,211 @@ test("qoder-engine turn run: an unspawnable resolved binary never discloses its 
   assert.equal((failed?.error as { retryable: boolean }).retryable, true);
   assert.doesNotMatch(result.stdout, new RegExp(fakeBin.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
 });
+
+function fakeClaudeOk(argsFile: string, envFile: string, stdinFile: string): string {
+  return `#!/usr/bin/env node
+const fs = require("node:fs");
+fs.writeFileSync(${JSON.stringify(argsFile)}, JSON.stringify(process.argv.slice(2)));
+fs.writeFileSync(${JSON.stringify(envFile)}, JSON.stringify(process.env));
+let stdinData = "";
+process.stdin.setEncoding("utf8");
+process.stdin.on("data", (chunk) => { stdinData += chunk; });
+process.stdin.on("end", () => {
+  fs.writeFileSync(${JSON.stringify(stdinFile)}, stdinData);
+  const write = (event) => process.stdout.write(JSON.stringify(event) + "\\n");
+  write({ type: "system", subtype: "init", session_id: "test-session", claude_code_version: "2.1.300", permissionMode: "dontAsk", tools: [], mcp_servers: [], apiKeySource: "ANTHROPIC_API_KEY" });
+  write({ type: "assistant", message: { content: [{ type: "text", text: "Hello from" }] } });
+  write({ type: "assistant", message: { content: [{ type: "text", text: "Hello from Claude" }] } });
+  write({ type: "result", subtype: "success", is_error: false, result: "claude output", usage: { input_tokens: 50, output_tokens: 20 } });
+});
+`;
+}
+
+async function writeFakeClaude(dir: string, script: string): Promise<string> {
+  const file = path.join(dir, "fake-claude.cjs");
+  await fs.writeFile(file, script);
+  await fs.chmod(file, 0o755);
+  return file;
+}
+
+const FAKE_CLAUDE_VERSION_SCRIPT = `#!/usr/bin/env node
+console.log("2.1.300");
+`;
+
+test("qoder-engine turn run: claude-code dispatches to Claude binary, never Qoder", { skip: process.platform === "win32" ? "requires POSIX exec of a shebang fixture" : false }, async () => {
+  const dir = await makeWorkspace();
+  const fakeDir = await fs.mkdtemp(path.join(os.tmpdir(), "owb-fake-claude-"));
+  const argsFile = path.join(fakeDir, "claude-args.json");
+  const envFile = path.join(fakeDir, "claude-env.json");
+  const stdinFile = path.join(fakeDir, "claude-stdin.txt");
+  const fakeClaude = await writeFakeClaude(fakeDir, fakeClaudeOk(argsFile, envFile, stdinFile));
+
+  const qoderStub = path.join(fakeDir, "qoder-stub.cjs");
+  await fs.writeFile(qoderStub, "#!/usr/bin/env node\nprocess.stderr.write(\"QODER_SHOULD_NOT_BE_CALLED\\n\");process.exit(1);\n");
+  await fs.chmod(qoderStub, 0o755);
+
+  const result = await runAdapter(["turn", "run", dir, "--position", "repo-owner", "--stdin"], {
+    stdin: JSON.stringify({ input: "hello from test" }),
+    env: {
+      DIGITAL_EMPLOYEE_ENGINE_MODEL: "claude-code",
+      DIGITAL_EMPLOYEE_CLAUDE_COMMAND: fakeClaude,
+      ORG_WORKBENCH_QODER_BIN: qoderStub,
+      ANTHROPIC_API_KEY: "test-key",
+      ANTHROPIC_BASE_URL: "https://proxy.example.com/v1",
+      QODER_PERSONAL_ACCESS_TOKEN: "qoder-secret",
+      CONTEXT_RUNTIME_TOKEN: "context-secret",
+      PATH: `${fakeDir}${path.delimiter}${process.env.PATH ?? ""}`,
+    },
+  });
+  assert.equal(result.code, 0);
+
+  assert.doesNotMatch(result.stderr, /QODER_SHOULD_NOT_BE_CALLED/, "claude-code turn must never reach the Qoder binary");
+  const events = result.stdout.trim().split("\n").map((line) => JSON.parse(line) as Record<string, unknown>);
+  const failedEvent = events.find((event) => event.type === "run.failed");
+  assert.equal(failedEvent, undefined, "claude-code turn must not emit run.failed");
+  assert.equal(events[0]?.type, "run.started");
+  const runId = events[0]?.runId;
+  assert.ok(events.every((event) => event.runId === runId), "one runId per turn");
+
+  const deltas = events.filter((event) => event.type === "model.delta").map((event) => event.text);
+  assert.deepEqual(deltas, ["Hello from", " Claude"]);
+
+  const usage = events.find((event) => event.type === "usage");
+  assert.deepEqual({ input: usage?.inputTokens, output: usage?.outputTokens }, { input: 50, output: 20 });
+
+  const completed = events.at(-1);
+  assert.equal(completed?.type, "run.completed");
+  assert.equal(completed?.output, "claude output");
+
+  const claudeArgs = JSON.parse(await fs.readFile(argsFile, "utf8")) as string[];
+  assert.ok(claudeArgs.includes("--bare"));
+  assert.ok(claudeArgs.includes("--print"));
+  assert.ok(claudeArgs.includes("--permission-mode"));
+  assert.equal(claudeArgs[claudeArgs.indexOf("--permission-mode") + 1], "dontAsk");
+  assert.ok(claudeArgs.includes("--max-turns"));
+  assert.equal(claudeArgs[claudeArgs.indexOf("--max-turns") + 1], "1");
+
+  const claudeEnv = JSON.parse(await fs.readFile(envFile, "utf8")) as Record<string, string>;
+  assert.equal(claudeEnv.ANTHROPIC_API_KEY, "test-key");
+  assert.equal(claudeEnv.ANTHROPIC_BASE_URL, "https://proxy.example.com/v1");
+  assert.equal(claudeEnv.QODER_PERSONAL_ACCESS_TOKEN, undefined, "claude-code child must not receive Qoder credentials");
+  assert.equal(claudeEnv.CONTEXT_RUNTIME_TOKEN, undefined, "claude-code child must not receive context tokens");
+
+  const stdinContent = await fs.readFile(stdinFile, "utf8");
+  assert.ok(stdinContent.includes("hello from test"), "input is piped to Claude stdin");
+});
+
+test("qoder-engine turn run: claude-local dispatches to Claude without service credentials", { skip: process.platform === "win32" ? "requires POSIX exec of a shebang fixture" : false }, async () => {
+  const dir = await makeWorkspace();
+  const fakeDir = await fs.mkdtemp(path.join(os.tmpdir(), "owb-fake-claude-local-"));
+  const argsFile = path.join(fakeDir, "claude-args.json");
+  const envFile = path.join(fakeDir, "claude-env.json");
+  const stdinFile = path.join(fakeDir, "claude-stdin.txt");
+  const fakeClaude = await writeFakeClaude(fakeDir, fakeClaudeOk(argsFile, envFile, stdinFile));
+
+  const result = await runAdapter(["turn", "run", dir, "--position", "repo-owner", "--stdin"], {
+    stdin: JSON.stringify({ input: "local test" }),
+    env: {
+      DIGITAL_EMPLOYEE_ENGINE_MODEL: "claude-local",
+      DIGITAL_EMPLOYEE_CLAUDE_COMMAND: fakeClaude,
+      ANTHROPIC_API_KEY: "should-not-leak",
+      ANTHROPIC_BASE_URL: "https://should-not-leak.example.com",
+      QODER_PERSONAL_ACCESS_TOKEN: "also-should-not-leak",
+      PATH: `${fakeDir}${path.delimiter}${process.env.PATH ?? ""}`,
+    },
+  });
+  assert.equal(result.code, 0);
+  const events = result.stdout.trim().split("\n").map((line) => JSON.parse(line) as Record<string, unknown>);
+  assert.equal(events.at(-1)?.type, "run.completed");
+
+  const claudeEnv = JSON.parse(await fs.readFile(envFile, "utf8")) as Record<string, string>;
+  assert.equal(claudeEnv.ANTHROPIC_API_KEY, undefined, "claude-local must not receive ANTHROPIC_API_KEY");
+  assert.equal(claudeEnv.ANTHROPIC_BASE_URL, undefined, "claude-local must not receive ANTHROPIC_BASE_URL");
+  assert.equal(claudeEnv.QODER_PERSONAL_ACCESS_TOKEN, undefined, "claude-local must not receive Qoder credentials");
+  assert.equal(claudeEnv.DIGITAL_EMPLOYEE_CLAUDE_COMMAND, fakeClaude, "claude-local receives the binary override");
+});
+
+test("qoder-engine turn run: claude-code fails closed when Claude binary is missing", async () => {
+  const dir = await makeWorkspace();
+  const result = await runAdapter(["turn", "run", dir, "--position", "repo-owner", "--stdin"], {
+    stdin: JSON.stringify({ input: "hi" }),
+    env: {
+      DIGITAL_EMPLOYEE_ENGINE_MODEL: "claude-code",
+      DIGITAL_EMPLOYEE_CLAUDE_COMMAND: "/nonexistent/claude-binary",
+      PATH: "/usr/bin:/bin",
+      HOME: "/tmp",
+    },
+  });
+  assert.equal(result.code, 0);
+  const events = result.stdout.trim().split("\n").map((line) => JSON.parse(line) as Record<string, unknown>);
+  assert.equal(events[0]?.type, "run.started");
+  const failed = events.find((event) => event.type === "run.failed");
+  assert.ok(failed, "must emit run.failed when binary is missing");
+  assert.equal((failed?.error as { code: string }).code, "claude.binary_unresolved");
+  assert.equal((failed?.error as { retryable: boolean }).retryable, false);
+});
+
+test("qoder-engine turn run: claude-code escapes @ in input to prevent mention expansion", { skip: process.platform === "win32" ? "requires POSIX exec of a shebang fixture" : false }, async () => {
+  const dir = await makeWorkspace();
+  const fakeDir = await fs.mkdtemp(path.join(os.tmpdir(), "owb-claude-at-escape-"));
+  const argsFile = path.join(fakeDir, "claude-args.json");
+  const envFile = path.join(fakeDir, "claude-env.json");
+  const stdinFile = path.join(fakeDir, "claude-stdin.txt");
+  const fakeClaude = await writeFakeClaude(fakeDir, fakeClaudeOk(argsFile, envFile, stdinFile));
+
+  const result = await runAdapter(["turn", "run", dir, "--position", "repo-owner", "--stdin"], {
+    stdin: JSON.stringify({ input: "hello @user please review" }),
+    env: {
+      DIGITAL_EMPLOYEE_ENGINE_MODEL: "claude-code",
+      DIGITAL_EMPLOYEE_CLAUDE_COMMAND: fakeClaude,
+      ANTHROPIC_API_KEY: "test-key",
+      PATH: `${fakeDir}${path.delimiter}${process.env.PATH ?? ""}`,
+    },
+  });
+  assert.equal(result.code, 0);
+  const stdinContent = await fs.readFile(stdinFile, "utf8");
+  assert.ok(!stdinContent.includes("@user"), "@ must be escaped");
+  assert.ok(stdinContent.includes("\\u0040user"), "@ must be escaped to \\u0040");
+});
+
+test("qoder-engine turn run: claude-code rejects version 2.2.0 (ceiling)", { skip: process.platform === "win32" ? "requires POSIX exec of a shebang fixture" : false }, async () => {
+  const dir = await makeWorkspace();
+  const fakeDir = await fs.mkdtemp(path.join(os.tmpdir(), "owb-claude-ceiling-"));
+  const fakeClaude = await writeFakeClaude(fakeDir, `#!/usr/bin/env node\nif (process.argv.includes("--version")) { console.log("2.2.0"); process.exit(0); }\nprocess.exit(1);\n`);
+
+  const result = await runAdapter(["turn", "run", dir, "--position", "repo-owner", "--stdin"], {
+    stdin: JSON.stringify({ input: "hello" }),
+    env: {
+      DIGITAL_EMPLOYEE_ENGINE_MODEL: "claude-code",
+      DIGITAL_EMPLOYEE_CLAUDE_COMMAND: fakeClaude,
+      ANTHROPIC_API_KEY: "test-key",
+      PATH: `${fakeDir}${path.delimiter}${process.env.PATH ?? ""}`,
+    },
+  });
+  assert.equal(result.code, 0);
+  const events = result.stdout.trim().split("\n").map((line) => JSON.parse(line) as Record<string, unknown>);
+  const failed = events.find((event) => event.type === "run.failed");
+  assert.ok(failed, "must emit run.failed for version 2.2.0");
+  assert.equal((failed?.error as { code: string }).code, "claude.version_unsupported");
+  assert.equal((failed?.error as { retryable: boolean }).retryable, false);
+});
+
+test("qoder-engine turn run: default engine model is qoder when DIGITAL_EMPLOYEE_ENGINE_MODEL is unset", { skip: process.platform === "win32" ? "requires POSIX exec of a shebang fixture" : false }, async () => {
+  const dir = await makeWorkspace();
+  const fakeDir = await fs.mkdtemp(path.join(os.tmpdir(), "owb-default-engine-"));
+  const argsFile = path.join(fakeDir, "args.json");
+  const envFile = path.join(fakeDir, "env.json");
+  const fakeBin = await writeFakeQoder(fakeDir, fakeQoderOk(argsFile, envFile));
+  const result = await runAdapter(["turn", "run", dir, "--position", "repo-owner", "--stdin"], {
+    stdin: JSON.stringify({ input: "default engine test" }),
+    env: {
+      ORG_WORKBENCH_QODER_BIN: fakeBin,
+      PATH: `${fakeDir}${path.delimiter}${process.env.PATH ?? ""}`,
+    },
+  });
+  assert.equal(result.code, 0);
+  const events = result.stdout.trim().split("\n").map((line) => JSON.parse(line) as Record<string, unknown>);
+  assert.equal(events.at(-1)?.type, "run.completed");
+  const qoderArgs = JSON.parse(await fs.readFile(argsFile, "utf8")) as string[];
+  assert.ok(qoderArgs.includes("--agent"), "default engine must spawn Qoder with --agent");
+});

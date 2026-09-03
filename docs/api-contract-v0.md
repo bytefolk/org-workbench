@@ -280,7 +280,7 @@ data: {"seq":4,"type":"org.updated","at":"...","payload":{...}}
 { "positionId": "repo-owner", "input": "Summarize the open issues.", "engine": "qoder" }
 ```
 
-- `engine` 只允许 `qoder` / `claude-code`；不接受凭据字段，凭据只从控制面进程环境的对应变量传给子进程。
+- `engine` 只允许 `qoder` / `claude-code` / `claude-local`；不接受凭据字段，凭据只从控制面进程环境的对应变量传给子进程。
 - 控制面构造 `turn-envelope.v1`，其 `envelopeDigest` 与 digital-employee canonical JSON + SHA-256 算法逐字节一致。
 - 唯一调用形态：`digital-employee turn run <workspace> --position <id> --stdin`；信封从 stdin 输入，凭据和用户输入均不进 argv。
 - stdout 必须是严格、同 runId、以 `run.started` 开始且恰有一个末尾终态的 `engine.v1` NDJSON；UTF-8 按流解码，模型文本边界镜像上游 1,048,576 字符；未知字段、超界行、多个终态或终态后事件均产生 `indeterminate`。
@@ -351,7 +351,7 @@ POST /sessions                         {"positionId":"repo-owner"}
 GET  /sessions?positionId=repo-owner
 GET  /sessions/:sessionId
 POST /sessions/:sessionId/rotate       {}
-POST /sessions/:sessionId/turns        {"input":"...","engine":"qoder|claude-code"}
+POST /sessions/:sessionId/turns        {"input":"...","engine":"qoder|claude-code|claude-local"}
 GET  /sessions/:sessionId/turns
 ```
 

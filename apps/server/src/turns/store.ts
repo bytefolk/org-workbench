@@ -387,7 +387,7 @@ export function isTurnRecord(value: unknown): value is TurnRecord {
     !isBoundedTurnId(value.turnId) ||
     value.turnId.includes("/") || value.turnId.includes("\\") || value.turnId.includes("\0") ||
     !isPositionId(value.positionId) ||
-    (value.engine !== "qoder" && value.engine !== "claude-code") ||
+    (value.engine !== "qoder" && value.engine !== "claude-code" && value.engine !== "claude-local") ||
     !["running", "completed", "failed", "indeterminate"].includes(String(value.status)) ||
     typeof value.input !== "string" || Buffer.byteLength(value.input, "utf8") > MAX_INPUT_BYTES ||
     typeof value.envelopeDigest !== "string" ||
