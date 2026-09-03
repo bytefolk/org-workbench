@@ -19,8 +19,14 @@ const DESKTOP_RUNTIME_FILES = [
   "src/packaged-behavior-smoke.cjs",
   "src/packaged-smoke.cjs",
   "src/runtime-paths.cjs",
+  // The app's only third-party runtime dependency, bundled to one file by
+  // scripts/bundle-updater.mjs. Shipping electron-updater as a package would add
+  // 16 packages and 325 files to a tree that asserts 189 files byte-exact, and
+  // the filters below must not become a node_modules-wide glob.
+  "src/vendor/electron-updater.cjs",
   "src/session-ipc.cjs",
   "src/turn-ipc.cjs",
+  "src/updater.cjs",
   "src/window-ipc.cjs",
   "dist/renderer/**/*",
 ];

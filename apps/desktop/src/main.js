@@ -32,6 +32,7 @@ const {
   runPackagedSmoke,
   startPackagedSmokeLifecycle,
 } = require("./packaged-smoke.cjs");
+const { startUpdaterService } = require("./updater.cjs");
 const { isAllowedNavigationTarget, isTrustedWindowSender } = require("./window-ipc.cjs");
 const { validateRestoreRequest, validateOrgApply } = require("./org-ipc.cjs");
 const {
@@ -72,6 +73,7 @@ const READY_TIMEOUT_MS = 15000;
 const READY_PREFIX = "org-workbench-server ready ";
 
 let controlPlane = null; // { child, port, token }
+let updaterService = null;
 let controlPlaneError = null;
 let mainWindow = null;
 /** file:// URL of the packaged renderer entry loaded into mainWindow — the
@@ -699,6 +701,30 @@ ipcMain.handle("owb:window:close", (event) => {
 });
 
 
+/**
+ * Build the update service, loading the vendored updater only where the channel
+ * can actually work.
+ *
+ * The lazy require matters: `autoUpdater` is a getter that resolves a
+ * platform-specific implementation, and outside Electron -- or on a platform with
+ * no channel -- evaluating it does not throw, it hangs. So it is never touched
+ * except on the one platform that has a channel, and the service takes it as an
+ * argument so tests drive a fake instead.
+ */
+function publishUpdateState(event) {
+  // #134 adds the settings surface that renders these. Until then the state is
+  // recorded rather than dropped, so a failed check is diagnosable from the log.
+  //
+  // Guarded because this runs inside electron-updater's emitter and a packaged
+  // Windows app has no attached console: an EPIPE here would escape into the
+  // library rather than surfacing as a log line nobody was reading anyway.
+  try {
+    process.stdout.write(`org-workbench-update ${JSON.stringify(event)}\n`);
+  } catch {
+    // Losing a diagnostic line is not worth failing an update check over.
+  }
+}
+
 app.whenReady().then(async () => {
   // Finder/LaunchServices does not inherit the user's command search path.
   // Recover only a bounded login-shell PATH before the control plane (and in
@@ -711,6 +737,14 @@ app.whenReady().then(async () => {
   } catch (err) {
     controlPlaneError = err;
   }
+  // The vendored bundle is loaded through the service so a missing or unloadable
+  // one degrades to an explained refusal. This used to be a bare require on the
+  // line before createWindow(), where a throw meant the app opened no window at
+  // all -- an optional update check taking down the launch.
+  updaterService = startUpdaterService({
+    loadUpdater: () => require("./vendor/electron-updater.cjs").autoUpdater,
+    onState: publishUpdateState,
+  });
   createWindow();
 });
 
