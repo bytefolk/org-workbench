@@ -71,6 +71,8 @@ export const enCatalog: Record<string, string> = {
   "turn.sessionKindReadonly": "read-only",
   "turn.boundaries": "Capability boundaries",
   "turn.threadAria": "Local turn history",
+  "turn.provisional": "Provisional",
+  "turn.provisionalTitle": "Provisional output, not yet verified",
   "turn.evCollapse": "Collapse the full turn evidence value",
   "turn.evExpand": "Expand the full turn evidence value",
   "turn.untrustedWarning": "The runner returned no trusted terminal state. To avoid duplicate execution, the system will not retry automatically.",

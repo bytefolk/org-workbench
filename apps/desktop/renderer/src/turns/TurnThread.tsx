@@ -266,6 +266,7 @@ export function TurnThread({ turns, retrying = false, emptyPrompt, canRetry, onR
               : turn.status === "indeterminate"
                 ? "is-indeterminate"
                 : "";
+        const isProvisional = turn.status === "running" && Boolean(turn.output);
         return (
           <li className={`owb-turn ${stateClass}`} key={turn.id} data-turn-id={turn.id}>
             {/* #248 R2 ④：D3 升级为对话界面——操作员下达（右）与岗位回复（左）成对成线程。 */}
@@ -276,7 +277,7 @@ export function TurnThread({ turns, retrying = false, emptyPrompt, canRetry, onR
             </div>
             <div className="owb-bubble-row owb-bubble-row--employee">
             <article
-              className={`owb-bubble owb-bubble--employee owb-tc ${stateClass}`}
+              className={`owb-bubble owb-bubble--employee owb-tc ${stateClass}${isProvisional ? " owb-tc--provisional" : ""}`}
               aria-live={turn.status === "running" ? "polite" : undefined}
             >
               <header className="owb-tc-head">
@@ -287,6 +288,11 @@ export function TurnThread({ turns, retrying = false, emptyPrompt, canRetry, onR
                   <EngineIcon engine={turn.engine} />
                   {engineLabel(turn.engine)}
                 </span>
+                {isProvisional ? (
+                  <span className="owb-tc-head__provisional" aria-label={t("turn.provisionalTitle")}>
+                    {t("turn.provisional")}
+                  </span>
+                ) : null}
                 <span className="owb-turn__status">
                   <StatusIcon status={turn.status} />
                   {statusCopy[turn.status]}
@@ -297,7 +303,11 @@ export function TurnThread({ turns, retrying = false, emptyPrompt, canRetry, onR
               </header>
 
               {turn.output ? (
-                <p className="owb-tc__out owb-clamp-2" title={turn.output}>{turn.output}</p>
+                isProvisional ? (
+                  <pre className="owb-tc__out owb-tc__out--provisional" title={turn.output}>{turn.output}</pre>
+                ) : (
+                  <p className="owb-tc__out owb-clamp-2" title={turn.output}>{turn.output}</p>
+                )
               ) : null}
               {turn.status === "running" && !turn.output ? <TypingIndicator /> : null}
 

@@ -74,6 +74,8 @@ export const zhCatalog: Record<string, string> = {
   "turn.sessionKindReadonly": "只读",
   "turn.boundaries": "能力边界",
   "turn.threadAria": "本地回合历史",
+  "turn.provisional": "临时输出",
+  "turn.provisionalTitle": "临时输出，未经验证",
   "turn.evCollapse": "收起回合证据全值",
   "turn.evExpand": "展开回合证据全值",
   "turn.untrustedWarning": "运行器未返回可信终态。为避免重复执行，系统不会自动重试。",
