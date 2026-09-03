@@ -10,6 +10,7 @@ import {
   createBehaviorFixtures,
   createBehaviorLaunchEnvironment,
   createExternalStagingRoot,
+  awaitStagedAppExit,
   launchApp,
   parseSmokeArgs,
   smokePackagedApp,
@@ -253,4 +254,42 @@ test("#181 CLI parsing keeps the platform for every real invocation", () => {
   assert.deepEqual(parseSmokeArgs(["macos", "--mode"]), { positional: ["macos"], mode: undefined });
 
   assert.deepEqual(parseSmokeArgs([]), { positional: [], mode: undefined });
+});
+
+// #186: layout mode declared the run complete straight after reading the
+// report and went on to remove the staging tree, on the strength of a comment
+// saying the app "exits right after writing its report". Nothing enforced it,
+// so on Windows `fs.rm` raced the exiting Electron tree and failed with
+// `EBUSY: resource busy or locked, rmdir`. macOS and Linux allow unlinking an
+// open file, which is why the same job passed there.
+test("#186 the staged-app exit wait is bounded and rejects an unclean exit", async (t) => {
+  await t.test("a clean close resolves with the exit state", async () => {
+    const exit = await awaitStagedAppExit(
+      Promise.resolve({ kind: "close", code: 0, output: "" }),
+    );
+    assert.equal(exit.code, 0);
+  });
+
+  await t.test("a non-zero exit fails the smoke instead of being cleaned up quietly", async () => {
+    await assert.rejects(
+      awaitStagedAppExit(Promise.resolve({ kind: "close", code: 3, output: "boom" })),
+      /staged app exited 3/,
+    );
+  });
+
+  await t.test("a launch error is surfaced, not swallowed", async () => {
+    await assert.rejects(
+      awaitStagedAppExit(Promise.resolve({ kind: "error", error: new Error("spawn failed") })),
+      /spawn failed/,
+    );
+  });
+
+  await t.test("an app that never closes fails on its own timeout, not in cleanup", async () => {
+    // The point of the bound: a hung app must produce this message rather than
+    // an EBUSY from a directory removal nobody expected to be racing.
+    await assert.rejects(
+      awaitStagedAppExit(new Promise(() => {}), { timeoutMs: 30 }),
+      /did not close within 30ms/,
+    );
+  });
 });
