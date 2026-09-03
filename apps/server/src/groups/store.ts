@@ -182,6 +182,7 @@ export class GroupStore {
         group,
         MAX_GROUP_RECORD_BYTES,
         nodeAtomicTurnWriteOperations,
+        storageError,
       );
     } catch (error) {
       if (error instanceof OrgApiError) throw error;
@@ -264,6 +265,7 @@ export class GroupStore {
         updated,
         MAX_GROUP_RECORD_BYTES,
         nodeAtomicTurnWriteOperations,
+        storageError,
       );
     } catch (error) {
       if (error instanceof OrgApiError) throw error;
@@ -287,6 +289,7 @@ export class GroupStore {
         record,
         MAX_GROUP_MESSAGE_BYTES,
         nodeAtomicTurnWriteOperations,
+        storageError,
       );
     } catch (error) {
       if (error instanceof OrgApiError) throw error;

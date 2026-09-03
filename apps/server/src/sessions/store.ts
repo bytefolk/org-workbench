@@ -445,7 +445,12 @@ export class SessionStore {
       activeSessionId: session.sessionId,
       sessions: [...(existing?.sessions ?? []), session],
     };
-    await atomicWriteJson(positionFile(workspace, positionId), state, MAX_POSITION_RECORD_BYTES, nodeAtomicTurnWriteOperations);
+    try {
+      await atomicWriteJson(positionFile(workspace, positionId), state, MAX_POSITION_RECORD_BYTES, nodeAtomicTurnWriteOperations, sessionError);
+    } catch (error) {
+      if (error instanceof OrgApiError) throw error;
+      throw sessionError("local session record could not be persisted atomically");
+    }
     return session;
   }
 
@@ -520,7 +525,12 @@ export class SessionStore {
         sessions: found.state.sessions.map((candidate) =>
           candidate.sessionId === source.sessionId ? rotated : candidate).concat(successor),
       };
-      await atomicWriteJson(positionFile(workspace, source.positionId), state, MAX_POSITION_RECORD_BYTES, nodeAtomicTurnWriteOperations);
+      try {
+        await atomicWriteJson(positionFile(workspace, source.positionId), state, MAX_POSITION_RECORD_BYTES, nodeAtomicTurnWriteOperations, sessionError);
+      } catch (error) {
+        if (error instanceof OrgApiError) throw error;
+        throw sessionError("local session record could not be persisted atomically");
+      }
       return { session: successor, created: true };
     });
   }
@@ -565,7 +575,12 @@ export class SessionStore {
         workspaceInstanceId: crypto.randomUUID(),
         createdAt: now,
       };
-      await atomicWriteJson(file, record, MAX_WORKSPACE_RECORD_BYTES, nodeAtomicTurnWriteOperations);
+      try {
+        await atomicWriteJson(file, record, MAX_WORKSPACE_RECORD_BYTES, nodeAtomicTurnWriteOperations, sessionError);
+      } catch (error) {
+        if (error instanceof OrgApiError) throw error;
+        throw sessionError("local session workspace identity could not be persisted atomically");
+      }
       return record;
     });
   }

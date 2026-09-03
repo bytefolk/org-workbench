@@ -3,6 +3,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
+import { OrgApiError, errorCodes } from "@org-workbench/shared";
 import type {
   AtomicTurnDirectoryHandle,
   AtomicTurnTemporaryHandle,
@@ -13,6 +14,10 @@ import {
   nodeAtomicTurnWriteOperations,
   TurnStore,
 } from "../src/turns/store.js";
+
+function testStorageError(message: string): OrgApiError {
+  return new OrgApiError(errorCodes.turn_storage_failed, 500, message);
+}
 
 function epermDirectoryOperations(): AtomicTurnWriteOperations {
   return {
@@ -40,14 +45,28 @@ function epermDirectoryOperations(): AtomicTurnWriteOperations {
   };
 }
 
-test("atomicWriteJson succeeds when directory sync rejects with EPERM (#155)", async () => {
+test("atomicWriteJson succeeds when directory sync rejects with EPERM (#155)", { skip: process.platform !== "win32" ? "EPERM directory sync is only swallowed on Windows" : false }, async () => {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), "owb-eperm-test-"));
   try {
     const file = path.join(dir, "record.json");
     const operations = epermDirectoryOperations();
-    await atomicWriteJson(file, { hello: "world" }, 4096, operations);
+    await atomicWriteJson(file, { hello: "world" }, 4096, operations, testStorageError);
     const raw = JSON.parse(await fs.readFile(file, "utf8"));
     assert.deepEqual(raw, { hello: "world" });
+  } finally {
+    await fs.rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("atomicWriteJson propagates EPERM on non-Windows platforms", { skip: process.platform === "win32" ? "EPERM is only swallowed on Windows" : false }, async () => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), "owb-eperm-posix-"));
+  try {
+    const file = path.join(dir, "record.json");
+    const operations = epermDirectoryOperations();
+    await assert.rejects(
+      atomicWriteJson(file, { hello: "world" }, 4096, operations, testStorageError),
+      (error: NodeJS.ErrnoException) => error.code === "EPERM",
+    );
   } finally {
     await fs.rm(dir, { recursive: true, force: true });
   }
@@ -71,7 +90,7 @@ test("atomicWriteJson still rejects on non-EPERM directory sync errors", async (
       },
     };
     await assert.rejects(
-      atomicWriteJson(file, { hello: "world" }, 4096, operations),
+      atomicWriteJson(file, { hello: "world" }, 4096, operations, testStorageError),
       (error: NodeJS.ErrnoException) => error.code === "EIO",
     );
   } finally {
@@ -79,7 +98,7 @@ test("atomicWriteJson still rejects on non-EPERM directory sync errors", async (
   }
 });
 
-test("TurnStore succeeds with EPERM directory sync via injected operations", async () => {
+test("TurnStore succeeds with EPERM directory sync via injected operations", { skip: process.platform !== "win32" ? "EPERM directory sync is only swallowed on Windows" : false }, async () => {
   const workspace = await fs.mkdtemp(path.join(os.tmpdir(), "owb-turnstore-eperm-"));
   try {
     const store = new TurnStore({ atomicWriteOperations: epermDirectoryOperations() });
@@ -109,7 +128,7 @@ test("nodeAtomicTurnWriteOperations handles real directory sync without error", 
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), "owb-real-dir-sync-"));
   try {
     const file = path.join(dir, "record.json");
-    await atomicWriteJson(file, { test: true }, 4096, nodeAtomicTurnWriteOperations);
+    await atomicWriteJson(file, { test: true }, 4096, nodeAtomicTurnWriteOperations, testStorageError);
     const raw = JSON.parse(await fs.readFile(file, "utf8"));
     assert.deepEqual(raw, { test: true });
   } finally {
