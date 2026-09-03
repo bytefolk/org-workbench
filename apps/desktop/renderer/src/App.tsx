@@ -171,6 +171,14 @@ function AppInner({
     selectedSessionIdRef.current = selectedSessionId;
   }, [selectedSessionId]);
 
+  // 这些横幅存的是点击时已解析好的文案；切换语言后旧文案会残留成另一种
+  // 语言（中文界面里挂着英文 “No org adjustment to undo”）。语言一变就清掉。
+  useEffect(() => {
+    setOrgFeedback(null);
+    setReportsError(null);
+    setTurnError(null);
+  }, [locale]);
+
   const loadBackups = useCallback(async () => {
     const response = await window.owb.orgBackups();
     if (response.status === 200) setBackups((response.body as OrgBackupsResponse).backups);

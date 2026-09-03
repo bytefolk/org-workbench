@@ -194,7 +194,6 @@ export function DocsModule({ workspaceOpen, positions, selectedPositionId }: Doc
       <div className="owb-docs-module__picker">
         <div className="owb-docs-module__picker-copy">
           <span>{t("docs.pickerTitle")}</span>
-          <small>{t("docs.pickerHint")}</small>
         </div>
         <Select
           className="owb-docs-module__select"
@@ -231,10 +230,7 @@ export function DocsModule({ workspaceOpen, positions, selectedPositionId }: Doc
                 <span className="owb-docs-module__resolve-icon" aria-hidden="true">
                   <Link2 size={15} strokeWidth={1.8} />
                 </span>
-                <span>
-                  <strong>{t("docs.resolve")}</strong>
-                  <small>{t("docs.resolveHint")}</small>
-                </span>
+                <strong>{t("docs.resolve")}</strong>
               </span>
             ),
             children: (
@@ -270,14 +266,7 @@ export function DocsModule({ workspaceOpen, positions, selectedPositionId }: Doc
   return (
     <section className="owb-docs-module" aria-label={t("docs.moduleAria")}>
       <header className="owb-docs-module__header">
-        <div>
-          <h1>{t("docs.moduleTitle")}</h1>
-          <p>{t("docs.moduleSubtitle")}</p>
-        </div>
-        <span className="owb-docs-module__scope">
-          <span className="owb-docs-module__scope-dot" aria-hidden="true" />
-          LOCAL WORKSPACE
-        </span>
+        <h1>{t("docs.moduleTitle")}</h1>
       </header>
       <Tabs
         defaultActiveKey="position"
