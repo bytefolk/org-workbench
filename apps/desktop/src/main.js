@@ -68,6 +68,10 @@ const {
   validateGroupCreateRequest,
   validateGroupTurnRequest,
 } = require("./group-ipc.cjs");
+const {
+  readLastWorkspacePath,
+  writeLastWorkspacePath,
+} = require("./last-workspace.cjs");
 
 const SERVER_ENTRY = path.join(__dirname, "..", "..", "server", "dist", "src", "index.js");
 const READY_TIMEOUT_MS = 15000;
@@ -82,6 +86,7 @@ let mainWindow = null;
 let trustedRendererUrl = null;
 let eventStreamRequest = null;
 let currentSseStatus = "connecting";
+let pendingFallbackNotice = null;
 
 function pinnedEngineCommandDefault() {
   const nodePath = process.execPath;
@@ -211,6 +216,34 @@ function defaultWorkspaceDir() {
 }
 
 async function openDefaultWorkspace() {
+  // ORG_WORKBENCH_DEFAULT_WORKSPACE wins when set — no persistence, no notice.
+  if (process.env.ORG_WORKBENCH_DEFAULT_WORKSPACE) {
+    const dir = process.env.ORG_WORKBENCH_DEFAULT_WORKSPACE;
+    if (!fs.existsSync(path.join(dir, "workspace.json"))) return;
+    try {
+      await apiRequest("/workspace/open", { method: "POST", body: { path: dir } });
+    } catch {
+      // Auto-open is best-effort.
+    }
+    return;
+  }
+
+  // Try the persisted last workspace path before the demo copy.
+  const lastPath = readLastWorkspacePath(app.getPath("userData"));
+  if (lastPath !== null) {
+    if (fs.existsSync(path.join(lastPath, "workspace.json"))) {
+      try {
+        await apiRequest("/workspace/open", { method: "POST", body: { path: lastPath } });
+        return;
+      } catch {
+        // Open failed — fall through to demo with a notice.
+      }
+    }
+    // Persisted path is missing or invalid; surface a visible notice.
+    pendingFallbackNotice = lastPath;
+  }
+
+  // Fall back to the demo workspace.
   const dir = defaultWorkspaceDir();
   if (!fs.existsSync(path.join(dir, "workspace.json"))) return;
   try {
@@ -311,6 +344,13 @@ ipcMain.handle("owb:workspace:open", async () => {
   if (picked.canceled || picked.filePaths.length === 0) return { canceled: true };
   const dir = picked.filePaths[0];
   const res = await apiRequest("/workspace/open", { method: "POST", body: { path: dir } });
+  if (res.status === 200) {
+    try {
+      writeLastWorkspacePath(app.getPath("userData"), dir);
+    } catch {
+      // Persistence is best-effort; the open itself succeeded.
+    }
+  }
   return res;
 });
 
@@ -729,6 +769,15 @@ function createWindow() {
     void mainWindow.loadFile(entryPath);
   } else {
     void mainWindow.loadFile(entryPath);
+  }
+  if (pendingFallbackNotice !== null) {
+    const noticePath = pendingFallbackNotice;
+    pendingFallbackNotice = null;
+    mainWindow.webContents.once("did-finish-load", () => {
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send("owb:fallback-notice", noticePath);
+      }
+    });
   }
   // #77 review item 2: this shell never legitimately navigates away from the
   // packaged renderer or opens child windows; deny both explicitly rather
