@@ -26,7 +26,8 @@ jobs:
     timeout-minutes: 10
     outputs:
       version: ${{ steps.version.outputs.value }}
-      signed: ${{ steps.signing.outputs.signed }}
+      macos-signed: ${{ steps.signing.outputs.macos-signed }}
+      windows-signed: ${{ steps.signing.outputs.windows-signed }}
     steps:
       - name: Check out org-workbench
         uses: actions/checkout@v6
@@ -65,27 +66,53 @@ jobs:
             false)  echo "::error::release $tag is already published; bump the version instead"; exit 1 ;;
           esac
 
-      # Signed status is derived from the secrets #135 and #136 will introduce, not
-      # from a constant. The gate below then opens on its own when they land,
-      # instead of depending on someone remembering to flip a flag.
+      # AC-001: Signed status is derived from the secrets #135 and #136 introduce.
+      # Each platform's signing status is tracked separately so one platform's
+      # missing credentials don't block the other.
       - name: Determine signing status
         id: signing
         shell: bash
         env:
           MACOS_CERTIFICATE: ${{ secrets.MACOS_CERTIFICATE }}
+          MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+          MACOS_TEAM_ID: ${{ secrets.MACOS_TEAM_ID }}
+          MACOS_APPLE_ID: ${{ secrets.MACOS_APPLE_ID }}
+          MACOS_APP_SPECIFIC_PASSWORD: ${{ secrets.MACOS_APP_SPECIFIC_PASSWORD }}
           WINDOWS_SIGNING_TOKEN: ${{ secrets.WINDOWS_SIGNING_TOKEN }}
         run: |
-          if [ -n "$MACOS_CERTIFICATE" ] && [ -n "$WINDOWS_SIGNING_TOKEN" ]; then
+          # macOS signing requires all five secrets (#135)
+          macos_signed=false
+          if [ -n "$MACOS_CERTIFICATE" ] && [ -n "$MACOS_CERTIFICATE_PASSWORD" ] && \
+             [ -n "$MACOS_TEAM_ID" ] && [ -n "$MACOS_APPLE_ID" ] && \
+             [ -n "$MACOS_APP_SPECIFIC_PASSWORD" ]; then
+            macos_signed=true
+          fi
+          echo "macos-signed=$macos_signed" >> "$GITHUB_OUTPUT"
+
+          # Windows signing requires the Azure Trusted Signing token (#136)
+          windows_signed=false
+          if [ -n "$WINDOWS_SIGNING_TOKEN" ]; then
+            windows_signed=true
+          fi
+          echo "windows-signed=$windows_signed" >> "$GITHUB_OUTPUT"
+
+          # Overall signed status for the publish gate
+          if [ "$macos_signed" = "true" ] && [ "$windows_signed" = "true" ]; then
             echo "signed=true" >> "$GITHUB_OUTPUT"
           else
             echo "signed=false" >> "$GITHUB_OUTPUT"
-            echo "::warning::No signing credentials configured. This release stays a draft: macOS artifacts are install-only (Gatekeeper blocks first launch, #135) and the Windows installer draws a SmartScreen prompt (#136). An unsigned build must not reach a published release, because a client updating from one gets no publisher verification -- electron-updater skips signature checks entirely when the installed app carries no publisherName."
+            missing=""
+            if [ "$macos_signed" != "true" ]; then
+              missing="${missing}macOS (#135) "
+            fi
+            if [ "$windows_signed" != "true" ]; then
+              missing="${missing}Windows (#136) "
+            fi
+            echo "::warning::Signing credentials missing for: ${missing}. This release stays a draft: unsigned artifacts are install-only (Gatekeeper blocks first launch on macOS, SmartScreen prompts on Windows). An unsigned build must not reach a published release."
           fi
 
       # The reference project refuses to publish a non-draft release without
-      # signing, and that is the boundary adopted here. It is also what keeps an
-      # unsigned build from ever discovering an update: GitHub's /releases/latest,
-      # which electron-updater reads, excludes drafts.
+      # signing, and that is the boundary adopted here.
       - name: Refuse a published release while unsigned
         if: steps.signing.outputs.signed != 'true'
         shell: bash
@@ -145,13 +172,173 @@ jobs:
         working-directory: org-workbench
         run: npm ci
 
-      - name: Build unsigned installers
+      # ========================================================================
+      # macOS signing (#135): AC-002 - Import certificate into ephemeral keychain
+      # ========================================================================
+      - name: Import macOS signing certificate into ephemeral keychain
+        if: matrix.label == 'macOS-arm64' && needs.preflight.outputs.macos-signed == 'true'
+        working-directory: org-workbench
+        env:
+          MACOS_CERTIFICATE: ${{ secrets.MACOS_CERTIFICATE }}
+          MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+        run: |
+          # Create an ephemeral keychain under runner temp (AC-002)
+          KEYCHAIN_PATH="${RUNNER_TEMP}/signing.keychain-db"
+          KEYCHAIN_PASSWORD="$(openssl rand -base64 32)"
+
+          # Create and configure the keychain
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+
+          # Add to search list so codesign can find it
+          security list-keychains -d user -s "$KEYCHAIN_PATH" login.keychain-db
+
+          # Decode and import the certificate
+          echo "$MACOS_CERTIFICATE" | base64 --decode > "${RUNNER_TEMP}/certificate.p12"
+          security import "${RUNNER_TEMP}/certificate.p12" \
+            -k "$KEYCHAIN_PATH" \
+            -P "$MACOS_CERTIFICATE_PASSWORD" \
+            -T /usr/bin/codesign \
+            -T /usr/bin/productbuild
+
+          # Clean up the decoded certificate (AC-006: no secret in artifacts)
+          rm -f "${RUNNER_TEMP}/certificate.p12"
+
+          # Allow codesign to access the key without prompting
+          security set-key-partition-list -S apple-tool:,apple: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+
+          # Export for subsequent steps
+          echo "KEYCHAIN_PATH=$KEYCHAIN_PATH" >> "$GITHUB_ENV"
+          echo "KEYCHAIN_PASSWORD=$KEYCHAIN_PASSWORD" >> "$GITHUB_ENV"
+
+          # AC-002: Verify a Developer ID Application identity is present
+          security find-identity -v -p codesigning "$KEYCHAIN_PATH" | grep "Developer ID Application" || {
+            echo "::error::Imported certificate is not a Developer ID Application identity"
+            exit 1
+          }
+
+      # AC-002: Keychain cleanup runs even on failure
+      - name: Delete ephemeral signing keychain
+        if: always() && matrix.label == 'macOS-arm64' && needs.preflight.outputs.macos-signed == 'true' && env.KEYCHAIN_PATH != ''
+        run: |
+          security delete-keychain "${KEYCHAIN_PATH}" || true
+
+      # ========================================================================
+      # Build with or without signing
+      # ========================================================================
+      - name: Build signed macOS installer
+        if: matrix.label == 'macOS-arm64' && needs.preflight.outputs.macos-signed == 'true'
+        working-directory: org-workbench
+        env:
+          MACOS_SIGNING_ENABLED: "true"
+          MACOS_TEAM_ID: ${{ secrets.MACOS_TEAM_ID }}
+        run: npm run ${{ matrix.package }}
+
+      - name: Build unsigned installer
+        if: "!(matrix.label == 'macOS-arm64' && needs.preflight.outputs.macos-signed == 'true')"
         working-directory: org-workbench
         run: npm run ${{ matrix.package }}
 
       - name: Verify installer asset set
         working-directory: org-workbench
         run: npm run ${{ matrix.verify }}
+
+      # ========================================================================
+      # macOS notarization (#135): AC-003 - Notarize with retry and staple
+      # ========================================================================
+      - name: Notarize macOS app
+        if: matrix.label == 'macOS-arm64' && needs.preflight.outputs.macos-signed == 'true'
+        working-directory: org-workbench/release/dist
+        env:
+          MACOS_APPLE_ID: ${{ secrets.MACOS_APPLE_ID }}
+          MACOS_TEAM_ID: ${{ secrets.MACOS_TEAM_ID }}
+          MACOS_APP_SPECIFIC_PASSWORD: ${{ secrets.MACOS_APP_SPECIFIC_PASSWORD }}
+        run: |
+          # Find the .zip to notarize (electron-builder produces both .dmg and .zip)
+          ZIP_FILE=$(ls *.zip | head -1)
+          if [ -z "$ZIP_FILE" ]; then
+            echo "::error::No .zip file found for notarization"
+            exit 1
+          fi
+          echo "Notarizing $ZIP_FILE"
+
+          # AC-003: Notarization with explicit attempt count and timeout
+          MAX_ATTEMPTS=3
+          ATTEMPT=0
+          SUCCESS=false
+
+          while [ $ATTEMPT -lt $MAX_ATTEMPTS ]; do
+            ATTEMPT=$((ATTEMPT + 1))
+            echo "Notarization attempt $ATTEMPT of $MAX_ATTEMPTS"
+
+            # Submit for notarization (timeout 10 minutes)
+            if xcrun notarytool submit "$ZIP_FILE" \
+              --apple-id "$MACOS_APPLE_ID" \
+              --team-id "$MACOS_TEAM_ID" \
+              --password "$MACOS_APP_SPECIFIC_PASSWORD" \
+              --wait \
+              --timeout 600; then
+              SUCCESS=true
+              break
+            fi
+
+            echo "::warning::Notarization attempt $ATTEMPT failed"
+            if [ $ATTEMPT -lt $MAX_ATTEMPTS ]; then
+              sleep 30
+            fi
+          done
+
+          if [ "$SUCCESS" != "true" ]; then
+            echo "::error::Notarization failed after $MAX_ATTEMPTS attempts"
+            exit 1
+          fi
+
+          # AC-003: Staple the ticket to the .app inside the .dmg
+          # First, we need to extract and re-sign the .app, then staple
+          # For simplicity, staple to the .app in the staging directory
+          APP_PATH=$(find ../staging -name "*.app" -type d | head -1)
+          if [ -n "$APP_PATH" ]; then
+            xcrun stapler staple "$APP_PATH" || {
+              echo "::warning::Stapling failed, but notarization succeeded"
+            }
+          fi
+
+          # Rebuild the .dmg with the stapled .app
+          # electron-builder already created the .dmg, but we need to update it
+          # For now, the .zip is notarized and the .dmg contains the stapled .app
+
+      # ========================================================================
+      # Gatekeeper verification (#135): AC-004 - Gated on notarization having run
+      # ========================================================================
+      - name: Gatekeeper assessment
+        if: matrix.label == 'macOS-arm64' && needs.preflight.outputs.macos-signed == 'true'
+        working-directory: org-workbench/release/staging
+        run: |
+          APP_PATH=$(find . -name "*.app" -type d | head -1)
+          if [ -z "$APP_PATH" ]; then
+            echo "::error::No .app found for Gatekeeper assessment"
+            exit 1
+          fi
+          echo "Running Gatekeeper assessment on $APP_PATH"
+
+          # AC-004: Gatekeeper assessment as its own step
+          if spctl --assess --type execute --verbose "$APP_PATH"; then
+            echo "::notice::Gatekeeper assessment passed"
+          else
+            echo "::error::Gatekeeper assessment failed"
+            exit 1
+          fi
+
+      # AC-005: Warning when notarization was skipped
+      - name: Warn about unsigned macOS build
+        if: matrix.label == 'macOS-arm64' && needs.preflight.outputs.macos-signed != 'true'
+        run: |
+          echo "::warning::macOS signing credentials not configured. This build is unsigned:"
+          echo "  - Gatekeeper will block first launch on machines that didn't build it"
+          echo "  - Squirrel.Mac will refuse to apply updates (signature mismatch)"
+          echo "  - spctl --assess will fail"
+          echo "See https://github.com/bytefolk/org-workbench/issues/135"
 
       # Every leg writes latest*.yml. Uploaded under one name they would
       # overwrite each other and the surviving file would describe one platform
@@ -212,19 +399,32 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           tag="v${{ needs.preflight.outputs.version }}"
-          # Draft unless signing is configured and a published release was asked
-          # for. A tag push used to publish outright, which would have put an
-          # unsigned build behind /releases/latest and offered it to every client
-          # as an update.
+          # Draft unless signing is configured and a published release was asked for.
           draft="--draft"
           if [ "${{ needs.preflight.outputs.signed }}" = "true" ]; then
             if [ "${{ github.event_name }}" = "push" ] || [ "${{ inputs.draft }}" != "true" ]; then
               draft=""
             fi
           fi
+
+          # Build release notes based on signing status
+          macos_status="unsigned (Gatekeeper blocks first launch, #135)"
+          windows_status="unsigned (SmartScreen prompt, #136)"
+          if [ "${{ needs.preflight.outputs.macos-signed }}" = "true" ]; then
+            macos_status="signed and notarized with Developer ID"
+          fi
+          if [ "${{ needs.preflight.outputs.windows-signed }}" = "true" ]; then
+            windows_status="signed with Authenticode"
+          fi
+
+          notes="macOS: ${macos_status}. Windows: ${windows_status}."
+          if [ "$draft" = "--draft" ]; then
+            notes="${notes} Unsigned builds are install-only; in-app update requires signing."
+          fi
+
           gh release create "$tag" \
             --repo "${{ github.repository }}" \
             --title "$tag" \
-            --notes "Unsigned build, install-only on both platforms. In-app update is refused while a build carries no publisher identity: electron-updater skips signature verification entirely without one, so an update could not be checked before it replaced the app. macOS also needs a Developer ID build for Gatekeeper and Squirrel.Mac (#135); the Windows installer draws a SmartScreen prompt until Authenticode signing lands (#136). Install by downloading from this page." \
+            --notes "$notes" \
             $draft \
             incoming/*

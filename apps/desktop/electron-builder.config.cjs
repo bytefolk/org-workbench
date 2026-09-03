@@ -22,7 +22,14 @@ module.exports = {
   artifactName: "${name}-${version}-${arch}.${ext}",
   mac: {
     category: "public.app-category.developer-tools",
-    identity: null,
+    // Lane A guard: skip signing unless the workflow has imported a Developer ID
+    // certificate and set MACOS_SIGNING_ENABLED=true (#135). When signing is
+    // enabled, electron-builder discovers the identity from the keychain.
+    identity: process.env.MACOS_SIGNING_ENABLED === "true" ? undefined : null,
+    // Notarization is handled by the workflow after electron-builder completes,
+    // because notarytool requires the built .app/.zip and we want explicit
+    // control over retry/timeout/staple for AC-003.
+    notarize: false,
   },
   // Lane A is deterministic unsigned staging even when an operator shell has
   // CSC_LINK/WIN_CSC_LINK. Keep PE metadata editing, but never enter signing.
