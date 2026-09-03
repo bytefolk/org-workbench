@@ -188,7 +188,15 @@ export async function atomicWriteJson(
     await operations.rename(temporary, file);
     await operations.chmod(file, 0o600);
     directoryHandle = await operations.openDirectory(dir);
-    await directoryHandle.sync();
+    try {
+      await directoryHandle.sync();
+    } catch (error) {
+      // Windows/NTFS does not support fsync on directory handles: sync() rejects
+      // with EPERM. The rename() above has already committed the data, so this
+      // is a false negative — the record is durable on disk. Swallow EPERM so
+      // committed writes are not reported as failures (#155).
+      if ((error as NodeJS.ErrnoException).code !== "EPERM") throw error;
+    }
     await directoryHandle.close();
     directoryHandle = undefined;
   } catch (error) {
