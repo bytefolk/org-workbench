@@ -879,17 +879,6 @@ function AppInner({
         <span className="owb-wintitle__spacer" />
         <LocaleToggle locale={locale} onChange={onChangeLocale} />
         <ThemeToggle mode={themeMode} />
-        <span className="owb-wintitle__chip">
-          <span
-            className={engineOk ? "owb-led" : "owb-led owb-led--off"}
-            role="img"
-            aria-label={engineOk ? t("misc.engineAvailable") : t("misc.engineOffline")}
-          />
-          engine <b>{engineOk ? "available" : "offline"}</b>
-          {workspaceInfo?.open === true && workspaceInfo.business
-            ? <> · <span>{workspaceInfo.business}</span></>
-            : null}
-        </span>
       </header>
 
     {/* 壳层尺寸（导轨 54 / 侧栏 300 / topbar 48）定在 app.css 的
@@ -899,8 +888,6 @@ function AppInner({
       moduleRail={
         <ModuleRail
           label={t("misc.modules")}
-          brand={<span className="owb-rail-brand">owb</span>}
-          footer={<span className="owb-rail-tip" aria-hidden="true">LOCAL CONTROL PLANE</span>}
           items={[
             { id: "org", label: t("rail.org"), icon: <Network aria-hidden="true" size={16} />, active: activeModule === "org", onSelect: () => setActiveModule("org") },
             { id: "groups", label: t("rail.groups"), icon: <UsersRound aria-hidden="true" size={16} />, active: activeModule === "groups", onSelect: () => setActiveModule("groups") },
@@ -936,7 +923,6 @@ function AppInner({
           header={
             <>
               <div className="owb-side-head">
-                <span className="owb-side-head__label">{t("tree.dir")}</span>
                 {workspaceInfo?.open === true ? (
                   <>
                     <AntButton size="small" disabled={orgBusy} onClick={() => void undoLastAdjustment()} title={t("tree.undoTitle")}>{t("tree.undo")}</AntButton>
