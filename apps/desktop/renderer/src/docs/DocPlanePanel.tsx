@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { Alert, Button, Input, List, Space, Spin, Tag } from "antd";
+import { useT } from "@org-workbench/ui";
 import type {
   DocPlaneDetailResponse,
   DocPlaneListEntry,
@@ -34,14 +35,8 @@ export type DocPlaneDetailLoadResult =
   | { kind: "ok"; response: DocPlaneDetailResponse }
   | { kind: "error"; message: string };
 
-const CONFIG_HINT = [
-  "在运行 org-workbench 前设置环境变量：",
-  "  ORG_WORKBENCH_DOC_URL=http://localhost:3100    # bytefolk/doc 服务地址",
-  "  ORG_WORKBENCH_DOC_TOKEN=doc_pat_XXXXXXXXXXXX   # 用户设置里生成的 PAT",
-  "如果仅想端到端联调，可用 ORG_WORKBENCH_DOC_MOCK=1 载入内置样例。",
-].join("\n");
-
 export function DocPlanePanel({ listDocs, readDoc }: DocPlanePanelProps) {
+  const t = useT();
   const [query, setQuery] = useState("");
   const [entries, setEntries] = useState<DocPlaneListEntry[]>([]);
   const [source, setSource] = useState<"upstream" | "mock" | null>(null);
@@ -100,11 +95,11 @@ export function DocPlanePanel({ listDocs, readDoc }: DocPlanePanelProps) {
   };
 
   return (
-    <section className="owb-doc-plane" aria-label="外部文档平面">
+    <section className="owb-doc-plane" aria-label={t("docs.planeAria")}>
       <Space.Compact style={{ width: "100%", maxWidth: 480 }}>
         <Input
-          aria-label="搜索外部文档"
-          placeholder="按标题搜索"
+          aria-label={t("docs.planeSearchAria")}
+          placeholder={t("docs.planeSearchPlaceholder")}
           value={query}
           onChange={(event) => setQuery(event.target.value)}
           onPressEnter={() => runList(query.trim())}
@@ -115,33 +110,33 @@ export function DocPlanePanel({ listDocs, readDoc }: DocPlanePanelProps) {
           }}
         />
         <Button onClick={() => runList(query.trim())} loading={listing}>
-          搜索
+          {t("docs.planeSearchAction")}
         </Button>
       </Space.Compact>
       {source !== null ? (
         <div className="owb-doc-plane__source" role="status">
-          数据来源：
+          {t("docs.planeSource")}
           <Tag color={source === "upstream" ? "green" : "gold"}>
-            {source === "upstream" ? "真实 bytefolk/doc" : "内置样例 (mock)"}
+            {source === "upstream" ? t("docs.planeSourceUpstream") : t("docs.planeSourceMock")}
           </Tag>
         </div>
       ) : null}
       {listStatus.kind === "unconfigured" ? (
         <Alert
           type="info"
-          message="尚未配置外部 doc 服务器"
-          description={<pre className="owb-doc-plane__config">{CONFIG_HINT}</pre>}
+          message={t("docs.planeUnconfigured")}
+          description={<pre className="owb-doc-plane__config">{t("docs.planeConfigHint")}</pre>}
         />
       ) : null}
       {listStatus.kind === "error" ? (
         <Alert type="error" message={listStatus.message} />
       ) : null}
-      {listing ? <Spin aria-label="外部文档列表加载中" /> : null}
+      {listing ? <Spin aria-label={t("docs.planeListLoading")} /> : null}
       {!listing && listStatus.kind === "idle" ? (
         <List
           size="small"
           dataSource={entries}
-          locale={{ emptyText: "未找到文档" }}
+          locale={{ emptyText: t("docs.planeEmpty") }}
           renderItem={(entry) => (
             <List.Item
               key={entry.id}
@@ -149,7 +144,7 @@ export function DocPlanePanel({ listDocs, readDoc }: DocPlanePanelProps) {
                 entry.starred
                   ? [
                       <Tag key="starred" color="gold">
-                        已收藏
+                        {t("docs.planeStarred")}
                       </Tag>,
                     ]
                   : []
@@ -167,7 +162,7 @@ export function DocPlanePanel({ listDocs, readDoc }: DocPlanePanelProps) {
           )}
         />
       ) : null}
-      {reading ? <Spin aria-label="外部文档加载中" /> : null}
+      {reading ? <Spin aria-label={t("docs.planeLoading")} /> : null}
       {readError !== null ? <Alert type="error" message={readError} /> : null}
       {detail !== null ? (
         <DocViewer source={detail.content} version={detail.updatedAt} title={detail.title} />

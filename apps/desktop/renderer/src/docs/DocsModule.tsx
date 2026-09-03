@@ -104,12 +104,12 @@ export function DocsModule({ workspaceOpen, positions, selectedPositionId }: Doc
     if (code === "doc_plane_unconfigured") {
       return {
         kind: "unconfigured",
-        message: apiErrorMessage(res.body, "尚未配置外部 doc 服务器"),
+        message: apiErrorMessage(res.body, t("docs.planeUnconfigured")),
       };
     }
     return {
       kind: "error",
-      message: apiErrorMessage(res.body, "外部文档列表读取失败"),
+      message: apiErrorMessage(res.body, t("docs.planeListError")),
     };
   }, []);
 
@@ -120,7 +120,7 @@ export function DocsModule({ workspaceOpen, positions, selectedPositionId }: Doc
     }
     return {
       kind: "error",
-      message: apiErrorMessage(res.body, "外部文档读取失败"),
+      message: apiErrorMessage(res.body, t("docs.planeReadError")),
     };
   }, []);
 
