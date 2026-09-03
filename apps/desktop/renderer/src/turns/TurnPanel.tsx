@@ -305,13 +305,16 @@ export function TurnPanel({
             />
           )}
         </div>
-        <p className="owb-turn-composer__hint" role="status">
+        {/* #167：空闲不挂提示行；运行态/禁用原因保留（有用反馈）。 */}
+        {runningTurn || disabledReason ? (
+          <p className="owb-turn-composer__hint" role="status">
           {runningTurn
             ? cancelling
               ? "正在请求控制面中断引擎进程…"
               : "回合运行中：点击中断或按 ⌘. 终止该岗位的在途回合"
-            : disabledReason ?? "⌘↵ 发送 · ⌘. 中断 · 回合只在本机留痕"}
-        </p>
+            : disabledReason}
+          </p>
+        ) : null}
       </form>
 
       {/* #248 R2 ③：对话岗位 / 新建会话 / Agent Host 降级为默认收起的会话设置，

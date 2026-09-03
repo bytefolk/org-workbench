@@ -46,7 +46,8 @@ describe("P0 组织图可视化（纯展示：节点 + 汇报线 + 空态/加载
       />,
     );
     // 头部位面：岗位数与深度来自应用态快照。
-    expect(screen.getByText("3 岗位 · 深度 2")).toBeInTheDocument();
+    // #167：描述语精简——头部只留标题，count·depth meta 已移除。
+    expect(screen.queryByText("3 岗位 · 深度 2")).toBeNull();
     // 角色名（展示面注入）与 title 副行；缺 title 回退岗位 id。
     expect(screen.getByText("代码库负责人")).toBeInTheDocument();
     expect(screen.getByText("公开文档与发布说明")).toBeInTheDocument();
@@ -108,15 +109,15 @@ describe("orgChartBudgetLabel（预算徽标口径：与 perTaskBudgetLabel 同�
     const { container } = render(<OrgChart snapshot={snapshot} />);
     const body = container.querySelector("#owb-org-chart-body") as HTMLElement;
     expect(body).not.toBeNull();
-    // jsdom 没有布局盒，scrollLeft 恒为 0；用数据属性覆写让平移可观测。
-    Object.defineProperty(body, "scrollLeft", { writable: true, value: 0 });
+    // #167：画布是 transform 平移，直接断言 stage 的 translate。
+    const stage = () => body.querySelector(".owb-org-chart__stage") as HTMLElement;
     Object.defineProperty(body, "scrollTop", { writable: true, value: 0 });
 
     // jsdom 没有 PointerEvent 构造器，fireEvent.pointerDown 会落成字段全
     // undefined 的裸事件；用 MouseEvent 携带 button/clientX 才能驱动 pan。
     fireEvent(body, new MouseEvent("pointerdown", { button: 0, clientX: 120, clientY: 80, bubbles: true }));
     fireEvent(body, new MouseEvent("pointermove", { button: 0, clientX: 80, clientY: 80, bubbles: true }));
-    expect(body.scrollLeft).toBe(40);
+    expect(stage().style.transform).toContain("translate(-40px");
     expect(body.className).toContain("is-panning");
     fireEvent(body, new MouseEvent("pointerup", { button: 0, bubbles: true }));
     expect(body.className).not.toContain("is-panning");
@@ -127,7 +128,7 @@ describe("orgChartBudgetLabel（预算徽标口径：与 perTaskBudgetLabel 同�
     const body = container.querySelector("#owb-org-chart-body") as HTMLElement;
     fireEvent(body, new MouseEvent("pointerdown", { button: 0, clientX: 120, clientY: 80, bubbles: true }));
     fireEvent(body, new MouseEvent("pointermove", { button: 0, clientX: 118, clientY: 80, bubbles: true }));
-    expect(body.scrollLeft).toBe(0);
+    expect(stage().style.transform).toContain("translate(0px");
     expect(body.className).not.toContain("is-panning");
     fireEvent(body, new MouseEvent("pointerup", { button: 0, bubbles: true }));
   });

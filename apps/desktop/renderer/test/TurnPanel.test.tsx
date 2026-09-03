@@ -93,7 +93,8 @@ describe("TurnPanel Issue #5 D3 behavior", () => {
       });
     });
 
-    expect(screen.getByRole("status").textContent).toContain("⌘↵ 发送");
+    // #167：空闲不再挂提示行（描述语精简）；⌘↵ 行为由 createTurn 断言守住。
+    expect(screen.queryByRole("status")).toBeNull();
   });
 
   it("#128 AC-003: ignores ⌘↵ while a Chinese IME is composing (keyCode 229) then sends after composition ends", async () => {

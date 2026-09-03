@@ -176,24 +176,21 @@ export function OrgChart({
   const [collapsed, setCollapsed] = useState(false);
   const bodyRef = useRef<HTMLDivElement | null>(null);
 
-  // #137 review：组织图是画布——光标按住拖拽平移，而不是去找滚动条。
-  // 4px 阈值保护节点点击：不移动就当 click 处理，移动了才进入 pan 并
-  // pointer-capture，松手即止。scrollLeft/scrollTop 仍是事实源（键盘与
-  // scrollIntoView 不受影响）。
+  // #167：画布 = transform 平移+缩放。视口 overflow:hidden，零滚动条；
+  // 平移纯拖拽（pointer-capture，4px 阈值保护节点点击），缩放锚定光标。
+  // 布局不再随滚动条出现/消失跳动。
+  const [view, setView] = useState({ x: 0, y: 0, scale: 1 });
   const [panning, setPanning] = useState(false);
-  const panRef = useRef<{ id: number; x: number; y: number; sl: number; st: number; active: boolean } | null>(null);
+  const panRef = useRef<{ id: number; x: number; y: number; vx: number; vy: number; active: boolean } | null>(null);
 
   const onPanPointerDown = (event: React.PointerEvent<HTMLDivElement>): void => {
     if (event.button !== 0) return;
-    const el = bodyRef.current;
-    if (!el) return;
-    panRef.current = { id: event.pointerId, x: event.clientX, y: event.clientY, sl: el.scrollLeft, st: el.scrollTop, active: false };
+    panRef.current = { id: event.pointerId, x: event.clientX, y: event.clientY, vx: view.x, vy: view.y, active: false };
   };
 
   const onPanPointerMove = (event: React.PointerEvent<HTMLDivElement>): void => {
     const pan = panRef.current;
-    const el = bodyRef.current;
-    if (!pan || !el || event.pointerId !== pan.id) return;
+    if (!pan || event.pointerId !== pan.id) return;
     const dx = event.clientX - pan.x;
     const dy = event.clientY - pan.y;
     if (!pan.active) {
@@ -201,14 +198,13 @@ export function OrgChart({
       pan.active = true;
       setPanning(true);
       try {
-        el.setPointerCapture?.(event.pointerId);
+        bodyRef.current?.setPointerCapture?.(event.pointerId);
       } catch {
         // jsdom / 无指针环境：capture 不可用时退化为普通 move 跟踪。
       }
     }
     event.preventDefault();
-    el.scrollLeft = pan.sl - dx;
-    el.scrollTop = pan.st - dy;
+    setView((v) => ({ ...v, x: pan.vx + dx, y: pan.vy + dy }));
   };
 
   const onPanEnd = (event: React.PointerEvent<HTMLDivElement>): void => {
@@ -217,27 +213,20 @@ export function OrgChart({
     setPanning(false);
   };
 
-  // #137 review：画布缩放对齐 Mac 触控板习惯——捏合（wheel+ctrlKey）以光标
-  // 为锚点缩放，双指滚动仍原生平移。React 根上的 wheel 是 passive 的，
-  // preventDefault 必须走原生监听（passive:false）。zoom 用 CSS zoom 落在
-  // stage 上，布局与滚动区一起缩放，scrollIntoView 依旧可用。
-  const [zoom, setZoom] = useState(1);
+  // 缩放对齐 Mac 触控板习惯：捏合（wheel+ctrlKey）以光标为锚点。
+  // React 根上的 wheel 是 passive 的，preventDefault 必须走原生监听。
   const ZOOM_MIN = 0.5;
   const ZOOM_MAX = 2;
+  const zoom = view.scale;
 
   const applyZoom = (next: number, anchor?: { x: number; y: number }): void => {
-    const clamped = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, next));
-    setZoom((current) => {
-      if (clamped === current) return current;
-      const el = bodyRef.current;
-      if (el && anchor) {
-        const ratio = clamped / current;
-        scheduleFrame(() => {
-          el.scrollLeft = (el.scrollLeft + anchor.x) * ratio - anchor.x;
-          el.scrollTop = (el.scrollTop + anchor.y) * ratio - anchor.y;
-        });
-      }
-      return clamped;
+    setView((v) => {
+      const clamped = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, next));
+      if (clamped === v.scale) return v;
+      const k = clamped / v.scale;
+      const cx = anchor?.x ?? (bodyRef.current?.clientWidth ?? 0) / 2;
+      const cy = anchor?.y ?? (bodyRef.current?.clientHeight ?? 0) / 2;
+      return { scale: clamped, x: cx - (cx - v.x) * k, y: cy - (cy - v.y) * k };
     });
   };
 
@@ -249,36 +238,34 @@ export function OrgChart({
       event.preventDefault();
       const rect = el.getBoundingClientRect();
       const anchor = { x: event.clientX - rect.left, y: event.clientY - rect.top };
-      setZoom((current) => {
-        const factor = event.deltaY < 0 ? 1.1 : 1 / 1.1;
-        const clamped = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, current * factor));
-        if (clamped === current) return current;
-        const ratio = clamped / current;
-        scheduleFrame(() => {
-          el.scrollLeft = (el.scrollLeft + anchor.x) * ratio - anchor.x;
-          el.scrollTop = (el.scrollTop + anchor.y) * ratio - anchor.y;
-        });
-        return clamped;
+      const factor = event.deltaY < 0 ? 1.1 : 1 / 1.1;
+      setView((v) => {
+        const clamped = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, v.scale * factor));
+        if (clamped === v.scale) return v;
+        const k = clamped / v.scale;
+        return { scale: clamped, x: anchor.x - (anchor.x - v.x) * k, y: anchor.y - (anchor.y - v.y) * k };
       });
     };
     el.addEventListener("wheel", onWheel, { passive: false });
     return () => el.removeEventListener("wheel", onWheel);
   }, []);
 
-  // 选中岗位变化时自动定位：深层节点不再要求使用者手动滚动去找选中卡。
+  // 选中岗位变化时用 translate 居中该节点（替代 scrollIntoView）。
   useEffect(() => {
     if (!selectedId || collapsed) return;
-    const target = bodyRef.current?.querySelector<HTMLElement>(
+    const body = bodyRef.current;
+    const target = body?.querySelector<HTMLElement>(
       `[data-org-chart-node="${CSS.escape(selectedId)}"]`,
     );
-    if (!target) return;
-    const reduceMotion =
-      typeof window !== "undefined" &&
-      window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
-    target.scrollIntoView?.({
-      block: "nearest",
-      inline: "nearest",
-      behavior: reduceMotion ? "auto" : "smooth",
+    if (!body || !target) return;
+    setView((v) => {
+      const nodeCX = target.offsetLeft + target.offsetWidth / 2;
+      const nodeCY = target.offsetTop + target.offsetHeight / 2;
+      return {
+        ...v,
+        x: body.clientWidth / 2 - nodeCX * v.scale,
+        y: Math.max(8, body.clientHeight / 2 - nodeCY * v.scale),
+      };
     });
   }, [selectedId, collapsed, snapshot]);
 
@@ -302,11 +289,6 @@ export function OrgChart({
           </svg>
         </button>
         <span className="owb-org-chart__head-title">组织图</span>
-        {snapshot && !empty ? (
-          <span className="owb-muted">
-            {snapshot.positionCount} 岗位 · 深度 {snapshot.depth}
-          </span>
-        ) : null}
         {snapshot && !empty ? (
           <span className="owb-org-chart__zoom">
             <button
@@ -357,7 +339,7 @@ export function OrgChart({
         ) : empty ? (
           <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无组织数据" />
         ) : (
-          <div className="owb-org-chart__stage" style={{ zoom }}>
+          <div className="owb-org-chart__stage" style={{ transform: `translate(${view.x}px, ${view.y}px) scale(${view.scale})` }}>
             <div className="owb-org-chart__roots">
               {snapshot.tree.map((root) => (
                 <ChartNode
