@@ -10,6 +10,7 @@ import {
 } from "@org-workbench/shared";
 import type { WorkbenchSession, WorkbenchSessionList } from "@org-workbench/shared";
 import { StableReadError, decodeStableUtf8, readStableBoundedFile } from "../stable-read.js";
+import { atomicWriteJson, nodeAtomicTurnWriteOperations } from "../turns/store.js";
 
 const SESSION_ROOT_SEGMENTS = [".digital-employee", "workbench", "sessions"];
 const POSITIONS_SEGMENT = "positions";
@@ -380,34 +381,6 @@ export async function readAuthoritativeSessionIndex(
   return { workspaceInstanceId: identity.workspaceInstanceId, sessions };
 }
 
-async function atomicWriteJson(file: string, value: unknown, maxBytes: number): Promise<void> {
-  const payload = `${JSON.stringify(value)}\n`;
-  if (Buffer.byteLength(payload, "utf8") > maxBytes) throw sessionError("local session record exceeds its bounded size");
-  const dir = path.dirname(file);
-  const temporary = path.join(dir, `.${path.basename(file)}.${crypto.randomUUID()}.tmp`);
-  let handle;
-  try {
-    handle = await fs.open(temporary, "wx", 0o600);
-    await handle.writeFile(payload, "utf8");
-    await handle.sync();
-    await handle.close();
-    handle = undefined;
-    await fs.rename(temporary, file);
-    await fs.chmod(file, 0o600);
-    const dirHandle = await fs.open(dir, "r");
-    try {
-      await dirHandle.sync();
-    } finally {
-      await dirHandle.close();
-    }
-  } catch (error) {
-    if (handle) await handle.close().catch(() => undefined);
-    await fs.rm(temporary, { force: true }).catch(() => undefined);
-    if (error instanceof OrgApiError) throw error;
-    throw sessionError("local session record could not be persisted atomically");
-  }
-}
-
 export class SessionStore {
   private readonly locks = new Map<string, Promise<void>>();
   private readonly activeTurns = new Map<string, number>();
@@ -472,7 +445,12 @@ export class SessionStore {
       activeSessionId: session.sessionId,
       sessions: [...(existing?.sessions ?? []), session],
     };
-    await atomicWriteJson(positionFile(workspace, positionId), state, MAX_POSITION_RECORD_BYTES);
+    try {
+      await atomicWriteJson(positionFile(workspace, positionId), state, MAX_POSITION_RECORD_BYTES, nodeAtomicTurnWriteOperations, sessionError);
+    } catch (error) {
+      if (error instanceof OrgApiError) throw error;
+      throw sessionError("local session record could not be persisted atomically");
+    }
     return session;
   }
 
@@ -547,7 +525,12 @@ export class SessionStore {
         sessions: found.state.sessions.map((candidate) =>
           candidate.sessionId === source.sessionId ? rotated : candidate).concat(successor),
       };
-      await atomicWriteJson(positionFile(workspace, source.positionId), state, MAX_POSITION_RECORD_BYTES);
+      try {
+        await atomicWriteJson(positionFile(workspace, source.positionId), state, MAX_POSITION_RECORD_BYTES, nodeAtomicTurnWriteOperations, sessionError);
+      } catch (error) {
+        if (error instanceof OrgApiError) throw error;
+        throw sessionError("local session record could not be persisted atomically");
+      }
       return { session: successor, created: true };
     });
   }
@@ -592,7 +575,12 @@ export class SessionStore {
         workspaceInstanceId: crypto.randomUUID(),
         createdAt: now,
       };
-      await atomicWriteJson(file, record, MAX_WORKSPACE_RECORD_BYTES);
+      try {
+        await atomicWriteJson(file, record, MAX_WORKSPACE_RECORD_BYTES, nodeAtomicTurnWriteOperations, sessionError);
+      } catch (error) {
+        if (error instanceof OrgApiError) throw error;
+        throw sessionError("local session workspace identity could not be persisted atomically");
+      }
       return record;
     });
   }

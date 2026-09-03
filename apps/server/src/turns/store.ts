@@ -170,11 +170,12 @@ export async function atomicWriteJson(
   value: unknown,
   maxBytes: number,
   operations: AtomicTurnWriteOperations,
+  makeStorageError: (message: string) => OrgApiError,
 ): Promise<void> {
   const dir = path.dirname(file);
   const payload = `${JSON.stringify(value)}\n`;
   if (Buffer.byteLength(payload, "utf8") > maxBytes) {
-    throw storageError("local state record exceeds its bounded size");
+    throw makeStorageError("local state record exceeds its bounded size");
   }
   const temporary = path.join(dir, `.${path.basename(file)}.${crypto.randomUUID()}.tmp`);
   let fileHandle: AtomicTurnTemporaryHandle | undefined;
@@ -188,8 +189,25 @@ export async function atomicWriteJson(
     await operations.rename(temporary, file);
     await operations.chmod(file, 0o600);
     directoryHandle = await operations.openDirectory(dir);
-    await directoryHandle.sync();
-    await directoryHandle.close();
+    try {
+      try {
+        await directoryHandle.sync();
+      } catch (error) {
+        // Windows/NTFS rejects fsync on directory handles with EPERM. On win32
+        // the rename() above has already committed the data atomically, so the
+        // record is durable and the EPERM is a false negative.
+        //
+        // Reduced durability guarantee (AC-004): swallowing the directory sync
+        // means the rename directory entry may not survive a subsequent power
+        // loss on Windows — POSIX callers lose the "renamed AND fsync-durable"
+        // guarantee. On POSIX, EPERM indicates a real failure and propagates.
+        if (process.platform !== "win32" || (error as NodeJS.ErrnoException).code !== "EPERM") {
+          throw error;
+        }
+      }
+    } finally {
+      await directoryHandle.close();
+    }
     directoryHandle = undefined;
   } catch (error) {
     try {
@@ -1221,6 +1239,7 @@ export class TurnStore {
         metadata,
         MAX_METADATA_BYTES,
         this.options.atomicWriteOperations ?? nodeAtomicTurnWriteOperations,
+        storageError,
       );
       return metadata;
     } catch {
@@ -1260,6 +1279,7 @@ export class TurnStore {
         metadata,
         MAX_METADATA_BYTES,
         this.options.atomicWriteOperations ?? nodeAtomicTurnWriteOperations,
+        storageError,
       );
       return metadata;
     } catch {
@@ -1275,6 +1295,7 @@ export class TurnStore {
         record,
         MAX_TURN_RECORD_BYTES,
         this.options.atomicWriteOperations ?? nodeAtomicTurnWriteOperations,
+        storageError,
       );
     } catch {
       throw storageError("local turn record could not be persisted atomically");
@@ -1293,6 +1314,7 @@ export class TurnStore {
         record,
         MAX_TURN_RECORD_BYTES,
         this.options.atomicWriteOperations ?? nodeAtomicTurnWriteOperations,
+        storageError,
       );
     } catch {
       throw storageError("local session turn record could not be persisted atomically");

@@ -132,6 +132,7 @@ export async function writeAssetRecord(workspace: string, record: AssetRecord): 
       record,
       MAX_ASSET_RECORD_BYTES,
       nodeAtomicTurnWriteOperations,
+      storageError,
     );
   } catch (error) {
     if (error instanceof OrgApiError) throw error;
@@ -156,6 +157,7 @@ export async function appendAssetIndex(workspace: string, entry: AssetIndexEntry
       updated,
       MAX_ASSET_INDEX_BYTES,
       nodeAtomicTurnWriteOperations,
+      storageError,
     );
   } catch (error) {
     if (error instanceof OrgApiError) throw error;
@@ -274,6 +276,7 @@ async function rebuildAssetIndex(workspace: string, records: AssetRecord[]): Pro
       rebuilt,
       MAX_ASSET_INDEX_BYTES,
       nodeAtomicTurnWriteOperations,
+      storageError,
     );
   } catch (error) {
     if (error instanceof OrgApiError) throw error;

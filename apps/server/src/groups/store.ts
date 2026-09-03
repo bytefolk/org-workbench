@@ -182,8 +182,10 @@ export class GroupStore {
         group,
         MAX_GROUP_RECORD_BYTES,
         nodeAtomicTurnWriteOperations,
+        storageError,
       );
-    } catch {
+    } catch (error) {
+      if (error instanceof OrgApiError) throw error;
       throw storageError("local group record could not be persisted atomically");
     }
     return group;
@@ -263,8 +265,10 @@ export class GroupStore {
         updated,
         MAX_GROUP_RECORD_BYTES,
         nodeAtomicTurnWriteOperations,
+        storageError,
       );
-    } catch {
+    } catch (error) {
+      if (error instanceof OrgApiError) throw error;
       throw storageError("local group record could not be persisted atomically");
     }
     return updated;
@@ -285,8 +289,10 @@ export class GroupStore {
         record,
         MAX_GROUP_MESSAGE_BYTES,
         nodeAtomicTurnWriteOperations,
+        storageError,
       );
-    } catch {
+    } catch (error) {
+      if (error instanceof OrgApiError) throw error;
       throw storageError("local group message could not be persisted atomically");
     }
     return record;
