@@ -8,7 +8,7 @@ import {
   useT,
   zhCatalog,
 } from "@org-workbench/ui";
-import { LocaleToggle } from "../src/locale-toggle";
+import { PrefsMenu } from "../src/prefs-menu";
 import { seedLocale } from "../src/locale-mode";
 import { useState } from "react";
 
@@ -61,24 +61,30 @@ describe("#146 i18n gates", () => {
     zh.unmount();
   });
 
-  it("locale toggle flips exactly between the two locales and announces the target", () => {
+  it("prefs drawer language row flips exactly between the two locales", () => {
     function Harness() {
       const [locale, setLocale] = useState<"zh-CN" | "en">("zh-CN");
       return (
         <OwbI18nProvider locale={locale}>
-          <LocaleToggle locale={locale} onChange={setLocale} />
+          <PrefsMenu locale={locale} onChangeLocale={setLocale} mode="dark" />
         </OwbI18nProvider>
       );
     }
     const { container } = render(<Harness />);
-    const button = container.querySelector("button") as HTMLButtonElement;
-    // 中文界面：按钮显示 EN，aria 用英文目录文案
-    expect(button.textContent).toContain("EN");
-    expect(button.getAttribute("aria-label")).toBe("Switch to English");
-    fireEvent.click(button);
-    const after = container.querySelector("button") as HTMLButtonElement;
-    expect(after.textContent).toContain("中");
-    expect(after.getAttribute("aria-label")).toBe("切换到中文");
+    const trigger = container.querySelector("button") as HTMLButtonElement;
+    expect(trigger.getAttribute("aria-label")).toBe("偏好设置");
+    fireEvent.click(trigger);
+    const rows = () => Array.from(container.querySelectorAll("[role=menuitem]")) as HTMLButtonElement[];
+    // 中文界面：语言行显示当前值「中文」
+    expect(rows()[0].textContent).toContain("语言");
+    expect(rows()[0].textContent).toContain("中文");
+    fireEvent.click(rows()[0]);
+    // 切到英文后目录整体换面，语言行显示 English
+    const after = rows();
+    expect(after[0].textContent).toContain("Language");
+    expect(after[0].textContent).toContain("English");
+    fireEvent.click(after[0]);
+    expect(rows()[0].textContent).toContain("中文");
   });
 
   it("seedLocale ignores untrusted stored values", () => {
