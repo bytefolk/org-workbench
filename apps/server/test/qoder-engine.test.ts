@@ -757,9 +757,10 @@ test("qoder-engine turn run: claude-code dispatches to Claude binary, never Qode
     },
   });
   assert.equal(result.code, 0);
-  assert.doesNotMatch(result.stderr, /QODER_SHOULD_NOT_BE_CALLED/, "claude-code turn must never reach the Qoder binary");
 
   const events = result.stdout.trim().split("\n").map((line) => JSON.parse(line) as Record<string, unknown>);
+  const failedEvent = events.find((event) => event.type === "run.failed");
+  assert.equal(failedEvent, undefined, "claude-code turn must never reach the Qoder binary");
   assert.equal(events[0]?.type, "run.started");
   const runId = events[0]?.runId;
   assert.ok(events.every((event) => event.runId === runId), "one runId per turn");
@@ -842,7 +843,7 @@ test("qoder-engine turn run: claude-code fails closed when Claude binary is miss
   assert.equal((failed?.error as { retryable: boolean }).retryable, false);
 });
 
-test("qoder-engine turn run: claude-code escapes @ in input to prevent mention expansion", { skip: process.platform === "win32" ? "requires POSIX exec of a shebang fixture" : false }, async () => {
+test("qoder-engine turn run: claude-code passes @ through in text input without escaping", { skip: process.platform === "win32" ? "requires POSIX exec of a shebang fixture" : false }, async () => {
   const dir = await makeWorkspace();
   const fakeDir = await fs.mkdtemp(path.join(os.tmpdir(), "owb-claude-at-escape-"));
   const argsFile = path.join(fakeDir, "claude-args.json");
@@ -861,8 +862,8 @@ test("qoder-engine turn run: claude-code escapes @ in input to prevent mention e
   });
   assert.equal(result.code, 0);
   const stdinContent = await fs.readFile(stdinFile, "utf8");
-  assert.ok(!stdinContent.includes("@user"), "@ must be escaped");
-  assert.ok(stdinContent.includes("\\u0040user"), "@ must be escaped to \\u0040");
+  assert.ok(stdinContent.includes("@user"), "@ must pass through unescaped in text input mode");
+  assert.ok(!stdinContent.includes("\\u0040"), "@ must not be escaped to \\u0040 in text input mode");
 });
 
 test("qoder-engine turn run: default engine model is qoder when DIGITAL_EMPLOYEE_ENGINE_MODEL is unset", { skip: process.platform === "win32" ? "requires POSIX exec of a shebang fixture" : false }, async () => {

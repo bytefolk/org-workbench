@@ -5,6 +5,7 @@ import type { ControlPlaneContext } from "../context.js";
 import { probeEngine } from "../engine/probe.js";
 import { runtimeExecutableEnvironment } from "../engine/process-environment.js";
 import { sendJson } from "../http.js";
+import { resolveClaudeExecutable } from "../claude-binary.js";
 import { resolveQoderExecutable } from "../qoder-binary.js";
 
 /** Mirrors digital-employee's claude-local model port (#184): >= 2.1.214, < 2.2.0. */
@@ -124,16 +125,27 @@ export function probeQoderLocalBinary(
  * announced version — login state is asserted by the engine at run time from
  * the announced apiKeySource, so no credential store is ever inspected.
  */
-export function probeClaudeLocalBinary(env: NodeJS.ProcessEnv, timeoutMs = 3000): ClaudeLocalBinaryState {
-  const command = (env.DIGITAL_EMPLOYEE_CLAUDE_COMMAND ?? "").trim() || "claude";
+export function probeClaudeLocalBinary(
+  env: NodeJS.ProcessEnv,
+  timeoutMs = 3000,
+  platform: NodeJS.Platform = process.platform,
+): ClaudeLocalBinaryState {
+  const command = resolveClaudeExecutable(env, platform);
+  if (command === null) {
+    return { installed: false, version: null, supported: false };
+  }
   let probe: ReturnType<typeof spawnSync>;
+  // Node refuses to exec Windows .bat/.cmd launcher scripts without a shell
+  // (CVE-2024-27980 hardening). Route exactly those resolved targets through
+  // cmd.exe; every other target keeps the shell-free probe.
+  const needsWindowsShell = platform === "win32" && /\.(bat|cmd)$/i.test(command);
   try {
     probe = spawnSync(command, ["--version"], {
       encoding: "utf8",
       env: runtimeExecutableEnvironment(env),
       killSignal: "SIGKILL",
       timeout: timeoutMs,
-      shell: false,
+      shell: needsWindowsShell,
       windowsHide: true,
     });
   } catch {

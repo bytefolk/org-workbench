@@ -130,6 +130,53 @@ test("claude-local Host health is binary+version preflight, never a credential c
   assert.equal(supportedClaudeVersion("no-version-here"), false);
 });
 
+test("claude-code Host health in bundled mode requires binary + version + API key", () => {
+  const supportedClaude = { installed: true, version: "2.1.300", supported: true };
+  const bundledQoderLocal = { installed: true, version: "1.1.0", supported: true };
+
+  const fullyReady = hostHealth({
+    engineAvailable: true,
+    engineVersion: "qoder-engine 0.2.0",
+    env: { ANTHROPIC_API_KEY: "test-key" },
+    qoderLocal: bundledQoderLocal,
+    claudeLocal: supportedClaude,
+  });
+  assert.equal(fullyReady["claude-code"].configured, true);
+  assert.equal(fullyReady["claude-code"].ready, true);
+  assert.equal(fullyReady["claude-code"].nextStep, undefined);
+
+  const noApiKey = hostHealth({
+    engineAvailable: true,
+    engineVersion: "qoder-engine 0.2.0",
+    env: {},
+    qoderLocal: bundledQoderLocal,
+    claudeLocal: supportedClaude,
+  });
+  assert.equal(noApiKey["claude-code"].configured, false);
+  assert.equal(noApiKey["claude-code"].ready, false);
+  assert.match(noApiKey["claude-code"].nextStep ?? "", /ANTHROPIC_API_KEY/);
+
+  const noClaudeBinary = hostHealth({
+    engineAvailable: true,
+    engineVersion: "qoder-engine 0.2.0",
+    env: { ANTHROPIC_API_KEY: "test-key" },
+    qoderLocal: bundledQoderLocal,
+    claudeLocal: { installed: false, version: null, supported: false },
+  });
+  assert.equal(noClaudeBinary["claude-code"].configured, false);
+  assert.match(noClaudeBinary["claude-code"].nextStep ?? "", /PATH/);
+
+  const unsupportedVersion = hostHealth({
+    engineAvailable: true,
+    engineVersion: "qoder-engine 0.2.0",
+    env: { ANTHROPIC_API_KEY: "test-key" },
+    qoderLocal: bundledQoderLocal,
+    claudeLocal: { installed: true, version: "2.2.0", supported: false },
+  });
+  assert.equal(unsupportedVersion["claude-code"].configured, false);
+  assert.match(unsupportedVersion["claude-code"].nextStep ?? "", /2\.2\.0/);
+});
+
 test("Qoder local probe accepts only the 1.1.x family and fails closed for missing, unsupported, and timed-out binaries", { skip: process.platform === "win32" ? "requires POSIX exec of a #!/bin/sh probe fixture" : false }, async (t) => {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), "owb-qoder-probe-"));
   t.after(() => fs.rm(dir, { recursive: true, force: true }));

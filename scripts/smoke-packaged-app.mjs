@@ -562,11 +562,11 @@ export async function smokePackagedApp(platform, candidate, options = {}) {
       0,
       "staged app reported no descendants while still held open",
     );
-    const liveQoderDescendants = liveDescendants.filter(({ command }) => /qoder(?:-engine|cli)?/i.test(command));
+    const liveQoderDescendants = liveDescendants.filter(({ command }) => /qoder(?:-engine|cli)?|claude/i.test(command));
     assert.equal(
       liveQoderDescendants.length,
       0,
-      `${mode} smoke left a Qoder/Host child alive after reporting`,
+      `${mode} smoke left a Qoder/Claude/Host child alive after reporting`,
     );
 
     // Everything that needs the tree standing has been read; let the app close.

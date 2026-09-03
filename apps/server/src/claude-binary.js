@@ -49,7 +49,10 @@ function findOnPath(name, env, platform) {
  * Resolution order mirrors the Qoder contract:
  *
  * 1. explicit `DIGITAL_EMPLOYEE_CLAUDE_COMMAND` (authoritative; invalid fails closed),
- * 2. `claude` from PATH.
+ * 2. `claude` from PATH,
+ * 3. supported per-user install paths for Finder-launched apps.
+ *
+ * Only exact candidate paths are checked; no home-directory scan is performed.
  *
  * @param {NodeJS.ProcessEnv} env
  * @param {NodeJS.Platform} [platform]
@@ -63,5 +66,20 @@ export function resolveClaudeExecutable(env, platform = process.platform) {
     return pathLike ? executableTarget(path.resolve(explicit)) : findOnPath(explicit, env, platform);
   }
 
-  return findOnPath("claude", env, platform);
+  const fromPath = findOnPath("claude", env, platform);
+  if (fromPath !== null) return fromPath;
+
+  if (platform === "darwin") {
+    const home = env.HOME ?? "";
+    if (path.isAbsolute(home) && !/[\0\r\n]/.test(home)) {
+      for (const candidate of [
+        path.join(home, ".local", "bin", "claude"),
+        path.join(home, ".npm-global", "bin", "claude"),
+      ]) {
+        const found = executableTarget(candidate);
+        if (found !== null) return found;
+      }
+    }
+  }
+  return null;
 }
