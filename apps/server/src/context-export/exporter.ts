@@ -111,8 +111,11 @@ export class ContextExportService {
     await writeContextExportState(workspace, prepared.state);
     const job = this.run(workspace, prepared)
       .catch(() => {
-        // A state-filesystem failure is retried by the next workspace-open.
-        // Never allow a background exporter rejection to terminate the server.
+        // A transient filesystem failure is retried on the next workspace-open.
+        // A persistent one (e.g. Windows EPERM before the platform-gated fix)
+        // would recur; writeContextExportState now swallows EPERM on win32 so
+        // the common Windows case no longer reaches this catch. Never allow a
+        // background exporter rejection to terminate the server.
       })
       .finally(() => {
         this.jobs.delete(key);
@@ -407,7 +410,17 @@ async function writeContextExportState(workspace: string, state: ContextExportSt
     await fs.chmod(file, 0o600);
     const directory = await fs.open(path.dirname(file), "r");
     try {
-      await directory.sync();
+      try {
+        await directory.sync();
+      } catch (syncError) {
+        // Windows/NTFS rejects fsync on directory handles with EPERM. The
+        // rename above has already committed the data atomically, so on the
+        // affected platform the record is durable. On POSIX the same EPERM
+        // would indicate a real failure and must propagate.
+        if (process.platform !== "win32" || (syncError as NodeJS.ErrnoException).code !== "EPERM") {
+          throw syncError;
+        }
+      }
     } finally {
       await directory.close();
     }
