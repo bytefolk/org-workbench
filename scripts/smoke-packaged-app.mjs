@@ -329,6 +329,25 @@ export async function waitForReport(reportPath, closed, timeoutMs = 45000) {
   throw new Error(`staged app did not write its smoke report within ${timeoutMs}ms`);
 }
 
+/**
+ * Wait for the staged app to close, bounded, and reject a non-clean exit.
+ *
+ * #186: layout mode used to skip this entirely on the strength of a comment
+ * saying the app "exits right after writing its report". Nothing enforced that.
+ * On Windows the still-exiting Electron tree holds handles inside the staging
+ * directory, so cleanup's `fs.rm` raced it and failed with EBUSY; POSIX allows
+ * unlinking an open file, which is why only Windows saw it.
+ */
+export async function awaitStagedAppExit(closed, { timeoutMs = 15000 } = {}) {
+  const exit = await waitForClose(closed, timeoutMs);
+  assert.equal(
+    exit.code,
+    0,
+    `staged app exited ${exit.code ?? exit.signal}\n${exit.output ?? ""}`,
+  );
+  return exit;
+}
+
 async function waitForClose(closed, timeoutMs = 15000) {
   const state = await Promise.race([
     closed,
@@ -507,6 +526,11 @@ export async function smokePackagedApp(platform, candidate, options = {}) {
       // app exits right after writing its report, so the liveness/process-tree
       // proofs below (static/behavior only) are skipped for this mode.
       assert.notEqual(smoke.layout, null, "layout smoke did not measure the two-column org workspace");
+      // #186: wait for the exit the comment above assumes, before the cleanup
+      // below removes the tree the app is still holding open. Ordered before
+      // `completedReport` is set on purpose: if the app does not close, the
+      // failure path still has a process tree to terminate.
+      await awaitStagedAppExit(closed);
       completedReport = { ...smoke };
       const layoutPublish = process.env.ORG_WORKBENCH_LAYOUT_REPORT_PUBLISH;
       if (layoutPublish) await fs.copyFile(reportPath, layoutPublish);
@@ -571,8 +595,7 @@ export async function smokePackagedApp(platform, candidate, options = {}) {
 
     // Everything that needs the tree standing has been read; let the app close.
     await releaseLease();
-    const exit = await waitForClose(closed);
-    assert.equal(exit.code, 0, `staged app exited ${exit.code ?? exit.signal}\n${exit.output}`);
+    await awaitStagedAppExit(closed);
     const trackedIdentities = [appIdentity, ...liveIdentities];
     await waitForNoResidualProcesses(stagingRoot, trackedIdentities, {
       processGroup: process.platform === "win32" ? null : appIdentity.pgid,
