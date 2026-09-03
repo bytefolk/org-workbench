@@ -161,7 +161,10 @@ function isClaudeVersionSupported(parts) {
     if (parts[i] > CLAUDE_VERSION_MAX[i]) return false;
     if (parts[i] < CLAUDE_VERSION_MAX[i]) break;
   }
-  return true;
+  for (let i = 0; i < 3; i++) {
+    if (parts[i] !== CLAUDE_VERSION_MAX[i]) return true;
+  }
+  return false;
 }
 
 /*
@@ -879,7 +882,8 @@ function turnRunClaude(workspaceDir, positionId, input, engineModel) {
     return;
   }
 
-  const safeInput = (input || "Execute your position duties for this turn.").replace(/@/g, "\\u0040");
+  const safeInput = input || "Execute your position duties for this turn.";
+  const positionContext = `[Position: ${positionId}]\n[Workspace: ${workspaceDir}]\n\n`;
   const args = [
     "--bare",
     "--print",
@@ -903,6 +907,7 @@ function turnRunClaude(workspaceDir, positionId, input, engineModel) {
     const spawnSpec = createQoderSpawnSpec(claudeBin, args, childEnv);
     child = spawn(spawnSpec.command, spawnSpec.args, {
       ...spawnSpec.options,
+      cwd: workspaceDir,
       stdio: ["pipe", "pipe", "pipe"],
     });
   } catch {
@@ -910,7 +915,8 @@ function turnRunClaude(workspaceDir, positionId, input, engineModel) {
     return;
   }
 
-  child.stdin.write(safeInput);
+  child.stdin.on("error", () => {});
+  child.stdin.write(positionContext + safeInput);
   child.stdin.end();
 
   let buffer = "";
