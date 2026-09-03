@@ -27,7 +27,7 @@ import type {
   WorkbenchSessionList,
   WorkspaceInfoResponse,
 } from "@org-workbench/shared";
-import { FileChartColumn, FolderTree, HardDrive, Network, Plus, ShieldAlert, UsersRound } from "lucide-react";
+import { Cog, FileChartColumn, FolderTree, HardDrive, Network, Plus, ShieldAlert, UsersRound } from "lucide-react";
 import { useThemeMode } from "./theme-toggle";
 import { PrefsMenu } from "./prefs-menu";
 import { persistLocale, seedLocale } from "./locale-mode";
@@ -63,6 +63,7 @@ import { ReportsCenter } from "./reports/ReportsCenter";
 import { ApprovalQueue, type ApprovalQueueItem } from "./approvals";
 import { decodeEscapedUnicode } from "./display-text";
 import { DriveModule } from "./drive/DriveModule";
+import { SettingsModule } from "./settings/SettingsModule";
 
 interface PositionCardState {
   loading: boolean;
@@ -104,7 +105,7 @@ function AppInner({
   onChangeLocale: (next: OwbLocale) => void;
 }) {
   const [activeModule, setActiveModule] = useState<
-    "org" | "groups" | "reports" | "approvals" | "drive" | "docs"
+    "org" | "groups" | "reports" | "approvals" | "drive" | "docs" | "settings"
   >("org");
   /**
    * DATA GAP (TODO, v0): v0 has no dedicated `/approvals` stream. The P0
@@ -926,6 +927,10 @@ function AppInner({
             // client. DriveModule only consumes the bounded bridge.
             { id: "drive", label: t("rail.drive"), icon: <HardDrive aria-hidden="true" size={16} />, active: activeModule === "drive", onSelect: () => setActiveModule("drive") },
             { id: "docs", label: t("rail.docs"), icon: <FolderTree aria-hidden="true" size={16} />, active: activeModule === "docs", onSelect: () => setActiveModule("docs") },
+            // #134: the update pane needs room for a version, live progress and
+            // a changelog link, so it is a module rather than a third row in
+            // the prefs drawer (#174), which stays two quick toggles.
+            { id: "settings", label: t("rail.settings"), icon: <Cog aria-hidden="true" size={16} />, active: activeModule === "settings", onSelect: () => setActiveModule("settings") },
           ]}
         />
       }
@@ -1097,6 +1102,8 @@ function AppInner({
           />
         ) : activeModule === "drive" ? (
           <DriveModule workspaceOpen={workspaceInfo?.open === true} />
+        ) : activeModule === "settings" ? (
+          <SettingsModule />
         ) : activeModule === "docs" ? (
           <DocsModule
             workspaceOpen={workspaceInfo?.open === true}

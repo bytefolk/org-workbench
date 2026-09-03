@@ -30,6 +30,9 @@ import type {
   TurnHistory,
   TurnPendingApproval,
   TurnRecord,
+  UpdateEvent,
+  UpdateResult,
+  UpdateStatus,
   WorkbenchSession,
   WorkbenchSessionList,
 } from "@org-workbench/shared";
@@ -92,12 +95,21 @@ export interface OwbBridge {
     pickAndUpload(): Promise<OwbApiResponse<DriveUploadResponse> | { canceled: true }>;
   };
   sseStatus(): Promise<"connecting" | "connected">;
+  /** #134 update surface. Null means the shell declined to answer this frame. */
+  update: {
+    status(): Promise<UpdateStatus | null>;
+    check(): Promise<UpdateResult | null>;
+    download(request: { confirmedByUser: boolean }): Promise<UpdateResult | null>;
+    install(request: { confirmedByUser: boolean }): Promise<UpdateResult | null>;
+    openReleaseNotes(): Promise<{ ok: boolean; url?: string }>;
+  };
   /** #73 custom title bar controls (frameless window). */
   windowMinimize(): Promise<{ ok: boolean }>;
   windowToggleMaximize(): Promise<{ ok: boolean }>;
   windowClose(): Promise<{ ok: boolean }>;
   onEvent(callback: (event: unknown) => void): () => void;
   onSseStatus(callback: (state: "connecting" | "connected") => void): () => void;
+  onUpdateState(callback: (state: UpdateEvent) => void): () => void;
   onFallbackNotice(callback: (failedPath: string) => void): () => void;
 }
 
