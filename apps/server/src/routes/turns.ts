@@ -17,6 +17,7 @@ import type {
 import type { ControlPlaneContext } from "../context.js";
 import { readJsonBody, sendJson } from "../http.js";
 import { createTurnEnvelope } from "../turns/envelope.js";
+import { DeltaForwarder } from "../turns/delta-forwarder.js";
 import { assertPositionId } from "../turns/store.js";
 
 const MAX_INPUT_BYTES = 256 * 1024;
@@ -189,19 +190,20 @@ export async function executeTurn(
     : await ctx.turnStore.beginSession({ ...beginInput, sessionId: session.sessionId });
 
   let result;
+  const forwarder = new DeltaForwarder({
+    onForward: (event) => {
+      if (event.type !== "run.completed" && event.type !== "run.failed") {
+        ctx.bus.publish(eventType(event), groupTag(event, group));
+      }
+    },
+  });
   try {
     result = await ctx.turnDriver.turnRun({
       workspace: workspace.dir,
       positionId: body.positionId,
       engine: body.engine,
       envelope,
-      // Stream progress immediately, but hold every terminal until the final
-      // turn record has been durably replaced below.
-      onEvent: (event) => {
-        if (event.type !== "run.completed" && event.type !== "run.failed") {
-          ctx.bus.publish(eventType(event), groupTag(event, group));
-        }
-      },
+      onEvent: (event) => forwarder.handle(event),
       setAbort: (abort) => ctx.runningTurns.register(body.positionId, abort),
     });
   } catch {
