@@ -289,8 +289,8 @@ export function TurnThread({ turns, retrying = false, emptyPrompt, canRetry, onR
                   {engineLabel(turn.engine)}
                 </span>
                 {isProvisional ? (
-                  <span className="owb-tc-head__provisional" aria-label="临时输出，未经验证">
-                    临时输出
+                  <span className="owb-tc-head__provisional" aria-label={t("turn.provisionalTitle")}>
+                    {t("turn.provisional")}
                   </span>
                 ) : null}
                 <span className="owb-turn__status">
