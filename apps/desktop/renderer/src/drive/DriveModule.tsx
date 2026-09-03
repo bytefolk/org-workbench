@@ -111,13 +111,10 @@ export function DriveModule({ workspaceOpen }: DriveModuleProps) {
   return (
     <section className="owb-drive-module" aria-label={t("drive.moduleAria")}>
       <header className="owb-drive-module__header">
-        <div>
-          <h1>{t("drive.title")}</h1>
-          <p>{t("drive.subtitle")}</p>
-        </div>
+        <h1>{t("drive.title")}</h1>
         <span className={`owb-drive-module__scope ${mocked ? "is-mocked" : ""}`}>
           <span className="owb-drive-module__scope-dot" aria-hidden="true" />
-          {mocked ? "LOCAL FIXTURE" : "MEM CONNECTED"}
+          {mocked ? t("drive.scopeLocal") : t("drive.scopeConnected")}
         </span>
       </header>
 

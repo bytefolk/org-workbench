@@ -43,7 +43,7 @@ describe("Workbench 统一网盘模块", () => {
 
     expect(await screen.findByRole("heading", { name: "统一网盘" })).toBeInTheDocument();
     expect(await screen.findByText("会议纪要-Q3.md")).toBeInTheDocument();
-    expect(screen.getByText("LOCAL FIXTURE")).toBeInTheDocument();
+    expect(screen.getByText("本地样例")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "上传文件（待接入）" })).toBeDisabled();
 
     fireEvent.click(screen.getByRole("button", { name: "打开 会议纪要-Q3.md" }));
