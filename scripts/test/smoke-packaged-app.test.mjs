@@ -11,6 +11,7 @@ import {
   createBehaviorLaunchEnvironment,
   createExternalStagingRoot,
   launchApp,
+  parseSmokeArgs,
   smokePackagedApp,
   waitForReport,
 } from "../smoke-packaged-app.mjs";
@@ -213,4 +214,43 @@ test("fast-exit detached leader provenance reaps its orphan group without touchi
   assert.throws(() => process.kill(orphanPid, 0), { code: "ESRCH" });
   assert.doesNotThrow(() => process.kill(sentinel.pid, 0), "unrelated group sentinel must remain alive");
   assert.equal(await fs.stat(stagingRoot).then(() => true, () => false), false);
+});
+
+// #181: the CLI dropped its platform argument whenever `--mode` was absent, so
+// the two legs the workflow actually runs failed on `unsupported staging
+// platform: undefined` before staging anything -- while the `--mode` variants
+// kept working, which is why it went unnoticed for six merged pull requests.
+// These are the four real invocations from package.json, plus the two shapes
+// that made the previous filter wrong.
+test("#181 CLI parsing keeps the platform for every real invocation", () => {
+  assert.deepEqual(parseSmokeArgs(["macos"]), { positional: ["macos"], mode: undefined });
+  assert.deepEqual(parseSmokeArgs(["windows"]), { positional: ["windows"], mode: undefined });
+  assert.deepEqual(parseSmokeArgs(["macos", "--mode", "layout"]), {
+    positional: ["macos"],
+    mode: "layout",
+  });
+  assert.deepEqual(parseSmokeArgs(["windows", "--mode", "layout"]), {
+    positional: ["windows"],
+    mode: "layout",
+  });
+  assert.deepEqual(parseSmokeArgs(["macos", "--mode", "behavior"]), {
+    positional: ["macos"],
+    mode: "behavior",
+  });
+
+  // A candidate path is the second positional and must survive both shapes.
+  assert.deepEqual(parseSmokeArgs(["macos", "/tmp/Some App.app"]), {
+    positional: ["macos", "/tmp/Some App.app"],
+    mode: undefined,
+  });
+  assert.deepEqual(parseSmokeArgs(["macos", "/tmp/Some App.app", "--mode", "layout"]), {
+    positional: ["macos", "/tmp/Some App.app"],
+    mode: "layout",
+  });
+
+  // A dangling flag leaves the mode unset rather than eating the platform; the
+  // caller then falls back to the default static mode.
+  assert.deepEqual(parseSmokeArgs(["macos", "--mode"]), { positional: ["macos"], mode: undefined });
+
+  assert.deepEqual(parseSmokeArgs([]), { positional: [], mode: undefined });
 });
