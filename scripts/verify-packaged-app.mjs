@@ -413,3 +413,41 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const report = verifyPackagedApp(process.argv[2], process.argv[3]);
   process.stdout.write(`${JSON.stringify(report)}\n`);
 }
+
+// Windows Authenticode signature checking
+function checkAuthenticodeSignature(exePath) {
+  if (process.platform !== "win32") {
+    return { status: "not-checked", reason: "not-on-windows" };
+  }
+
+  const psScript = `
+    $sig = Get-AuthenticodeSignature -FilePath '${exePath.replace(/'/g, "''")}'
+    $result = @{
+      Status = $sig.Status.ToString()
+      StatusMessage = $sig.StatusMessage
+      SignerCertificate = if ($sig.SignerCertificate) {
+        @{
+          Subject = $sig.SignerCertificate.Subject
+          Issuer = $sig.SignerCertificate.Issuer
+          Thumbprint = $sig.SignerCertificate.Thumbprint
+        }
+      } else { $null }
+      TimeStamperCertificate = if ($sig.TimeStamperCertificate) { $true } else { $false }
+    }
+    $result | ConvertTo-Json -Compress
+  `;
+
+  const result = spawnSync("powershell", ["-NoProfile", "-Command", psScript], {
+    encoding: "utf8",
+  });
+
+  if (result.status !== 0) {
+    return { status: "error", error: result.stderr || "PowerShell execution failed" };
+  }
+
+  try {
+    return JSON.parse(result.stdout);
+  } catch (e) {
+    return { status: "error", error: "Failed to parse signature info", raw: result.stdout };
+  }
+}
