@@ -335,3 +335,52 @@ test("both gates hold independently: confirmation without signing, signing witho
   assert.match(unconfirmed.reason, /requires explicit confirmation/);
   assert.notEqual(unconfirmed.unsigned, true);
 });
+
+const { startUpdaterService } = require("../src/updater.cjs");
+
+test("an unloadable update component degrades instead of throwing", () => {
+  // This wiring used to be a bare require on the line before createWindow(). A
+  // missing or corrupt vendored bundle threw out of the whenReady handler, so
+  // the app opened no window at all -- an optional update check taking down the
+  // launch.
+  let service;
+  assert.doesNotThrow(() => {
+    service = startUpdaterService({
+      loadUpdater: () => { throw new Error("ENOENT vendor/electron-updater.cjs"); },
+      platform: "win32",
+    });
+  });
+
+  assert.equal(service.availability.available, false);
+  assert.match(service.availability.reason, /could not be loaded/);
+  assert.match(service.availability.reason, /ENOENT/);
+  assert.equal(service.state, "unavailable");
+});
+
+test("the loader is not called on a platform with no channel", () => {
+  // macOS has no channel until #135, so there is nothing to load and no reason
+  // to touch a getter that hangs outside Electron.
+  let called = false;
+  const service = startUpdaterService({
+    loadUpdater: () => { called = true; return {}; },
+    platform: "darwin",
+  });
+  assert.equal(called, false);
+  assert.equal(service.availability.available, false);
+  assert.match(service.availability.reason, /Developer ID/);
+});
+
+test("a loaded updater still reaches the signed gate", async () => {
+  const updater = fakeUpdater();
+  const service = startUpdaterService({
+    loadUpdater: () => updater,
+    platform: "win32",
+    signature: { signed: false, reason: "unsigned" },
+  });
+
+  assert.equal(service.state, "idle");
+  await service.check();
+  updater.emit("update-available", { version: "0.2.0" });
+  const refused = await service.download({ confirmedByUser: true });
+  assert.equal(refused.unsigned, true);
+});

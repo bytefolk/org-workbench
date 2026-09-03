@@ -125,8 +125,11 @@ function createUpdaterService({
   signature = null,
   onState = () => {},
   logger = null,
+  unavailableReason = null,
 } = {}) {
-  const availability = updateChannelAvailability(platform);
+  const availability = unavailableReason === null
+    ? updateChannelAvailability(platform)
+    : { available: false, reason: unavailableReason };
   // Read rather than defaulted, so a caller cannot forget to pass it and
   // silently get the permissive behaviour.
   const build = signature ?? readBuildSignature();
@@ -231,10 +234,45 @@ function createUpdaterService({
   };
 }
 
+/**
+ * Build the service, loading the updater only where a channel exists and never
+ * letting that load fail the caller.
+ *
+ * The loader is passed in rather than required here so this is testable, and so
+ * the failure is contained: the app's window must not depend on an optional
+ * update check. A missing or unloadable vendored bundle degrades to a service
+ * that explains itself, exactly as an unsupported platform does.
+ */
+function startUpdaterService({
+  loadUpdater,
+  platform = process.platform,
+  signature = null,
+  onState = () => {},
+} = {}) {
+  const availability = updateChannelAvailability(platform);
+  if (!availability.available) {
+    return createUpdaterService({ updater: null, platform, signature, onState });
+  }
+  let updater;
+  try {
+    updater = loadUpdater();
+  } catch (error) {
+    return createUpdaterService({
+      updater: null,
+      platform: "unsupported",
+      signature,
+      onState,
+      unavailableReason: `the update component could not be loaded: ${normalizedError(error)}`,
+    });
+  }
+  return createUpdaterService({ updater, platform, signature, onState });
+}
+
 module.exports = {
   UNSIGNED_REFUSAL,
   UPDATE_STATES,
   createUpdaterService,
   readBuildSignature,
+  startUpdaterService,
   updateChannelAvailability,
 };
