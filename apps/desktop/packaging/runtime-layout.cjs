@@ -28,6 +28,7 @@ const DESKTOP_RUNTIME_FILES = [
   "src/session-ipc.cjs",
   "src/turn-ipc.cjs",
   "src/updater.cjs",
+  "src/update-ipc.cjs",
   "src/window-ipc.cjs",
   "dist/renderer/**/*",
 ];
@@ -101,6 +102,7 @@ const SHARED_RUNTIME_FILES = [
   "dist/position-id.js",
   "dist/sessions.js",
   "dist/turns.js",
+  "dist/updates.js",
 ];
 
 const EXAMPLE_RUNTIME_FILES = [

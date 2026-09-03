@@ -5457,3 +5457,120 @@
   .owb-drive-module__toolbar > .ant-input-affix-wrapper { flex-basis: 100%; }
   .owb-drive-module__upload { margin-left: 0; }
 }
+
+/* #134 settings surface + update pane. Title-only header, one pane card; the
+   surface exists to host the update controls, so it carries no chrome of its
+   own beyond the pane it holds. */
+.owb-settings-module {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-height: 0;
+  overflow: auto;
+  padding: 2px 2px 8px;
+}
+
+.owb-settings-module__header {
+  padding: 4px 2px 0;
+}
+
+.owb-settings-module__header h1 {
+  margin: 5px 0 3px;
+  color: var(--ui-foreground);
+  font-family: var(--owb-font-display);
+  font-size: 22px;
+  letter-spacing: -0.025em;
+  line-height: 1.1;
+}
+
+.owb-settings-module__pane {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-width: 720px;
+  padding: 16px 18px 18px;
+  border: 1px solid var(--ui-border);
+  border-radius: var(--ui-radius-md);
+  background: var(--ui-surface-raised);
+}
+
+.owb-settings-module__pane-header h2 {
+  margin: 0;
+  color: var(--ui-foreground);
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.owb-settings-module__facts {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+}
+
+.owb-settings-module__fact {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+
+.owb-settings-module__fact dt {
+  flex: 0 0 auto;
+  min-width: 96px;
+  color: var(--ui-foreground-muted);
+  font-size: 12px;
+  letter-spacing: 0.01em;
+}
+
+.owb-settings-module__fact dd {
+  margin: 0;
+  color: var(--ui-foreground);
+  font-size: 13px;
+  /* The status line wraps rather than truncating: a refusal or an error reason
+     is the whole point of reading it. */
+  overflow-wrap: anywhere;
+}
+
+.owb-settings-module__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.owb-settings-module__notice {
+  margin: 0;
+}
+
+.owb-settings-module__notes {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+}
+
+.owb-settings-module__notes > .ant-btn {
+  padding-inline: 0;
+}
+
+.owb-settings-module__hint {
+  color: var(--ui-foreground-muted);
+  font-size: 12px;
+}
+
+.owb-settings-module__diagnostic {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+  color: var(--ui-foreground-muted);
+  font-size: 12px;
+}
+
+.owb-settings-module__diagnostic code {
+  color: var(--ui-foreground-muted);
+  font-family: var(--ui-font-mono);
+  font-size: 11px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}

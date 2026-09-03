@@ -9,7 +9,7 @@
 // Shell-service split (ADR-0001): main spawns apps/server as a child process
 // with ELECTRON_RUN_AS_NODE; the same server also runs standalone.
 
-const { app, BrowserWindow, dialog, ipcMain } = require("electron");
+const { app, BrowserWindow, dialog, ipcMain, shell } = require("electron");
 const { spawn } = require("node:child_process");
 const {
   createControlPlaneChild,
@@ -34,6 +34,13 @@ const {
   LAYOUT_MEASURE_SCRIPT,
 } = require("./packaged-smoke.cjs");
 const { startUpdaterService } = require("./updater.cjs");
+const {
+  RELEASE_PAGE_URL,
+  boundedUpdateResult,
+  boundedUpdateState,
+  confirmedByUser,
+  updateStatusPayload,
+} = require("./update-ipc.cjs");
 const { isAllowedNavigationTarget, isTrustedWindowSender } = require("./window-ipc.cjs");
 const { validateRestoreRequest, validateOrgApply } = require("./org-ipc.cjs");
 const {
@@ -820,6 +827,61 @@ ipcMain.handle("owb:window:close", (event) => {
 });
 
 
+// #134 update surface. Enumerated exactly like the window controls above and
+// gated on the same trusted-sender check: the renderer may ask about, check,
+// download, install, and open the changelog for an update, and nothing else.
+// Every payload crossing back is projected through update-ipc.cjs.
+//
+// An untrusted frame gets null rather than a fabricated status: the renderer
+// treats null as "unknown" and says so, which is the truth for a caller this
+// shell will not answer.
+ipcMain.handle("owb:update:status", (event) => {
+  if (!isTrustedWindowSender(event, mainWindow, trustedRendererUrl)) return null;
+  return updateStatusPayload({
+    service: updaterService,
+    version: app.getVersion(),
+    platform: process.platform,
+  });
+});
+
+ipcMain.handle("owb:update:check", async (event) => {
+  if (!isTrustedWindowSender(event, mainWindow, trustedRendererUrl)) return null;
+  if (updaterService === null) return boundedUpdateResult(null);
+  return boundedUpdateResult(await updaterService.check());
+});
+
+// The confirmation is forwarded, never fabricated. The service refuses an
+// unconfirmed download, and that guard is the reason a renderer bug cannot turn
+// into an update installing itself while someone is mid-turn.
+ipcMain.handle("owb:update:download", async (event, request) => {
+  if (!isTrustedWindowSender(event, mainWindow, trustedRendererUrl)) return null;
+  if (updaterService === null) return boundedUpdateResult(null);
+  return boundedUpdateResult(
+    await updaterService.download({ confirmedByUser: confirmedByUser(request) }),
+  );
+});
+
+ipcMain.handle("owb:update:install", async (event, request) => {
+  if (!isTrustedWindowSender(event, mainWindow, trustedRendererUrl)) return null;
+  if (updaterService === null) return boundedUpdateResult(null);
+  return boundedUpdateResult(
+    await updaterService.install({ confirmedByUser: confirmedByUser(request) }),
+  );
+});
+
+// Takes no argument on purpose. `shell.openExternal` with a renderer-supplied
+// URL would be an arbitrary-navigation capability; this surface only ever needs
+// the releases page, so the URL is a constant in update-ipc.cjs.
+ipcMain.handle("owb:update:release-notes", async (event) => {
+  if (!isTrustedWindowSender(event, mainWindow, trustedRendererUrl)) return { ok: false };
+  try {
+    await shell.openExternal(RELEASE_PAGE_URL);
+    return { ok: true, url: RELEASE_PAGE_URL };
+  } catch {
+    return { ok: false, url: RELEASE_PAGE_URL };
+  }
+});
+
 /**
  * Build the update service, loading the vendored updater only where the channel
  * can actually work.
@@ -831,9 +893,6 @@ ipcMain.handle("owb:window:close", (event) => {
  * argument so tests drive a fake instead.
  */
 function publishUpdateState(event) {
-  // #134 adds the settings surface that renders these. Until then the state is
-  // recorded rather than dropped, so a failed check is diagnosable from the log.
-  //
   // Guarded because this runs inside electron-updater's emitter and a packaged
   // Windows app has no attached console: an EPIPE here would escape into the
   // library rather than surfacing as a log line nobody was reading anyway.
@@ -841,6 +900,19 @@ function publishUpdateState(event) {
     process.stdout.write(`org-workbench-update ${JSON.stringify(event)}\n`);
   } catch {
     // Losing a diagnostic line is not worth failing an update check over.
+  }
+  // #134: the settings surface renders these live. Projected through
+  // update-ipc.cjs so an unrecognized state is dropped rather than reaching a
+  // pane that has no copy for it, and so no service internals cross the bridge.
+  const bounded = boundedUpdateState(event);
+  if (bounded === null) return;
+  try {
+    if (mainWindow !== null && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send("owb:update:state", bounded);
+    }
+  } catch {
+    // A closing window must not turn an update event into an unhandled throw
+    // inside the updater's emitter.
   }
 }
 

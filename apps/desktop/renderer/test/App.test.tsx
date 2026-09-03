@@ -80,6 +80,25 @@ function installBridge(overrides: Partial<OwbBridge> = {}): OwbBridge {
       body: { schemaVersion: "turn-history.v1", conversationId: activeSession.sessionId, positionId: "repo-owner", turns: [] },
     }),
     sseStatus: vi.fn().mockResolvedValue("connected"),
+    // #134: the settings module only touches these once its rail entry is
+    // selected, so the default is the honest one for a source-tree run — no
+    // packaged build, therefore no publisher identity and no channel.
+    update: {
+      status: vi.fn().mockResolvedValue({
+        version: "0.1.0",
+        state: "unavailable",
+        available: false,
+        requiresConfirmation: false,
+        signed: false,
+        reason: "no packaged resources path; this is a source-tree run",
+        platform: "linux",
+      }),
+      check: vi.fn().mockResolvedValue(null),
+      download: vi.fn().mockResolvedValue(null),
+      install: vi.fn().mockResolvedValue(null),
+      openReleaseNotes: vi.fn().mockResolvedValue({ ok: true }),
+    },
+    onUpdateState: vi.fn().mockReturnValue(() => undefined),
     onEvent: vi.fn().mockReturnValue(() => undefined),
     onSseStatus: vi.fn().mockReturnValue(() => undefined),
     onFallbackNotice: vi.fn().mockReturnValue(() => undefined),
@@ -684,6 +703,25 @@ describe("App drive module wiring", () => {
     expect(list).toHaveBeenCalledWith("");
     expect(screen.queryByText(/Obsidian/)).not.toBeInTheDocument();
     expect(bridge.position).toHaveBeenCalled();
+  });
+});
+
+describe("App settings module wiring (#134)", () => {
+  it("activates the settings rail entry and renders the update pane behind it", async () => {
+    // AC-001: #128 removed a rail entry that had no onSelect and no branch, so
+    // it did nothing when clicked. This pins that the entry actually resolves
+    // to a rendered surface.
+    const bridge = installBridge();
+
+    render(<App />);
+    fireEvent.click(await screen.findByRole("button", { name: "设置" }));
+
+    expect(await screen.findByRole("heading", { name: "设置", level: 1 })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "应用更新", level: 2 })).toBeInTheDocument();
+    expect(bridge.update.status).toHaveBeenCalled();
+    // The prefs drawer (#174) keeps its own two toggles; the update pane did not
+    // move into it and does not duplicate them here.
+    expect(screen.queryByRole("button", { name: /语言/ })).toBeNull();
   });
 });
 

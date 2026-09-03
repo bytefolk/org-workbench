@@ -44,6 +44,23 @@ contextBridge.exposeInMainWorld("owb", {
     pickAndUpload: () => ipcRenderer.invoke("owb:drive:pick-and-upload"),
   },
   sseStatus: () => ipcRenderer.invoke("owb:sse-status:get"),
+  // #134 update surface: enumerated operations only, no generic updater
+  // channel. `confirmedByUser` is passed through rather than defaulted here —
+  // the service refuses an unconfirmed download or install, and that refusal is
+  // what keeps a renderer bug from applying an update nobody asked for.
+  update: {
+    status: () => ipcRenderer.invoke("owb:update:status"),
+    check: () => ipcRenderer.invoke("owb:update:check"),
+    download: (request) =>
+      ipcRenderer.invoke("owb:update:download", {
+        confirmedByUser: request?.confirmedByUser === true,
+      }),
+    install: (request) =>
+      ipcRenderer.invoke("owb:update:install", {
+        confirmedByUser: request?.confirmedByUser === true,
+      }),
+    openReleaseNotes: () => ipcRenderer.invoke("owb:update:release-notes"),
+  },
   // #73 custom title bar controls (设计稿 .wintitle): enumerated, no generic
   // window channel — the renderer can only minimize / toggle-maximize / close.
   windowMinimize: () => ipcRenderer.invoke("owb:window:minimize"),
@@ -58,6 +75,11 @@ contextBridge.exposeInMainWorld("owb", {
     const listener = (_event, state) => callback(state);
     ipcRenderer.on("owb:sse-status", listener);
     return () => ipcRenderer.removeListener("owb:sse-status", listener);
+  },
+  onUpdateState: (callback) => {
+    const listener = (_event, state) => callback(state);
+    ipcRenderer.on("owb:update:state", listener);
+    return () => ipcRenderer.removeListener("owb:update:state", listener);
   },
   onFallbackNotice: (callback) => {
     const listener = (_event, failedPath) => callback(failedPath);
