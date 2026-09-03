@@ -18,7 +18,9 @@ function run(mac, win) {
 }
 
 const layout = (over = {}) => ({
-  leftWidth: 560, leftHeight: 700, rightWidth: 660, rightHeight: 700, bottomDelta: 0, ...over,
+  leftWidth: 560, leftHeight: 700, rightWidth: 660, rightHeight: 700, bottomDelta: 0,
+  viewport: { innerWidth: 1240, innerHeight: 800 },
+  ...over,
 });
 
 test("layout parity passes when both platforms agree within thresholds", () => {
@@ -37,4 +39,58 @@ test("layout parity fails on cross-platform width drift", () => {
 test("layout parity fails loudly when a report lacks the layout measurement", () => {
   assert.throws(() => run({ layout: null }, { layout: layout() }), /did not render/);
   assert.throws(() => run({ noLayout: true }, { layout: layout() }), /no layout measurement/);
+});
+
+// #190: the first run that ever had both reports failed on an 89px height
+// difference with identical widths and bottomDelta 0 on both sides -- mac 515px
+// vs win 604px. The runners do not hand the app the same window height, so an
+// absolute cross-platform height comparison measures the runner. These pin the
+// distinction the check now makes.
+test("#190 a viewport difference alone passes", () => {
+  // Same layout, same chrome overhead (100px), different window height.
+  const mac = { layout: layout({ leftHeight: 611, rightHeight: 611, viewport: { innerWidth: 1240, innerHeight: 711 } }) };
+  const win = { layout: layout({ leftHeight: 700, rightHeight: 700, viewport: { innerWidth: 1240, innerHeight: 800 } }) };
+  const out = run(mac, win);
+  assert.match(out, /"ok":\s*true/);
+  // And the overhead it compared is reported, so a reader can see what passed.
+  assert.match(out, /"chromeOverhead"/);
+});
+
+test("#190 the observed #188 column heights pass once the viewport is accounted for", () => {
+  // The column numbers are the real ones from #188's artifacts. The macOS
+  // viewport of 711 is INFERRED, not measured -- 711 - 515 and 800 - 604 both
+  // give 196px of chrome, which is what made a viewport clamp the likely cause.
+  // The next run measures it for real; if it is not 711 this check fails, which
+  // is the correct outcome, because then the layout really does differ.
+  const mac = { layout: layout({ leftWidth: 314, rightWidth: 314, leftHeight: 515, rightHeight: 515, viewport: { innerWidth: 1240, innerHeight: 711 } }) };
+  const win = { layout: layout({ leftWidth: 314, rightWidth: 314, leftHeight: 604, rightHeight: 604, viewport: { innerWidth: 1240, innerHeight: 800 } }) };
+  assert.match(run(mac, win), /"ok":\s*true/);
+});
+
+test("#190 a column mis-sized against its own viewport still fails", () => {
+  // Windows keeps 100px of chrome; macOS loses 189px of the same viewport.
+  const mac = { layout: layout({ leftHeight: 522, rightHeight: 522, viewport: { innerWidth: 1240, innerHeight: 711 } }) };
+  const win = { layout: layout({ leftHeight: 700, rightHeight: 700, viewport: { innerWidth: 1240, innerHeight: 800 } }) };
+  assert.throws(() => run(mac, win), /chrome overhead differs/);
+});
+
+test("#190 columns of different heights on one platform fail even when aligned at the bottom", () => {
+  // bottomDelta 0 says they end together; it does not say they are the same
+  // height, and the old check never asserted that within a platform.
+  const mac = { layout: layout({ leftHeight: 700, rightHeight: 640 }) };
+  assert.throws(() => run(mac, { layout: layout() }), /columns are different heights/);
+});
+
+test("#190 a report without a viewport is refused, not compared", () => {
+  const noViewport = { layout: { leftWidth: 560, leftHeight: 700, rightWidth: 660, rightHeight: 700, bottomDelta: 0 } };
+  assert.throws(() => run(noViewport, { layout: layout() }), /no usable viewport/);
+  assert.throws(
+    () => run({ layout: layout({ viewport: { innerWidth: 1240, innerHeight: 0 } }) }, { layout: layout() }),
+    /no usable viewport/,
+  );
+});
+
+test("#190 a column taller than its viewport fails", () => {
+  const mac = { layout: layout({ leftHeight: 900, rightHeight: 900, viewport: { innerWidth: 1240, innerHeight: 800 } }) };
+  assert.throws(() => run(mac, { layout: layout() }), /taller than its viewport/);
 });

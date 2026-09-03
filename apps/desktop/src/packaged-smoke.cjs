@@ -25,6 +25,10 @@ const LAYOUT_MEASURE_SCRIPT = String.raw`(async () => {
     rightWidth: right.width,
     rightHeight: right.height,
     bottomDelta: Math.abs(left.bottom - right.bottom),
+    // #190: without the viewport a height difference cannot be attributed. The
+    // runners do not give the app the same window height, so comparing absolute
+    // column heights across platforms measures the runner, not the layout.
+    viewport: { innerWidth: window.innerWidth, innerHeight: window.innerHeight },
   };
 })()`;
 
