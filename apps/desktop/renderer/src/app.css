@@ -24,17 +24,6 @@
     color var(--owb-duration-fast) var(--owb-ease-out);
 }
 
-.owb-rail-brand {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 100%;
-  font-size: var(--ui-text-xs, 12px);
-  font-weight: 600;
-  letter-spacing: 0.05em;
-  color: var(--ui-primary);
-}
-
 .owb-sidebar-header {
   font-size: var(--ui-text-xs, 12px);
   font-weight: 600;
@@ -2782,22 +2771,6 @@
   flex: 1;
 }
 
-.owb-wintitle__chip {
-  -webkit-app-region: no-drag;
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  color: var(--ui-foreground-muted);
-  font-family: var(--ui-font-mono);
-  font-size: 11px;
-  font-weight: 600;
-}
-
-.owb-wintitle__chip b {
-  color: var(--ui-foreground);
-  font-weight: 700;
-}
-
 /* ---------- 状态灯（设计稿 .led，三态共用一套） ---------- */
 
 .owb-led {
@@ -2855,14 +2828,10 @@
   gap: 0;
 }
 
-/* 设计稿的导轨只出图标，文字走 aria-label / title。 */
+/* 设计稿的导轨只出图标：可及名已由 aria-label 提供，文字 span 直接
+   display:none，不再留 1px 隐藏文本。 */
 .owb-app .ui-module-rail__label {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  overflow: hidden;
-  clip-path: inset(50%);
-  white-space: nowrap;
+  display: none;
 }
 
 .owb-app .ui-module-rail__item:hover {
@@ -2900,16 +2869,6 @@
   padding: 6px 0 4px;
 }
 
-.owb-rail-tip {
-  color: var(--ui-foreground-subtle);
-  font-family: var(--ui-font-mono);
-  font-size: 9px;
-  font-weight: 700;
-  letter-spacing: 0.1em;
-  writing-mode: vertical-rl;
-  opacity: 0.7;
-}
-
 /* ---------- 侧栏：head + workspace strip + tree + backups ---------- */
 
 .owb-app .ui-sidebar {
@@ -2929,15 +2888,6 @@
   gap: 8px;
   padding: 12px 12px 8px;
   border-bottom: 1px solid var(--ui-border);
-}
-
-.owb-side-head__label {
-  flex: 1;
-  color: var(--ui-foreground-subtle);
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
 }
 
 .owb-workspace-strip {
