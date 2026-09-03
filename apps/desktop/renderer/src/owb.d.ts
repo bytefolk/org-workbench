@@ -98,6 +98,7 @@ export interface OwbBridge {
   windowClose(): Promise<{ ok: boolean }>;
   onEvent(callback: (event: unknown) => void): () => void;
   onSseStatus(callback: (state: "connecting" | "connected") => void): () => void;
+  onFallbackNotice(callback: (failedPath: string) => void): () => void;
 }
 
 declare global {

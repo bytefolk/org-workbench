@@ -142,6 +142,7 @@ function AppInner({
   const selectedSessionIdRef = useRef<string | null>(null);
   const [sessionBusy, setSessionBusy] = useState(false);
   const [sseState, setSseState] = useState<"connecting" | "connected">("connecting");
+  const [fallbackNotice, setFallbackNotice] = useState<string | null>(null);
   const [backups, setBackups] = useState<OrgBackupEntry[]>([]);
   const [reports, setReports] = useState<ReportsResponse | null>(null);
   const [reportsLoading, setReportsLoading] = useState(false);
@@ -383,10 +384,14 @@ function AppInner({
     };
     const offSse = window.owb.onSseStatus(applySseStatus);
     void window.owb.sseStatus().then(applySseStatus);
+    const offFallback = window.owb.onFallbackNotice((failedPath) => {
+      setFallbackNotice(failedPath);
+    });
     return () => {
       if (refreshTimer !== null) clearTimeout(refreshTimer);
       offEvent();
       offSse();
+      offFallback();
     };
   }, [loadReports, loadTurnHistory, refresh]);
 
@@ -1037,6 +1042,16 @@ function AppInner({
           <Alert type={orgFeedback.tone === "warn" ? "warning" : "info"} showIcon role={orgFeedback.tone === "warn" ? "alert" : "status"} title={orgFeedback.text} />
         ) : null}
         {reportsError ? <Alert type="warning" showIcon role="alert" title={reportsError} /> : null}
+        {fallbackNotice ? (
+          <Alert
+            type="warning"
+            showIcon
+            role="alert"
+            closable
+            onClose={() => setFallbackNotice(null)}
+            title={t("misc.lastWorkspaceFallback", { path: fallbackNotice })}
+          />
+        ) : null}
         {activeModule === "reports" ? (
           <ReportsCenter
             reports={reports}

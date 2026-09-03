@@ -59,4 +59,9 @@ contextBridge.exposeInMainWorld("owb", {
     ipcRenderer.on("owb:sse-status", listener);
     return () => ipcRenderer.removeListener("owb:sse-status", listener);
   },
+  onFallbackNotice: (callback) => {
+    const listener = (_event, failedPath) => callback(failedPath);
+    ipcRenderer.on("owb:fallback-notice", listener);
+    return () => ipcRenderer.removeListener("owb:fallback-notice", listener);
+  },
 });
