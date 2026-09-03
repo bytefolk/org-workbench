@@ -56,15 +56,25 @@ test("#190 a viewport difference alone passes", () => {
   assert.match(out, /"chromeOverhead"/);
 });
 
-test("#190 the observed #188 column heights pass once the viewport is accounted for", () => {
-  // The column numbers are the real ones from #188's artifacts. The macOS
-  // viewport of 711 is INFERRED, not measured -- 711 - 515 and 800 - 604 both
-  // give 196px of chrome, which is what made a viewport clamp the likely cause.
-  // The next run measures it for real; if it is not 711 this check fails, which
-  // is the correct outcome, because then the layout really does differ.
-  const mac = { layout: layout({ leftWidth: 314, rightWidth: 314, leftHeight: 515, rightHeight: 515, viewport: { innerWidth: 1240, innerHeight: 711 } }) };
-  const win = { layout: layout({ leftWidth: 314, rightWidth: 314, leftHeight: 604, rightHeight: 604, viewport: { innerWidth: 1240, innerHeight: 800 } }) };
-  assert.match(run(mac, win), /"ok":\s*true/);
+test("#190 the measured cross-platform numbers pass, with identical chrome overhead", () => {
+  // Measured, not inferred: job 100718398241 in run 33775936612, the first run
+  // in which a viewport was ever recorded. Both runners clamp the requested
+  // 1240x800 window -- 1024x681 on macOS, 1024x720 on Windows -- and the app's
+  // chrome takes exactly 116px out of each. The absolute column heights differ
+  // by 39px, which the old check would have failed on.
+  //
+  // Note the earlier inference of a 711px macOS viewport and 196px of chrome was
+  // wrong in its numbers: it assumed Windows received the full 800. The
+  // mechanism (a clamped viewport with constant chrome) held; the arithmetic fit
+  // was a coincidence. The macOS viewport also moved between runs (631 implied
+  // in #188's, 681 measured here), which is exactly why an absolute height
+  // comparison could never be stable.
+  const mac = { layout: layout({ leftWidth: 314, rightWidth: 314, leftHeight: 565, rightHeight: 565, viewport: { innerWidth: 1024, innerHeight: 681 } }) };
+  const win = { layout: layout({ leftWidth: 314, rightWidth: 314, leftHeight: 604, rightHeight: 604, viewport: { innerWidth: 1024, innerHeight: 720 } }) };
+  const out = run(mac, win);
+  assert.match(out, /"ok":\s*true/);
+  assert.match(out, /"macos":\s*116/);
+  assert.match(out, /"windows":\s*116/);
 });
 
 test("#190 a column mis-sized against its own viewport still fails", () => {
