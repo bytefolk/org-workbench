@@ -5,7 +5,9 @@ const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
 const test = require("node:test");
+const vm = require("node:vm");
 const {
+  LAYOUT_MEASURE_SCRIPT: LAYOUT_MEASURE_SCRIPT_TEXT,
   PACKAGED_SMOKE_SCRIPT,
   createPackagedSmokeLifecycle,
   closeSmokeReportReservation,
@@ -796,4 +798,46 @@ test("no lease falls back to the previous fixed delay", async (t) => {
   const outcome = await awaitHarnessRelease(path.join(root, "report.json"), { unleasedDelayMs: 40 });
   assert.equal(outcome, "unleased");
   assert.ok(Date.now() - started >= 35, "unleased close should still be delayed");
+});
+
+// #183: the injected renderer scripts are `String.raw` template strings, so a
+// module-scope constant referenced inside one without `${...}` is not a
+// closure reference -- it is source text the page has no binding for. That is
+// invisible to tsc (it lives in a string) and invisible to every unit test that
+// does not evaluate the script, so it surfaced only as two red native staging
+// legs, and only once #181 let the smoke run far enough to inject at all.
+//
+// This guard generalizes past the one occurrence: no SCREAMING_CASE constant
+// declared at module scope may appear as a bare word inside any injected
+// script, and each script must still parse on its own.
+test("#183 injected renderer scripts carry no un-interpolated module constants", () => {
+  const source = fs.readFileSync(
+    path.join(__dirname, "..", "src", "packaged-smoke.cjs"),
+    "utf8",
+  );
+  const moduleConstants = [...source.matchAll(/^const ([A-Z][A-Z0-9_]*) =/gm)].map(
+    (match) => match[1],
+  );
+  assert.ok(moduleConstants.length > 0, "found no module-scope constants to check");
+
+  const injected = {
+    LAYOUT_MEASURE_SCRIPT: LAYOUT_MEASURE_SCRIPT_TEXT,
+    PACKAGED_SMOKE_SCRIPT,
+  };
+  for (const [name, script] of Object.entries(injected)) {
+    for (const constant of moduleConstants) {
+      assert.equal(
+        new RegExp(`\\b${constant}\\b`).test(script),
+        false,
+        `${name} references ${constant} as source text; interpolate it with \${...}`,
+      );
+    }
+    // A script that does not parse would fail in the page with a SyntaxError
+    // the harness reports as an opaque smoke failure.
+    assert.doesNotThrow(() => new vm.Script(script), `${name} does not parse`);
+  }
+
+  // The layout measurement must actually be present in the static smoke script,
+  // not merely absent as an identifier.
+  assert.equal(PACKAGED_SMOKE_SCRIPT.includes(LAYOUT_MEASURE_SCRIPT_TEXT), true);
 });

@@ -41,7 +41,7 @@ const PACKAGED_SMOKE_SCRIPT = String.raw`(async () => {
   if (!rendererMounted || !rendererEntryObserved || !preloadBridge || smokeEntry === null) {
     throw new Error("renderer entry or preload bridge did not become ready");
   }
-  const layout = await LAYOUT_MEASURE_SCRIPT;
+  const layout = await ${LAYOUT_MEASURE_SCRIPT};
   return {
     rendererMounted,
     rendererEntryObserved,
