@@ -185,6 +185,9 @@ export function hostHealth({
   const qoderNextStep = bundledQoderNextStep(qoderLocal, engineAvailable);
   const claudeConfigured = typeof env.ANTHROPIC_API_KEY === "string" && env.ANTHROPIC_API_KEY.length > 0;
   const claudeLocalConfigured = claudeLocal.installed && claudeLocal.supported;
+  const claudeCodeConfigured = bundledQoder
+    ? (claudeLocal.installed && claudeLocal.supported && claudeConfigured)
+    : claudeConfigured;
   return {
     qoder: {
       configured: qoderConfigured,
@@ -198,13 +201,27 @@ export function hostHealth({
           : {}),
     },
     "claude-code": {
-      configured: claudeConfigured,
-      ready: engineAvailable && claudeConfigured,
-      ...(!claudeConfigured
-        ? { nextStep: "设置 ANTHROPIC_API_KEY 后重启工作台" }
-        : !engineAvailable
-          ? { nextStep: "先安装或配置支持 turn run 的 digital-employee CLI" }
-          : {}),
+      configured: claudeCodeConfigured,
+      ready: engineAvailable && claudeCodeConfigured,
+      ...(bundledQoder
+        ? (!claudeLocal.installed
+            ? { nextStep: "安装 Claude Code 并确保 claude 在 PATH 上（或用 DIGITAL_EMPLOYEE_CLAUDE_COMMAND 指定二进制路径）" }
+            : !claudeLocal.supported
+              ? {
+                  nextStep: claudeLocal.version === null
+                    ? "Claude Code 版本无法解析；支持窗口为 >= 2.1.214 且 < 2.2.0"
+                    : `Claude Code 版本 ${claudeLocal.version} 不在支持窗口（>= 2.1.214 且 < 2.2.0）内，请升级或降级`,
+                }
+              : !claudeConfigured
+                ? { nextStep: "设置 ANTHROPIC_API_KEY 后重启工作台" }
+                : !engineAvailable
+                  ? { nextStep: "先修复 bundled qoder-engine 的本地启动配置" }
+                  : {})
+        : !claudeConfigured
+          ? { nextStep: "设置 ANTHROPIC_API_KEY 后重启工作台" }
+          : !engineAvailable
+            ? { nextStep: "先安装或配置支持 turn run 的 digital-employee CLI" }
+            : {}),
     },
     "claude-local": {
       configured: claudeLocalConfigured,
