@@ -646,13 +646,28 @@ export async function smokePackagedApp(platform, candidate, options = {}) {
   return { ...completedReport, stagingCleaned: true };
 }
 
-if (process.argv[1] === fileURLToPath(import.meta.url)) {
-  const args = process.argv.slice(2);
+/**
+ * Split `--mode <value>` out of the CLI arguments, leaving the positionals.
+ *
+ * Exported so the four real invocations are pinned by a test rather than only
+ * by CI. The previous inline version filtered on `index !== modeIndex + 1`,
+ * which with no `--mode` present means `index !== 0` — it dropped the platform,
+ * and both `smoke:package:*` legs failed on `unsupported staging platform:
+ * undefined` before staging anything. The guard is the whole fix: when there is
+ * no flag there is nothing to remove.
+ */
+export function parseSmokeArgs(args) {
   const modeIndex = args.indexOf("--mode");
-  const mode = modeIndex >= 0 ? args[modeIndex + 1] : undefined;
+  if (modeIndex < 0) return { positional: [...args], mode: undefined };
+  const mode = args[modeIndex + 1];
   const positional = args.filter(
     (_, index) => index !== modeIndex && index !== modeIndex + 1,
   );
+  return { positional, mode };
+}
+
+if (process.argv[1] === fileURLToPath(import.meta.url)) {
+  const { positional, mode } = parseSmokeArgs(process.argv.slice(2));
   const report = await smokePackagedApp(positional[0], positional[1], mode ? { mode } : {});
   process.stdout.write(`${JSON.stringify(report)}\n`);
 }
