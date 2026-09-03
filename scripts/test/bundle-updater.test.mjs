@@ -6,7 +6,7 @@ import path from "node:path";
 import test from "node:test";
 import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
-import { VENDOR_RELATIVE, bundleUpdater } from "../bundle-updater.mjs";
+import { VENDOR_RELATIVE, bundleUpdater, bundledPackages, collectNotices } from "../bundle-updater.mjs";
 
 const require = createRequire(import.meta.url);
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
@@ -50,6 +50,46 @@ test("the bundled dependency is not a production dependency", () => {
     "electron-updater" in (manifest.devDependencies ?? {}),
     "the bundler needs the package at build time, so it must still be declared",
   );
+});
+
+test("every bundled package's licence travels with its code", async () => {
+  // MIT and ISC require their notice in all copies or substantial portions.
+  // Bundling makes this one file such a copy, so shipping it without them would
+  // be a licence violation, not an oversight. esbuild's legalComments does not
+  // cover this: it preserves comments found in source, and these packages keep
+  // their licence text in separate LICENSE files it never reads.
+  const report = await bundleUpdater();
+  const source = fs.readFileSync(bundlePath(), "utf8");
+
+  const packages = bundledPackages(projectRoot);
+  assert.ok(packages.length > 10, `expected a real closure, got ${packages.length}`);
+  assert.equal(report.notices, packages.length, "every bundled package needs a section");
+
+  for (const name of packages) {
+    assert.match(
+      source,
+      new RegExp(`^ \\* ${name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}@`, "m"),
+      `${name} is bundled but its notice is absent`,
+    );
+  }
+
+  // The notices must precede the code they cover, not trail it. esbuild's
+  // prelude is the first thing that is not comment, so every notice has to sit
+  // before it.
+  const codeStarts = source.search(/^(?:"use strict";|var __)/m);
+  assert.ok(codeStarts > 0, "expected to find where the bundled code begins");
+  for (const name of packages) {
+    const at = source.indexOf(` * ${name}@`);
+    assert.ok(at >= 0 && at < codeStarts, `${name}'s notice must precede the bundled code`);
+  }
+});
+
+test("a package with no licence file is recorded, not silently dropped", () => {
+  const { sections, missing } = collectNotices(projectRoot, bundledPackages(projectRoot));
+  assert.equal(sections.length, bundledPackages(projectRoot).length);
+  // lazy-val publishes no licence file. Its declaration still has to appear, and
+  // the gap has to be visible rather than passing as complete attribution.
+  for (const name of missing) assert.match(name, /\(/, "a missing notice must record the declared licence");
 });
 
 test("the bundle is reproducible from the pinned dependency", async () => {
