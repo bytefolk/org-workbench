@@ -241,10 +241,7 @@ export function TurnThread({ turns, retrying = false, emptyPrompt, canRetry, onR
         <Empty
           image={Empty.PRESENTED_IMAGE_SIMPLE}
           description={
-            <>
-              <strong>{emptyPrompt ?? "从一个明确任务开始"}</strong>
-              <p>消息会发送给当前选择的岗位；这里仅展示本地保存的回合。</p>
-            </>
+            <strong>{emptyPrompt ?? "从一个明确任务开始"}</strong>
           }
         />
       </div>

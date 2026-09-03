@@ -4083,8 +4083,10 @@
  * 想省空间就用头部折叠按钮，而不是靠系统偷偷裁掉内容。
  * #137 起组织图住在半宽左列：横向溢出改在列内滚动（stage 比容器宽时出
  * 横向滚动条），纵向仍自然撑开。 */
+/* #167：画布视口——零滚动条，平移纯拖拽、缩放 transform，布局不跳动。 */
 .owb-org-chart__body {
-  overflow-x: auto;
+  overflow: hidden;
+  position: relative;
   padding: 4px 14px 14px;
   cursor: grab;
 }
@@ -4141,12 +4143,15 @@
   margin-block: 8px;
 }
 
-/* 舞台：内容比容器宽时横向滚动，窄屏不破版。 */
+/* 舞台：transform 画布（translate+scale），origin 左上；宽度随内容撑开。 */
 .owb-org-chart__stage {
+  position: relative;
   display: inline-flex;
   min-width: 100%;
   justify-content: center;
   padding: 2px;
+  transform-origin: 0 0;
+  will-change: transform;
 }
 
 .owb-org-chart__roots {
