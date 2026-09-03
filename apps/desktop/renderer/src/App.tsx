@@ -1049,7 +1049,7 @@ function AppInner({
             role="alert"
             closable
             onClose={() => setFallbackNotice(null)}
-            title={`上次打开的工作区无法访问，已切换到演示工作区：${fallbackNotice}`}
+            title={t("misc.lastWorkspaceFallback", { path: fallbackNotice })}
           />
         ) : null}
         {activeModule === "reports" ? (
