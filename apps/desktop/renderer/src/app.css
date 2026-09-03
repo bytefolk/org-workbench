@@ -2120,6 +2120,7 @@
   min-height: 0;
   overflow: auto;
   padding: 2px 2px 8px;
+  max-width: 1024px;
 }
 
 .owb-docs-module__header {
@@ -2144,11 +2145,11 @@
   display: flex;
   align-items: center;
   gap: 12px;
-  min-height: 58px;
+  min-height: 52px;
   border: 1px solid var(--ui-border);
   border-radius: var(--ui-radius-lg, 14px);
   background: var(--ui-surface-raised);
-  padding: 10px 12px;
+  padding: 8px 12px;
 }
 
 .owb-docs-module__picker-copy {
@@ -2197,9 +2198,25 @@
 .owb-docs-panel > .ant-empty {
   display: grid;
   place-items: center;
-  min-height: 220px;
+  min-height: 150px;
   margin: 0;
-  padding: 28px;
+  padding: 20px 16px;
+}
+
+/* 未选岗位时面板只装一个空态：改成虚线轻提示，别用一个实心重卡片框出一块空白。 */
+.owb-docs-panel:has(> .ant-empty) {
+  border-style: dashed;
+  background: transparent;
+  box-shadow: none;
+}
+
+.owb-docs-panel > .ant-empty .ant-empty-image {
+  margin-bottom: 4px;
+}
+
+.owb-docs-panel > .ant-empty .ant-empty-image img,
+.owb-docs-panel > .ant-empty .ant-empty-image svg {
+  max-height: 64px;
 }
 
 .owb-docs-panel__header {
