@@ -45,6 +45,8 @@
     "smoke:package:macos": "node scripts/smoke-packaged-app.mjs macos",
     "smoke:package:macos:behavior": "node scripts/smoke-packaged-behavior.mjs",
     "smoke:package:windows": "node scripts/smoke-packaged-app.mjs windows",
+    "smoke:package:macos:layout": "node scripts/smoke-packaged-app.mjs macos --mode layout",
+    "smoke:package:windows:layout": "node scripts/smoke-packaged-app.mjs windows --mode layout",
     "test:scripts": "node --test --test-timeout=120000 \"scripts/test/*.test.mjs\"",
     "check": "npm run build && npm run prepare:updater && npm run test:scripts && npm run typecheck:ui && npm run test:ui && node --test --test-timeout=120000 \"apps/server/dist/test/*.test.js\" && npm run typecheck:renderer && npm run test:renderer && npm run test:desktop-main && npm run security:check",
     "dev:server": "npm run build && node apps/server/dist/src/index.js",

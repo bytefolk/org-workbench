@@ -3,6 +3,31 @@ const os = require("node:os");
 const path = require("node:path");
 const { pathToFileURL } = require("node:url");
 
+// #127 AC-004: renderer-side two-column layout measurement, shared by the
+// static smoke report and the dedicated cross-platform layout smoke. Bounded
+// wait for the module to mount; resolves null when absent so the parity job
+// fails loudly instead of silently.
+const LAYOUT_MEASURE_SCRIPT = String.raw`(async () => {
+  const sleep = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds));
+  for (let attempt = 0; attempt < 100; attempt += 1) {
+    if (
+      document.querySelector(".owb-org-module__left") &&
+      document.querySelector(".owb-org-module > .owb-turn-panel")
+    ) break;
+    await sleep(50);
+  }
+  const left = document.querySelector(".owb-org-module__left")?.getBoundingClientRect();
+  const right = document.querySelector(".owb-org-module > .owb-turn-panel")?.getBoundingClientRect();
+  if (!left || !right) return null;
+  return {
+    leftWidth: left.width,
+    leftHeight: left.height,
+    rightWidth: right.width,
+    rightHeight: right.height,
+    bottomDelta: Math.abs(left.bottom - right.bottom),
+  };
+})()`;
+
 const PACKAGED_SMOKE_SCRIPT = String.raw`(async () => {
   const sleep = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds));
   for (let attempt = 0; attempt < 100; attempt += 1) {
@@ -16,11 +41,13 @@ const PACKAGED_SMOKE_SCRIPT = String.raw`(async () => {
   if (!rendererMounted || !rendererEntryObserved || !preloadBridge || smokeEntry === null) {
     throw new Error("renderer entry or preload bridge did not become ready");
   }
+  const layout = await LAYOUT_MEASURE_SCRIPT;
   return {
     rendererMounted,
     rendererEntryObserved,
     preloadBridge,
     staticSmokeEntry: true,
+    layout,
   };
 })()`;
 
@@ -397,6 +424,7 @@ async function runPackagedSmoke({
 }
 
 module.exports = {
+  LAYOUT_MEASURE_SCRIPT,
   HARNESS_LEASE_SUFFIX,
   PACKAGED_SMOKE_SCRIPT,
   awaitHarnessRelease,

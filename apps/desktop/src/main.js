@@ -31,6 +31,7 @@ const {
   packagedSmokeLoadOptions,
   runPackagedSmoke,
   startPackagedSmokeLifecycle,
+  LAYOUT_MEASURE_SCRIPT,
 } = require("./packaged-smoke.cjs");
 const { startUpdaterService } = require("./updater.cjs");
 const { isAllowedNavigationTarget, isTrustedWindowSender } = require("./window-ipc.cjs");
@@ -585,6 +586,10 @@ function createWindow() {
     return;
   }
   const { smokeRequest, behaviorSmokeRequest } = smokeRequests;
+  const layoutReportPath =
+    smokeRequest === null && behaviorSmokeRequest === null
+      ? (process.env.ORG_WORKBENCH_LAYOUT_REPORT ?? null)
+      : null;
   const smokeLoad = smokeRequest === null ? null : packagedSmokeLoadOptions(entryPath, smokeRequest);
   trustedRendererUrl = smokeLoad?.trustedRendererUrl ?? pathToFileURL(entryPath).toString();
   mainWindow = new BrowserWindow({
@@ -690,6 +695,38 @@ function createWindow() {
         }, 2500),
       }),
     });
+  } else if (layoutReportPath !== null) {
+    // #127 AC-004: dedicated full-app layout smoke (both platforms). The
+    // renderer renders the REAL app (no minimal smoke entry), main measures
+    // the two-column org workspace once mounted, writes the report, exits.
+    mainWindow.webContents.once("did-finish-load", () => {
+      void mainWindow.webContents
+        .executeJavaScript(LAYOUT_MEASURE_SCRIPT, true)
+        .then((layout) => {
+          fs.writeFileSync(
+            layoutReportPath,
+            JSON.stringify({
+              schemaVersion: "org-workbench-layout-smoke.v1",
+              ok: layout !== null,
+              layout,
+            }),
+          );
+          app.exit(0);
+        })
+        .catch((error) => {
+          fs.writeFileSync(
+            layoutReportPath,
+            JSON.stringify({
+              schemaVersion: "org-workbench-layout-smoke.v1",
+              ok: false,
+              layout: null,
+              error: String(error?.message ?? error),
+            }),
+          );
+          app.exit(1);
+        });
+    });
+    void mainWindow.loadFile(entryPath);
   } else {
     void mainWindow.loadFile(entryPath);
   }
