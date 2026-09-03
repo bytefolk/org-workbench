@@ -882,7 +882,7 @@ function turnRunClaude(workspaceDir, positionId, input, engineModel) {
     return;
   }
 
-  const safeInput = input || "Execute your position duties for this turn.";
+  const safeInput = (input || "Execute your position duties for this turn.").replace(/@/g, "\\u0040");
   const positionContext = `[Position: ${positionId}]\n[Workspace: ${workspaceDir}]\n\n`;
   const args = [
     "--bare",
