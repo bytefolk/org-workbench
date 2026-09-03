@@ -82,6 +82,7 @@ function installBridge(overrides: Partial<OwbBridge> = {}): OwbBridge {
     sseStatus: vi.fn().mockResolvedValue("connected"),
     onEvent: vi.fn().mockReturnValue(() => undefined),
     onSseStatus: vi.fn().mockReturnValue(() => undefined),
+    onFallbackNotice: vi.fn().mockReturnValue(() => undefined),
     ...overrides,
   };
   Object.defineProperty(window, "owb", { configurable: true, value: bridge });
