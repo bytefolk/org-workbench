@@ -303,7 +303,11 @@ export function TurnThread({ turns, retrying = false, emptyPrompt, canRetry, onR
               </header>
 
               {turn.output ? (
-                <pre className={`owb-tc__out${isProvisional ? " owb-tc__out--provisional" : ""}`} title={turn.output}>{turn.output}</pre>
+                isProvisional ? (
+                  <pre className="owb-tc__out owb-tc__out--provisional" title={turn.output}>{turn.output}</pre>
+                ) : (
+                  <p className="owb-tc__out owb-clamp-2" title={turn.output}>{turn.output}</p>
+                )
               ) : null}
               {turn.status === "running" && !turn.output ? <TypingIndicator /> : null}
 
