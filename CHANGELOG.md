@@ -3,6 +3,34 @@
 本仓库采用 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 格式。
 版本号在首个正式 release 前以里程碑（D0/D1/D2…）标注。
 
+## [0.1.0] — 2026-09-03
+
+首个正式 release，打包本文件 `[Unreleased]` 一节在 tag `v0.1.0` 时点已累积的全部内容。
+本条只记录**发布这件事本身**；上方按 Keep a Changelog 归类的条目未搬移，若要按版本重排是另一次独立编辑。
+
+### 发布记录
+
+| | |
+| --- | --- |
+| tag | `v0.1.0`（annotated，对象 `c4efe61`） |
+| tag 指向提交 | `7d70113`（#144 的 squash 提交，可从 `main` 到达，已用 `git merge-base --is-ancestor "v0.1.0^{commit}" origin/main` 验证） |
+| release run | [33709239164](https://github.com/bytefolk/org-workbench/actions/runs/33709239164)，preflight / macOS-arm64 / Windows-x64 / publish 全绿 |
+| 产物 | 8 个：`org-workbench-0.1.0-arm64.dmg`、`.zip`、`org-workbench-0.1.0-x64.exe`、三个 `.blockmap`、`latest.yml`、`latest-mac.yml` |
+
+### 这次发布**不**提供什么
+
+按 `RELEASING.md` 的三通道标准，**这不是一次完整发布**，如实记录如下：
+
+- **仅 GitHub Release 一个通道可读回。** npm 不适用（本仓库 `private: true`），GHCR 不适用（无容器发布路径）。规范原文为「a missing channel means the release is NOT complete」，因此本条不宣称发布成功，只宣称 GitHub Release 通道已发布并读回。
+- **release 为 draft 状态。** 未签名产物恒发 draft 是 #133 的设计（[R2 决策](https://github.com/bytefolk/org-workbench/issues/133#issuecomment-5519265531)）：draft 不会成为 `/releases/latest`，而后者正是 `allowPrerelease` 为 false 时 electron-updater 解析的 URL，所以**没有任何客户端能发现这个版本**。外部用户拿不到它，仅对有 push 权限者可见。
+- **in-app 更新在任何平台都不工作。** 除上述 draft 闸门外，应用在自身不带发布者身份时拒绝 download/install —— 因为 `NsisUpdater.verifySignature` 在 `app-update.yml` 缺 `publisherName` 时返回 `null` 且调用方视为通过，即未签名客户端会装上从未被验证的更新。两道闸门均读取签名事实本身，签名落地后自动放开。
+- **产物未签名、未公证。** 手动安装可行，但各需一次绕过：macOS 首次启动被 Gatekeeper 拦（右键打开），Windows 安装器触发 SmartScreen（「仍要运行」；per-user 安装免 UAC）。
+- **发布流程第 1 步未执行。** 规范要求先建带 DEC marker 的专门 release issue 作为事前可追溯锚点；本次未建，事后补建无法恢复其锚点作用，故如实记录而非补做。
+
+### 后续
+
+签名是唯一的关键路径：#135（macOS Developer ID + 公证）与 #136（Windows Authenticode，含从 #133 R2 移交的 AC-008 端到端更新与 AC-009 SmartScreen 基线）。两者落地前，本版本及其后续版本都会停留在 draft 且更新通道关闭。
+
 ## [Unreleased] — D2 组织操作 + D3 对话控制面 + D4 本地上报
 
 含 PR #3（feat(d1): 组织树只读）与 PR #7（fix(examples)）。
