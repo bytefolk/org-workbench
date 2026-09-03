@@ -73,6 +73,12 @@ export const errorCodes = {
   docs_exists: "docs_exists",
   /** A doc-ref.v1alpha1 value violates the frozen reference shape (#35 S4). */
   doc_ref_invalid: "doc_ref_invalid",
+  /** External doc-plane URL is not configured; bridge routes cannot be served (#35 R2). */
+  doc_plane_unconfigured: "doc_plane_unconfigured",
+  /** External doc-plane is unreachable or returned a non-recoverable error (#35 R2). */
+  doc_plane_unavailable: "doc_plane_unavailable",
+  /** Doc-plane list/detail request shape is invalid (#35 R2). */
+  doc_plane_request_invalid: "doc_plane_request_invalid",
   /** Asset-layer request shape or asset id is invalid (#36 S1). */
   asset_request_invalid: "asset_request_invalid",
   /** A requested asset record does not exist in the drive (#36 S1). */

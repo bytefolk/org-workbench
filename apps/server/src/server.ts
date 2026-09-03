@@ -4,6 +4,7 @@ import { bearerAuthorized } from "./auth.js";
 import type { ControlPlaneContext } from "./context.js";
 import { sendError, sendJson } from "./http.js";
 import { handleAssetsCreate, handleAssetsList, handleAssetsRead } from "./routes/assets.js";
+import { handleDocPlaneDetail, handleDocPlaneList } from "./routes/doc-plane.js";
 import { handleDocsCreate, handleDocsList, handleDocsRead, handleDocsResolve } from "./routes/docs.js";
 import { handleDriveDetail, handleDriveList, handleDriveUpload } from "./routes/drive.js";
 import { handleEvents } from "./routes/events.js";
@@ -206,6 +207,14 @@ async function dispatch(
     }
     if (pathname === routes.docsResolve && method === "POST") {
       await handleDocsResolve(ctx, req, res);
+      return;
+    }
+    if (pathname === routes.docPlaneList && method === "GET") {
+      await handleDocPlaneList(ctx, res, url);
+      return;
+    }
+    if (pathname === routes.docPlaneDetail && method === "GET") {
+      await handleDocPlaneDetail(ctx, res, url);
       return;
     }
     if (pathname === routes.assetsList && method === "GET") {

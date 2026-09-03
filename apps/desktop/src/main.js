@@ -374,6 +374,39 @@ ipcMain.handle("owb:docs:resolve", async (_event, request) => {
   return apiRequest("/docs/resolve", { method: "POST", body: validated.request });
 });
 
+// External doc-plane bridge (#35 R2 MVP): read-only proxy in front of
+// bytefolk/doc. The renderer never touches the upstream directly — the
+// shell owns the origin, the PAT and the CORS boundary.
+ipcMain.handle("owb:doc-plane:list", async (_event, query) => {
+  const safeQuery = typeof query === "string" ? query : "";
+  if (safeQuery.length > 200) {
+    return {
+      status: 400,
+      body: {
+        code: "doc_plane_request_invalid",
+        message: "query must be at most 200 characters",
+        retryable: false,
+      },
+    };
+  }
+  const suffix = safeQuery.length > 0 ? `?q=${encodeURIComponent(safeQuery)}` : "";
+  return apiRequest(`/doc-plane/list${suffix}`);
+});
+
+ipcMain.handle("owb:doc-plane:detail", async (_event, id) => {
+  if (typeof id !== "string" || id.length === 0 || id.length > 128) {
+    return {
+      status: 400,
+      body: {
+        code: "doc_plane_request_invalid",
+        message: "id must be a non-empty string of at most 128 characters",
+        retryable: false,
+      },
+    };
+  }
+  return apiRequest(`/doc-plane/detail?id=${encodeURIComponent(id)}`);
+});
+
 // Asset-layer foundation (#36 S1): whitelisted, enumerated.
 ipcMain.handle("owb:assets:list", async () => {
   const validated = validateAssetsListRequest();

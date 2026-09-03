@@ -16,6 +16,33 @@ export interface ServerConfig {
   /** Pinned context provider CLI/stdio adapter command (context main >= f63f57f). */
   contextCliCommand: string;
   serverVersion: string;
+  /**
+   * External `bytefolk/doc` origin (#35 R2 MVP). When unset, the doc-plane
+   * proxy fails closed with `doc_plane_unconfigured` so the renderer can
+   * surface the configuration guide. Trailing slashes are stripped.
+   */
+  docPlaneUrl?: string;
+  /** Bearer PAT for the external doc plane (bytefolk/doc `doc_pat_...`). */
+  docPlaneToken?: string;
+  /**
+   * When truthy the proxy responds with a bundled mock fixture instead of
+   * calling the upstream. Used for demos and the end-to-end vitest wiring.
+   * TODO(#35 R3): remove once the upstream API surface stabilises.
+   */
+  docPlaneMock: boolean;
+}
+
+function normalizeUrl(raw: string | undefined): string | undefined {
+  if (typeof raw !== "string") return undefined;
+  const trimmed = raw.trim();
+  if (trimmed === "") return undefined;
+  return trimmed.replace(/\/+$/u, "");
+}
+
+function truthy(raw: string | undefined): boolean {
+  if (typeof raw !== "string") return false;
+  const trimmed = raw.trim().toLowerCase();
+  return trimmed === "1" || trimmed === "true" || trimmed === "yes" || trimmed === "on";
 }
 
 export function resolveServerConfig(
@@ -45,6 +72,12 @@ export function resolveServerConfig(
     bundledElectronEngine,
     contextCliCommand,
     serverVersion: readServerVersion(),
+    docPlaneUrl: normalizeUrl(env.ORG_WORKBENCH_DOC_URL),
+    docPlaneToken:
+      typeof env.ORG_WORKBENCH_DOC_TOKEN === "string" && env.ORG_WORKBENCH_DOC_TOKEN.length > 0
+        ? env.ORG_WORKBENCH_DOC_TOKEN
+        : undefined,
+    docPlaneMock: truthy(env.ORG_WORKBENCH_DOC_MOCK),
   };
 }
 

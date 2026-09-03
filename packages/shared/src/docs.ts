@@ -240,3 +240,66 @@ export function parseAssetRecord(raw: unknown): { ok: boolean; record?: AssetRec
   }
   return { ok: true, record };
 }
+
+/**
+ * External doc-plane bridge contract (#35 R2 MVP).
+ *
+ * The org-workbench control plane exposes a thin proxy over the upstream
+ * `bytefolk/doc` HTTP API so the renderer can list and preview documents
+ * without direct browser access (CORS/PAT stay on the shell). The upstream
+ * response shape is deliberately trimmed to the fields the desktop UI needs
+ * today; the server flattens TipTap JSON into a UTF-8 markdown-ish body so
+ * the existing DocViewer renders it unchanged.
+ *
+ * When the shell has no upstream configured (`ORG_WORKBENCH_DOC_URL`
+ * unset), the proxy fails closed with `doc_plane_unconfigured` and the
+ * renderer surfaces a configuration guide. Set `ORG_WORKBENCH_DOC_MOCK=1`
+ * for an end-to-end mock fixture — TODO(#35 R3): drop the fixture once
+ * bytefolk/doc `/api/v1/documents` ships a stable content-fetch endpoint
+ * (see docs/API.md §"Read a document" — content is TipTap JSON today, so
+ * this proxy flattens it via a best-effort walker).
+ */
+
+export const DOC_PLANE_LIST_SCHEMA_VERSION = "doc-plane-list.v1alpha1" as const;
+export const DOC_PLANE_DETAIL_SCHEMA_VERSION = "doc-plane-detail.v1alpha1" as const;
+
+/**
+ * Where the payload came from — the renderer surfaces the source so users
+ * can tell "real upstream" from "mock fixture" at a glance.
+ */
+export type DocPlaneSource = "upstream" | "mock";
+
+export interface DocPlaneListEntry {
+  /** Upstream document id (opaque to the shell). */
+  id: string;
+  /** Human title as reported by the upstream `data[].title`. */
+  title: string;
+  /** Optional emoji/icon; upstream returns `null` when absent. */
+  icon: string | null;
+  /** ISO-8601 last-updated timestamp (upstream `updatedAt`). */
+  updatedAt: string;
+  /** Whether the upstream marks the document as starred by the token owner. */
+  starred: boolean;
+}
+
+export interface DocPlaneListResponse {
+  schemaVersion: typeof DOC_PLANE_LIST_SCHEMA_VERSION;
+  /** Provenance: real upstream call vs. bundled mock fixture. */
+  source: DocPlaneSource;
+  entries: DocPlaneListEntry[];
+}
+
+export interface DocPlaneDetailResponse {
+  schemaVersion: typeof DOC_PLANE_DETAIL_SCHEMA_VERSION;
+  source: DocPlaneSource;
+  id: string;
+  title: string;
+  icon: string | null;
+  updatedAt: string;
+  /**
+   * UTF-8 body suitable for the DocViewer. When the upstream returns TipTap
+   * JSON the server best-effort-flattens paragraphs/headings into markdown;
+   * when the mock fixture is in play the body is plain markdown.
+   */
+  content: string;
+}

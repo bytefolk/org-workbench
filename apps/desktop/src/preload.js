@@ -17,6 +17,8 @@ contextBridge.exposeInMainWorld("owb", {
   positionDocFile: (positionId, filePath) => ipcRenderer.invoke("owb:position:docs:read", positionId, filePath),
   createPositionDoc: (request) => ipcRenderer.invoke("owb:position:docs:create", request),
   resolveDocRef: (ref) => ipcRenderer.invoke("owb:docs:resolve", { ref }),
+  docPlaneList: (query) => ipcRenderer.invoke("owb:doc-plane:list", query),
+  docPlaneDetail: (id) => ipcRenderer.invoke("owb:doc-plane:detail", id),
   assetsList: () => ipcRenderer.invoke("owb:assets:list"),
   assetsRead: (assetId) => ipcRenderer.invoke("owb:assets:read", assetId),
   assetsCreate: (request) => ipcRenderer.invoke("owb:assets:create", request),

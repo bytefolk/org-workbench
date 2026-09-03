@@ -1,17 +1,31 @@
 import { useCallback, useEffect, useState } from "react";
-import { Alert, Button, Collapse, Empty, Input, Modal, Select, message } from "antd";
+import { Alert, Button, Collapse, Empty, Input, Modal, Select, Tabs, message } from "antd";
 import { useT } from "@org-workbench/ui";
 import { FilePlus2, Link2, Plus } from "lucide-react";
-import type { DocRef, DocsCreateResponse, DocsFileListResponse, DocsFileResponse, DocsResolveResponse } from "@org-workbench/shared";
+import type {
+  DocPlaneDetailResponse,
+  DocPlaneListResponse,
+  DocRef,
+  DocsCreateResponse,
+  DocsFileListResponse,
+  DocsFileResponse,
+  DocsResolveResponse,
+} from "@org-workbench/shared";
 import type { PositionMentionOption } from "../turns/types";
+import { DocPlanePanel } from "./DocPlanePanel";
+import type { DocPlaneDetailLoadResult, DocPlaneListLoadResult } from "./DocPlanePanel";
 import { DocsPanel } from "./DocsPanel";
 
 /**
- * Document module surface (#35 S3/S4, DS-35-001 rev-1 §3/§5/§6): connects
- * the ModuleRail "文档" entry to the S2 DocsPanel through the whitelisted
- * preload bridge. S4 adds the minimal creation entry (naming + landing, no
- * editor per the frozen baseline) and the doc-ref.v1alpha1 reference face:
- * resolve pasted refs into positioned paths with deterministic states.
+ * Document module surface (#35 S3/S4 + R2, DS-35-001 rev-1 §3/§5/§6):
+ * connects the ModuleRail "文档" entry to two document surfaces:
+ *
+ *  - the frozen position-scoped file surface (S2/S4 DocsPanel + creator +
+ *    doc-ref resolver), and
+ *  - the new external doc-plane bridge (R2 MVP) that talks to
+ *    `bytefolk/doc` through the shell-owned proxy. The proxy fails closed
+ *    when `ORG_WORKBENCH_DOC_URL` is unset, and this module surfaces the
+ *    matching configuration hint instead of pretending everything is fine.
  */
 export interface DocsModuleProps {
   workspaceOpen: boolean;
@@ -29,6 +43,18 @@ function apiErrorMessage(body: unknown, fallback: string): string {
     return (body as { message: string }).message;
   }
   return fallback;
+}
+
+function apiErrorCode(body: unknown): string | null {
+  if (
+    body &&
+    typeof body === "object" &&
+    "code" in body &&
+    typeof (body as { code: unknown }).code === "string"
+  ) {
+    return (body as { code: string }).code;
+  }
+  return null;
 }
 
 interface ResolveOutcome {
@@ -68,6 +94,35 @@ export function DocsModule({ workspaceOpen, positions, selectedPositionId }: Doc
     }
     return res.body;
   }, [t]);
+
+  const docPlaneList = useCallback(async (query: string): Promise<DocPlaneListLoadResult> => {
+    const res = await window.owb.docPlaneList(query);
+    if (res.status >= 200 && res.status < 300 && res.body) {
+      return { kind: "ok", response: res.body as DocPlaneListResponse };
+    }
+    const code = apiErrorCode(res.body);
+    if (code === "doc_plane_unconfigured") {
+      return {
+        kind: "unconfigured",
+        message: apiErrorMessage(res.body, t("docs.planeUnconfigured")),
+      };
+    }
+    return {
+      kind: "error",
+      message: apiErrorMessage(res.body, t("docs.planeListError")),
+    };
+  }, []);
+
+  const docPlaneDetail = useCallback(async (id: string): Promise<DocPlaneDetailLoadResult> => {
+    const res = await window.owb.docPlaneDetail(id);
+    if (res.status >= 200 && res.status < 300 && res.body) {
+      return { kind: "ok", response: res.body as DocPlaneDetailResponse };
+    }
+    return {
+      kind: "error",
+      message: apiErrorMessage(res.body, t("docs.planeReadError")),
+    };
+  }, []);
 
   const submitCreate = async () => {
     if (positionId === null) return;
@@ -134,19 +189,8 @@ export function DocsModule({ workspaceOpen, positions, selectedPositionId }: Doc
     );
   }
 
-  return (
-    <section className="owb-docs-module" aria-label={t("docs.moduleAria")}>
-      <header className="owb-docs-module__header">
-        <div>
-          <span className="owb-docs-module__eyebrow">POSITION DOCUMENTS</span>
-          <h1>{t("docs.moduleTitle")}</h1>
-          <p>{t("docs.moduleSubtitle")}</p>
-        </div>
-        <span className="owb-docs-module__scope">
-          <span className="owb-docs-module__scope-dot" aria-hidden="true" />
-          LOCAL WORKSPACE
-        </span>
-      </header>
+  const positionSurface = (
+    <>
       <div className="owb-docs-module__picker">
         <div className="owb-docs-module__picker-copy">
           <span>{t("docs.pickerTitle")}</span>
@@ -217,6 +261,33 @@ export function DocsModule({ workspaceOpen, positions, selectedPositionId }: Doc
                 ) : null}
               </div>
             ),
+          },
+        ]}
+      />
+    </>
+  );
+
+  return (
+    <section className="owb-docs-module" aria-label={t("docs.moduleAria")}>
+      <header className="owb-docs-module__header">
+        <div>
+          <span className="owb-docs-module__eyebrow">POSITION DOCUMENTS</span>
+          <h1>{t("docs.moduleTitle")}</h1>
+          <p>{t("docs.moduleSubtitle")}</p>
+        </div>
+        <span className="owb-docs-module__scope">
+          <span className="owb-docs-module__scope-dot" aria-hidden="true" />
+          LOCAL WORKSPACE
+        </span>
+      </header>
+      <Tabs
+        defaultActiveKey="position"
+        items={[
+          { key: "position", label: t("docs.moduleTitle"), children: positionSurface },
+          {
+            key: "plane",
+            label: t("docs.tabPlane"),
+            children: <DocPlanePanel listDocs={docPlaneList} readDoc={docPlaneDetail} />,
           },
         ]}
       />
