@@ -28,8 +28,8 @@ import type {
   WorkspaceInfoResponse,
 } from "@org-workbench/shared";
 import { FileChartColumn, FolderTree, HardDrive, Network, Plus, ShieldAlert, UsersRound } from "lucide-react";
-import { ThemeToggle, useThemeMode } from "./theme-toggle";
-import { LocaleToggle } from "./locale-toggle";
+import { useThemeMode } from "./theme-toggle";
+import { PrefsMenu } from "./prefs-menu";
 import { persistLocale, seedLocale } from "./locale-mode";
 import {
   EMPTY_TURN_STREAM,
@@ -877,8 +877,7 @@ function AppInner({
         <WindowControls />
         <span className="owb-wintitle__name">org-workbench</span>
         <span className="owb-wintitle__spacer" />
-        <LocaleToggle locale={locale} onChange={onChangeLocale} />
-        <ThemeToggle mode={themeMode} />
+        <PrefsMenu locale={locale} onChangeLocale={onChangeLocale} mode={themeMode} />
       </header>
 
     {/* 壳层尺寸（导轨 54 / 侧栏 300 / topbar 48）定在 app.css 的

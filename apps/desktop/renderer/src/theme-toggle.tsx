@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
-import { Moon, Sun } from "lucide-react";
-import { useT } from "@org-workbench/ui";
-import { setThemeMode, type ThemeMode } from "./theme-mode";
+import type { ThemeMode } from "./theme-mode";
+
+export type { ThemeMode };
 
 /** Live `data-theme` on <html> (main.tsx seeds it, see initThemeMode). antd's
  * cssinjs algorithm has to follow the same switch as the --ui-* skin, otherwise
@@ -20,29 +20,4 @@ export function useThemeMode(): ThemeMode {
     return () => observer.disconnect();
   }, []);
   return mode;
-}
-
-/** The theme entry point (#94): the only writer of `data-theme`, driving the
- * dark palette that antd-skin.css has shipped complete but unreachable since
- * #73. The icon is always visible, never hover-revealed — it *is* the state
- * readout, so hiding it by default would hide the very thing the control
- * reports (the same reasoning `.owb-wctl`'s icons were missing before #94). */
-export function ThemeToggle({ mode }: { mode: ThemeMode }) {
-  const t = useT();
-  const next: ThemeMode = mode === "dark" ? "light" : "dark";
-  const label = next === "dark" ? t("misc.themeToDark") : t("misc.themeToLight");
-  return (
-    <button
-      type="button"
-      className="owb-wintitle__theme"
-      aria-label={label}
-      aria-pressed={mode === "dark"}
-      title={label}
-      onClick={() => setThemeMode(next)}
-    >
-      {mode === "dark"
-        ? <Sun aria-hidden="true" size={14} strokeWidth={1.8} />
-        : <Moon aria-hidden="true" size={14} strokeWidth={1.8} />}
-    </button>
-  );
 }
