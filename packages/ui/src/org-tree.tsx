@@ -1,6 +1,7 @@
 import { Building2, ChevronRight, Folder, FolderOpen, Plus, UsersRound } from "lucide-react";
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type DragEvent, type KeyboardEvent, type ReactNode } from "react";
 import { cn } from "@fullstack-ai-infra/ui";
+import { useT } from "./i18n";
 import { capsText, primaryCap, type OrgTreeNodeV1, type OrgTreeSnapshot } from "./types";
 
 /** Same-level insertion produced by an edge drop or ⌘-arrow reorder
@@ -113,6 +114,7 @@ export function OrgTreeNode({
   onHireEntry,
   onGroupEntry,
 }: OrgTreeNodeProps) {
+  const t = useT();
   return (
     <div
       role="treeitem"
@@ -151,7 +153,7 @@ export function OrgTreeNode({
         <button
           type="button"
           data-ui-org-toggle
-          aria-label={expanded ? "收起" : "展开"}
+          aria-label={expanded ? t("tree.collapse") : t("tree.expand")}
           className={cn("ui-org-tree__toggle", expanded && "is-expanded")}
           onClick={(event) => {
             event.stopPropagation();
@@ -166,8 +168,8 @@ export function OrgTreeNode({
       <span
         className={cn("ui-org-tree__led", running && "is-running")}
         role="img"
-        aria-label={running ? "回合运行中" : "岗位就绪"}
-        title={running ? "回合运行中" : "岗位就绪"}
+        aria-label={running ? t("pos.running") : t("pos.ready")}
+        title={running ? t("pos.running") : t("pos.ready")}
       />
       <span
         className="ui-org-tree__icon"
@@ -193,7 +195,7 @@ export function OrgTreeNode({
             <button
               type="button"
               className="ui-org-tree__group"
-              aria-label={`与 ${displayName ?? node.id} 发起群聊`}
+              aria-label={t("tree.groupWith", { name: displayName ?? node.id })}
               onClick={(event) => {
                 event.stopPropagation();
                 onGroupEntry();
@@ -206,7 +208,7 @@ export function OrgTreeNode({
             <button
               type="button"
               className="ui-org-tree__add"
-              aria-label={`在 ${displayName ?? node.id} 下招聘下属`}
+              aria-label={t("tree.hireUnder", { name: displayName ?? node.id })}
               onClick={(event) => {
                 event.stopPropagation();
                 onHireEntry();
@@ -230,6 +232,7 @@ function TreeBudgetSpark({
   budget: OrgTreeNodeV1["budget"];
   consumption?: number | null;
 }) {
+  const t = useT();
   const cap = primaryCap(budget.perTask);
   const declaredOnly = consumption === null || consumption === undefined || cap === null;
   const ratio = declaredOnly ? null : consumption;
@@ -243,13 +246,13 @@ function TreeBudgetSpark({
     <span
       className={cn("ui-org-tree__budget", tier)}
       role="meter"
-      aria-label={declaredOnly ? "预算声明" : "单任务预算消耗"}
+      aria-label={declaredOnly ? t("tree.budgetDeclared") : t("tree.budgetConsumed")}
       aria-valuemin={0}
       // valuemax 必须 >= valuenow（ARIA 合法性）：正常态定死 100，超限时跟
       // 实际读数一起涨，不能一边报 120 一边把上限钉在 100。
       aria-valuemax={percent === null ? 100 : Math.max(100, percent)}
       aria-valuenow={percent ?? undefined}
-      title={declaredOnly ? `单任务上限 ${capsText(budget.perTask)}` : `单任务已用 ${percent}%`}
+      title={declaredOnly ? t("tree.budgetCap", { caps: capsText(budget.perTask) }) : t("tree.budgetUsed", { pct: percent ?? 0 })}
     >
       <i style={{ width }} />
     </span>
@@ -376,8 +379,11 @@ export function OrgTree({
   onUndo,
   moveDisabled = false,
   className,
-  ariaLabel = "组织目录树",
+  ariaLabel,
 }: OrgTreeProps) {
+  /** #146：默认 aria 走目录（无 Provider 时回退 zh 全量目录）。 */
+  const t = useT();
+  const resolvedAriaLabel = ariaLabel ?? t("tree.dir");
   const enterpriseName = snapshot.business?.trim() ?? "";
   const useEnterpriseRoot = enterpriseName.length > 0 && snapshot.tree.length > 0;
   const topLevel = snapshot.tree;
@@ -515,7 +521,7 @@ export function OrgTree({
       const id = current.node.id;
       if (id === snapshot.owner) {
         event.preventDefault();
-        setToast("企业负责人不能调整汇报关系");
+        setToast(t("tree.ownerToast"));
         return;
       }
       const location = locateInTree(snapshot.tree, id);
@@ -608,15 +614,15 @@ export function OrgTree({
   if (snapshot.positionCount === 0 || snapshot.tree.length === 0) {
     return (
       <div className={cn("ui-org-tree", "ui-org-tree--empty", className)}>
-        <p>尚无岗位，点击招聘</p>
+        <p>{t("tree.emptyHireHint")}</p>
         <button
           type="button"
           className="ui-org-tree__hire-placeholder"
           disabled={!onHireEntry}
-          title={onHireEntry ? undefined : "招聘入口 D2 启用"}
+          title={onHireEntry ? undefined : t("tree.emptyHireDisabled")}
           onClick={() => onHireEntry?.(null)}
         >
-          招聘岗位
+          {t("tree.emptyHireCta")}
         </button>
       </div>
     );
@@ -660,7 +666,7 @@ export function OrgTree({
             setDraggedId(node.id);
           }}
           onDragEnd={() => {
-            if (deniedId !== null) setToast("不能移动到自身或自己的下属");
+            if (deniedId !== null) setToast(t("tree.selfDropToast"));
             resetDragState();
           }}
           onDragOver={(event) => {
@@ -719,7 +725,7 @@ export function OrgTree({
   return (
     <div
       role="tree"
-      aria-label={ariaLabel}
+      aria-label={resolvedAriaLabel}
       tabIndex={0}
       ref={containerRef}
       className={cn("ui-org-tree", refreshed && "is-refreshed", className)}
@@ -761,7 +767,7 @@ export function OrgTree({
             <button
               type="button"
               data-ui-org-toggle
-              aria-label={enterpriseExpanded ? "收起" : "展开"}
+              aria-label={enterpriseExpanded ? t("tree.collapse") : t("tree.expand")}
               className={cn("ui-org-tree__toggle", enterpriseExpanded && "is-expanded")}
               onClick={(event) => {
                 event.stopPropagation();
@@ -773,8 +779,8 @@ export function OrgTree({
             <span
               className={cn("ui-org-tree__led", runningIds && runningIds.size > 0 && "is-running")}
               role="img"
-              aria-label={runningIds && runningIds.size > 0 ? "组织内有回合运行中" : "组织就绪"}
-              title={runningIds && runningIds.size > 0 ? "组织内有回合运行中" : "组织就绪"}
+              aria-label={runningIds && runningIds.size > 0 ? t("tree.orgRunning") : t("tree.orgReady")}
+              title={runningIds && runningIds.size > 0 ? t("tree.orgRunning") : t("tree.orgReady")}
             />
             <span className="ui-org-tree__icon" aria-hidden="true">
               <Building2 size={14} />

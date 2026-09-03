@@ -15,8 +15,8 @@
  */
 import { useEffect, useState } from "react";
 import { Alert, Button, Drawer, Input, Space, Tag } from "antd";
+import { useT } from "@org-workbench/ui";
 import {
-  APPROVAL_CATEGORY_LABEL,
   isDecided,
   isPermissionOverreach,
   type ApprovalQueueCallbacks,
@@ -41,6 +41,7 @@ export function ApprovalDetailDrawer({
   onApprove,
   onDeny,
 }: ApprovalDetailDrawerProps) {
+  const t = useT();
   const [reason, setReason] = useState("");
 
   useEffect(() => {
@@ -55,7 +56,7 @@ export function ApprovalDetailDrawer({
         open={open}
         onClose={onClose}
         width={420}
-        title="审批详情"
+        title={t("apr.detailTitle")}
         destroyOnClose
       />
     );
@@ -85,24 +86,24 @@ export function ApprovalDetailDrawer({
       open={open}
       onClose={onClose}
       width={420}
-      title={`审批详情 · ${APPROVAL_CATEGORY_LABEL[item.category]}`}
+      title={t("apr.detailTitleCategory", { category: t(`apr.kind.${item.category}`) })}
       destroyOnClose
       data-testid="approval-detail-drawer"
     >
       <div className="owb-approval-drawer" data-approval-id={item.approvalId}>
         <Space direction="vertical" size={12} style={{ width: "100%" }}>
           <div className="owb-approval-drawer__meta">
-            <Tag color="purple">{APPROVAL_CATEGORY_LABEL[item.category]}</Tag>
-            {overreach ? <Tag color="red">越权尝试</Tag> : null}
+            <Tag color="purple">{t(`apr.kind.${item.category}`)}</Tag>
+            {overreach ? <Tag color="red">{t("apr.overreach")}</Tag> : null}
             {item.positionMode ? (
               <Tag color={item.positionMode === "read_only" ? "default" : "purple"}>
-                模式 {item.positionMode === "read_only" ? "只读" : "需批准"}
+                {t("apr.modeTag", { mode: item.positionMode === "read_only" ? t("pos.readOnly") : t("pos.approval") })}
               </Tag>
             ) : null}
           </div>
 
           <section>
-            <h3 className="owb-approval-drawer__section-title">请求岗位</h3>
+            <h3 className="owb-approval-drawer__section-title">{t("apr.requestingPosition")}</h3>
             <p className="owb-approval-drawer__position">
               <strong>{positionName}</strong>
               <span className="owb-approval-drawer__pid">{item.positionId}</span>
@@ -110,24 +111,24 @@ export function ApprovalDetailDrawer({
           </section>
 
           <section>
-            <h3 className="owb-approval-drawer__section-title">动作描述</h3>
+            <h3 className="owb-approval-drawer__section-title">{t("apr.actionDescription")}</h3>
             <p className="owb-approval-drawer__description">{description}</p>
             {target ? (
               <p className="owb-approval-drawer__target">
-                目标：<code>{target}</code>
+                {t("apr.targetPrefix")}<code>{target}</code>
               </p>
             ) : null}
           </section>
 
           <section>
-            <h3 className="owb-approval-drawer__section-title">时限与 ID</h3>
+            <h3 className="owb-approval-drawer__section-title">{t("apr.deadlineAndId")}</h3>
             <p className="owb-approval-drawer__meta-line">
               {item.expiresAt ? (
-                <span>过期：<code>{item.expiresAt}</code></span>
+                <span>{t("apr.expiresPrefix")}<code>{item.expiresAt}</code></span>
               ) : (
-                <span className="owb-muted">未声明过期时间</span>
+                <span className="owb-muted">{t("apr.noExpiry")}</span>
               )}
-              <span>approvalId：<code>{item.approvalId}</code></span>
+              <span>{t("apr.idPrefix")}<code>{item.approvalId}</code></span>
             </p>
           </section>
 
@@ -136,25 +137,25 @@ export function ApprovalDetailDrawer({
               type={item.decision.kind === "granted" ? "success" : item.decision.kind === "denied" ? "error" : "info"}
               message={
                 item.decision.kind === "granted"
-                  ? "已批准——裁决已随新回合下发"
+                  ? t("apr.alertGranted")
                   : item.decision.kind === "denied"
-                    ? "已拒绝——拒绝证据永久保留"
-                    : "已过期——如需放行请发起新回合"
+                    ? t("apr.alertDenied")
+                    : t("apr.alertExpired")
               }
               description={
                 item.decision.kind === "denied" && item.decision.reason
-                  ? `拒绝理由：${item.decision.reason}`
+                  ? t("apr.reasonPrefix", { reason: item.decision.reason })
                   : undefined
               }
               showIcon
             />
           ) : (
             <section>
-              <h3 className="owb-approval-drawer__section-title">拒绝理由（可选）</h3>
+              <h3 className="owb-approval-drawer__section-title">{t("apr.reasonOptional")}</h3>
               <Input.TextArea
                 value={reason}
                 onChange={(event) => setReason(event.target.value)}
-                placeholder="不填则成为无理由拒绝；将随 resume 回合封入证据。"
+                placeholder={t("apr.reasonPh")}
                 autoSize={{ minRows: 2, maxRows: 4 }}
                 maxLength={MAX_APPROVAL_REASON_BYTES}
                 showCount
@@ -171,7 +172,7 @@ export function ApprovalDetailDrawer({
               disabled={disabled}
               data-testid="approval-approve-button"
             >
-              批准并继续
+              {t("apr.grant")}
             </Button>
             <Button
               danger
@@ -179,14 +180,14 @@ export function ApprovalDetailDrawer({
               disabled={disabled}
               data-testid="approval-deny-button"
             >
-              拒绝
+              {t("apr.deny")}
             </Button>
           </div>
 
           {/* Evidence slot is a placeholder at P0 (see file-level TODO). */}
-          <section className="owb-approval-drawer__evidence" aria-label="回合证据">
-            <h3 className="owb-approval-drawer__section-title">回合证据</h3>
-            <p className="owb-muted">证据列表待 v1 就绪（turn-evidence.v1 有界扫描 + SSE）。</p>
+          <section className="owb-approval-drawer__evidence" aria-label={t("apr.evidence")}>
+            <h3 className="owb-approval-drawer__section-title">{t("apr.evidence")}</h3>
+            <p className="owb-muted">{t("apr.evidencePending")}</p>
           </section>
         </Space>
       </div>

@@ -1,6 +1,7 @@
 import { TriangleAlert } from "lucide-react";
 import type { CSSProperties } from "react";
 import { cn } from "@fullstack-ai-infra/ui";
+import { useT } from "./i18n";
 import { capsText, primaryCap, type BudgetCaps } from "./types";
 
 export interface BudgetBarProps {
@@ -40,6 +41,7 @@ export function BudgetBar({
   label,
   className,
 }: BudgetBarProps) {
+  const t = useT();
   if (!declared) {
     return (
       <span
@@ -47,7 +49,7 @@ export function BudgetBar({
         role="status"
       >
         <TriangleAlert aria-hidden="true" size={12} />
-        预算未配齐
+        {t("pos.budgetMissing")}
       </span>
     );
   }
@@ -55,7 +57,7 @@ export function BudgetBar({
     return (
       <div className={cn("ui-org-budget", "is-compact", className)}>
         <BudgetLane
-          label={label ?? "预算"}
+          label={label ?? t("pos.budgetDefault")}
           caps={declared.taskLimit}
           consumption={consumption}
         />
@@ -65,9 +67,9 @@ export function BudgetBar({
   return (
     <div className={cn("ui-org-budget", className)}>
       <div className="ui-org-budget__lanes">
-        <BudgetLane label="单任务" caps={declared.taskLimit} consumption={consumption} />
+        <BudgetLane label={t("pos.perTask")} caps={declared.taskLimit} consumption={consumption} />
         <BudgetLane
-          label="单日"
+          label={t("pos.perDay")}
           caps={declared.dailyLimit}
           consumption={consumption === null && dailyConsumption === undefined ? null : dailyConsumption}
         />
@@ -80,8 +82,9 @@ export function BudgetBar({
  * `<b>20,000 tokens</b> · 8 iterations`. Falls back to em dash when the
  * declaration carries no cap at all — never invents a number. */
 function DeclaredCaps({ caps }: { caps: BudgetCaps | null | undefined }) {
+  const t = useT();
   const text = capsText(caps);
-  if (text === "—") return <>未声明</>;
+  if (text === "—") return <>{t("pos.undeclared")}</>;
   const [head, ...rest] = text.split(" · ");
   return (
     <>
@@ -100,6 +103,7 @@ function BudgetLane({
   caps: BudgetCaps | null;
   consumption: number | null | undefined;
 }) {
+  const t = useT();
   const cap = primaryCap(caps);
   const declarationMode = consumption === null;
   const unavailable = consumption === undefined;
@@ -119,7 +123,7 @@ function BudgetLane({
       <span
         className={cn("ui-org-budget__track", laneClass)}
         role="meter"
-        aria-label={`${label}${declarationMode ? "声明" : unavailable ? "用量不可用" : "消耗"}`}
+        aria-label={`${label}${declarationMode ? t("pos.laneDeclared") : unavailable ? t("pos.laneUnavailable") : t("pos.laneConsumed")}`}
         aria-valuemin={0}
         // valuemax 必须 >= valuenow（ARIA 合法性）：正常态定死 100，超限时
         // 跟实际读数一起涨，不能一边报 116 一边把上限钉在 100。
@@ -132,7 +136,7 @@ function BudgetLane({
         {declarationMode ? (
           <DeclaredCaps caps={caps} />
         ) : unavailable ? (
-          <>未记录 · 上限 <DeclaredCaps caps={caps} /></>
+          <>{t("pos.unrecordedPrefix")}<DeclaredCaps caps={caps} /></>
         ) : (
           `${Math.round((ratio ?? 0) * 100)}%`
         )}

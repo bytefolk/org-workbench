@@ -1,5 +1,6 @@
 import { Select as AntSelect } from "antd";
 import { AtSign } from "lucide-react";
+import { useT } from "@org-workbench/ui";
 import type { PositionMentionOption } from "./types";
 
 export interface PositionMentionProps {
@@ -16,15 +17,16 @@ export function PositionMention({
   disabled = false,
   onChange,
 }: PositionMentionProps) {
+  const t = useT();
   return (
     <label className="owb-position-mention">
-      <span className="owb-turn-control__label">对话岗位</span>
+      <span className="owb-turn-control__label">{t("turn.position")}</span>
       <span className="owb-position-mention__field">
         <AtSign aria-hidden="true" size={14} />
         <AntSelect
-          aria-label="选择对话岗位"
+          aria-label={t("turn.pickPositionAria")}
           value={value ?? undefined}
-          placeholder="选择岗位"
+          placeholder={t("turn.pickPositionPh")}
           disabled={disabled}
           onChange={(next) => {
             if (next) onChange(next);

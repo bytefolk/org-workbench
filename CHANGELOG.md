@@ -10,6 +10,8 @@
 ### Added
 ### Added
 
+- #146 国际化骨架与全量迁移：`@org-workbench/ui` 新增 `OwbI18nProvider` / `useT` / `zhText` 与 zh-CN/en 双目录（440 key，parity 门强制 key 集合一致）；标题栏新增语言切换钮（恰好两态，持久化，默认 zh-CN，antd ConfigProvider locale 同步切换）；renderer 与 ui 包全部用户可见文案迁入目录，`i18n-cjk-gate` 测试扫描源码字符串字面量内的 CJK 防绕过；数据层（turn 原文、信封、组织文件、裁决输入）不翻译。
+
 - #167 组织图画布化收尾：视口 overflow:hidden 零滚动条，平移纯拖拽（transform translate + pointer capture，4px 点击阈值保留），缩放（按钮/捏合）以光标为锚；选中岗位 translate 居中替代 scrollIntoView；布局不再随滚动条跳动。描述语精简到标题：图表头部只留标题、空态只留标题行、composer 空闲提示行移除（运行态/禁用原因保留）。
 
 - 上下文来源与统一网盘入口：岗位卡片展示岗位知识库、mem 统一网盘和岗位级 context 来源；新增 Workbench 内网盘模块，支持清单、搜索与详情查看，不引入 Obsidian 客户端。

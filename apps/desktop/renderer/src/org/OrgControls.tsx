@@ -1,6 +1,7 @@
 import { useEffect, useId, useState, type ReactNode } from "react";
 import { Button } from "@fullstack-ai-infra/ui";
 import type { OrgBackupEntry } from "@org-workbench/shared";
+import { useT } from "@org-workbench/ui";
 import { ArchiveRestore, Trash2 } from "lucide-react";
 
 export function DismissPositionDialog({
@@ -16,6 +17,7 @@ export function DismissPositionDialog({
   busy: boolean;
   onDismiss: () => Promise<boolean>;
 }) {
+  const t = useT();
   const [open, setOpen] = useState(false);
   return (
     <>
@@ -27,20 +29,22 @@ export function DismissPositionDialog({
         className="owb-dismiss"
         onClick={() => setOpen(true)}
         disabled={busy}
-        title="裁撤该岗位：二次确认后移出组织树，目录保留在恢复区可恢复"
+        title={t("pos.dismissTitle")}
       >
         <Trash2 aria-hidden="true" size={13} />
-        裁撤
+        {t("pos.dismiss")}
       </button>
       <Modal
         open={open}
-        title={`确认裁撤 ${positionName}`}
-        description={`岗位 ${positionId}${descendantCount > 0 ? ` 及其 ${descendantCount} 个下属岗位` : ""}将移出组织树，完整目录保留在本地 backup，可从恢复区手动恢复。不会自动回滚。`}
+        title={t("dlg.dismissTitle", { name: positionName })}
+        description={descendantCount > 0
+          ? t("dlg.dismissDescWithReports", { id: positionId, count: descendantCount })
+          : t("dlg.dismissDesc", { id: positionId })}
         onOpenChange={setOpen}
       >
         <footer className="owb-modal__footer">
-          <Button variant="secondary" disabled={busy} onClick={() => setOpen(false)}>取消</Button>
-          <Button variant="danger" disabled={busy} onClick={() => void onDismiss().then((ok) => ok && setOpen(false))}>确认裁撤并留痕</Button>
+          <Button variant="secondary" disabled={busy} onClick={() => setOpen(false)}>{t("dlg.cancel")}</Button>
+          <Button variant="danger" disabled={busy} onClick={() => void onDismiss().then((ok) => ok && setOpen(false))}>{t("dlg.dismissConfirm")}</Button>
         </footer>
       </Modal>
     </>
@@ -56,13 +60,14 @@ export function BackupTray({
   busy: boolean;
   onRestore: (backupId: string) => Promise<boolean>;
 }) {
+  const t = useT();
   return (
-    <section className="owb-backups" aria-label="岗位恢复区">
-      <header><ArchiveRestore aria-hidden="true" size={13} /><span>恢复区</span><strong>{backups.length}</strong></header>
-      {backups.length === 0 ? <p>暂无可恢复岗位</p> : backups.map((backup) => (
+    <section className="owb-backups" aria-label={t("tree.recovery")}>
+      <header><ArchiveRestore aria-hidden="true" size={13} /><span>{t("tree.recoveryHead")}</span><strong>{backups.length}</strong></header>
+      {backups.length === 0 ? <p>{t("tree.recoveryEmpty")}</p> : backups.map((backup) => (
         <div className="owb-backups__item" key={backup.backupId}>
-          <span><strong>{backup.name}</strong><small>{backup.positionId} · 原汇报 {backup.reportTo ?? "企业根"}</small></span>
-          <Button size="sm" variant="secondary" disabled={busy} onClick={() => void onRestore(backup.backupId)}>一键恢复</Button>
+          <span><strong>{backup.name}</strong><small>{t("tree.backupOrigin", { id: backup.positionId, target: backup.reportTo ?? t("org.enterpriseRoot") })}</small></span>
+          <Button size="sm" variant="secondary" disabled={busy} onClick={() => void onRestore(backup.backupId)}>{t("tree.restore")}</Button>
         </div>
       ))}
     </section>
@@ -86,6 +91,7 @@ function Modal({
 }) {
   const titleId = useId();
   const descriptionId = useId();
+  const t = useT();
 
   useEffect(() => {
     if (!open) return;
@@ -113,7 +119,7 @@ function Modal({
             <h2 id={titleId}>{title}</h2>
             <p id={descriptionId}>{description}</p>
           </div>
-          <button type="button" className="owb-modal__close" aria-label="关闭弹窗" onClick={() => onOpenChange(false)}>×</button>
+          <button type="button" className="owb-modal__close" aria-label={t("dlg.close")} onClick={() => onOpenChange(false)}>×</button>
         </header>
         {children}
       </section>

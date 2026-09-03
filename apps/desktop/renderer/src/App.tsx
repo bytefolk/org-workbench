@@ -1,6 +1,8 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Alert, Badge, Button as AntButton, ConfigProvider, theme } from "antd";
 import zhCN from "antd/locale/zh_CN";
+import enUS from "antd/locale/en_US";
+import { OwbI18nProvider, useT, type OwbLocale } from "@org-workbench/ui";
 import {
   AppShell,
   ModuleRail,
@@ -27,6 +29,8 @@ import type {
 } from "@org-workbench/shared";
 import { FileChartColumn, FolderTree, HardDrive, Network, Plus, ShieldAlert, UsersRound } from "lucide-react";
 import { ThemeToggle, useThemeMode } from "./theme-toggle";
+import { LocaleToggle } from "./locale-toggle";
+import { persistLocale, seedLocale } from "./locale-mode";
 import {
   EMPTY_TURN_STREAM,
   TurnPanel,
@@ -74,6 +78,31 @@ interface PositionCardState {
  * (org.updated drives refresh; the UI never polls).
  */
 export function App() {
+  return <AppRoot />;
+}
+
+/** #146 i18n 根：locale 状态住在 Provider 之上；恰好两个 locale，
+ * 持久化，默认 zh-CN。antd 的 ConfigProvider locale 同步切换。 */
+function AppRoot() {
+  const [locale, setLocale] = useState<OwbLocale>(() => seedLocale());
+  const changeLocale = useCallback((next: OwbLocale) => {
+    setLocale(next);
+    persistLocale(next);
+  }, []);
+  return (
+    <OwbI18nProvider locale={locale}>
+      <AppInner locale={locale} onChangeLocale={changeLocale} />
+    </OwbI18nProvider>
+  );
+}
+
+function AppInner({
+  locale,
+  onChangeLocale,
+}: {
+  locale: OwbLocale;
+  onChangeLocale: (next: OwbLocale) => void;
+}) {
   const [activeModule, setActiveModule] = useState<
     "org" | "groups" | "reports" | "approvals" | "drive" | "docs"
   >("org");
@@ -130,6 +159,8 @@ export function App() {
   const [groupDraftSeed, setGroupDraftSeed] = useState<{ members: string[]; nonce: number } | null>(null);
   /** 亮/暗跟随 <html data-theme>，antd cssinjs 与 --ui-* skin 同步切换。 */
   const themeMode = useThemeMode();
+  /** #146：界面文案唯一入口；数据层文案不经过这里。 */
+  const t = useT();
 
   useEffect(() => {
     selectedIdRef.current = selectedId;
@@ -151,18 +182,18 @@ export function App() {
       const response = await window.owb.reports();
       if (response.status !== 200) {
         setReports(null);
-        setReportsError(apiErrorMessage(response.body, "上报数据读取失败"));
+        setReportsError(apiErrorMessage(response.body, t("rep.readFail")));
         return;
       }
       setReports(response.body as ReportsResponse);
       setReportsError(null);
     } catch {
       setReports(null);
-      setReportsError("上报数据读取失败：控制面不可达");
+      setReportsError(t("rep.readFailOffline"));
     } finally {
       setReportsLoading(false);
     }
-  }, []);
+  }, [t]);
 
   const refresh = useCallback(async () => {
     const [statusRes, workspaceRes] = await Promise.all([
@@ -258,20 +289,20 @@ export function App() {
       const res = await window.owb.sessionTurnHistory(sessionId);
       if (selectedIdRef.current !== id || selectedSessionIdRef.current !== sessionId) return false;
       if (res.status !== 200) {
-        setTurnError(apiErrorMessage(res.body, "本地历史读取失败"));
+        setTurnError(apiErrorMessage(res.body, t("turn.historyFail")));
         return false;
       }
       const history = res.body as TurnHistory;
-      setTurns(adaptTurnHistory(history, positionNamesRef.current[id] ?? id));
+      setTurns(adaptTurnHistory(history, positionNamesRef.current[id] ?? id, t("turn.unrenderableOutput")));
       setTurnError(null);
       return true;
     } catch {
       if (selectedIdRef.current === id && selectedSessionIdRef.current === sessionId) {
-        setTurnError("本地历史读取失败：控制面不可达");
+        setTurnError(t("turn.historyFailOffline"));
       }
       return false;
     }
-  }, []);
+  }, [t]);
 
   const loadSessions = useCallback(async (id: string) => {
     try {
@@ -281,7 +312,7 @@ export function App() {
         setSessions([]);
         setSelectedSessionId(null);
         selectedSessionIdRef.current = null;
-        setTurnError(apiErrorMessage(res.body, "会话列表读取失败"));
+        setTurnError(apiErrorMessage(res.body, t("turn.sessionsFail")));
         return false;
       }
       const list = res.body as WorkbenchSessionList;
@@ -295,10 +326,10 @@ export function App() {
       setTurnError(null);
       return true;
     } catch {
-      if (selectedIdRef.current === id) setTurnError("会话列表读取失败：控制面不可达");
+      if (selectedIdRef.current === id) setTurnError(t("turn.sessionsFailOffline"));
       return false;
     }
-  }, []);
+  }, [t]);
 
   useEffect(() => {
     if (workspaceInfo?.open !== true || selectedId === null) {
@@ -384,7 +415,7 @@ export function App() {
     try {
       const res = await window.owb.createSession({ positionId });
       if (res.status !== 201) {
-        setTurnError(apiErrorMessage(res.body, "新建会话失败"));
+        setTurnError(apiErrorMessage(res.body, t("turn.createSessionFail")));
         return;
       }
       const session = res.body as WorkbenchSession;
@@ -392,11 +423,11 @@ export function App() {
       setSelectedSessionId(session.sessionId);
       await loadSessions(positionId);
     } catch {
-      setTurnError("新建会话失败：控制面不可达");
+      setTurnError(t("turn.createSessionFailOffline"));
     } finally {
       setSessionBusy(false);
     }
-  }, [loadSessions]);
+  }, [loadSessions, t]);
 
   /** #248 R2 ② 点人即聊：挂载该岗位的 active 会话，没有就自动创建，输入立即可用。 */
   const ensureActiveSession = useCallback(async (positionId: string) => {
@@ -434,7 +465,7 @@ export function App() {
     try {
       const res = await window.owb.rotateSession(sessionId);
       if (res.status !== 200 && res.status !== 201) {
-        setTurnError(apiErrorMessage(res.body, "轮换会话失败"));
+        setTurnError(apiErrorMessage(res.body, t("turn.rotateFail")));
         return;
       }
       const session = res.body as WorkbenchSession;
@@ -444,16 +475,16 @@ export function App() {
       setTurnStream((current) => clearPersonalTurnState(current));
       await loadSessions(positionId);
     } catch {
-      setTurnError("轮换会话失败：控制面不可达");
+      setTurnError(t("turn.rotateFailOffline"));
     } finally {
       setSessionBusy(false);
     }
-  }, [loadSessions]);
+  }, [loadSessions, t]);
 
   const createTurn = useCallback(async (request: CreateTurnRequest) => {
     const sessionId = selectedSessionIdRef.current;
     if (sessionId === null) {
-      setTurnError("请先新建或选择当前会话");
+      setTurnError(t("turn.needSession"));
       return false;
     }
     setTurnBusy(true);
@@ -475,7 +506,7 @@ export function App() {
           : {}),
       });
       if (res.status !== 200) {
-        const message = apiErrorMessage(res.body, "回合创建失败");
+        const message = apiErrorMessage(res.body, t("turn.createFail"));
         setTurnError(message);
         setTurnStream((current) => cancelPendingTurn(current));
         return false;
@@ -484,6 +515,7 @@ export function App() {
         const returned = adaptTurnRecord(
           res.body,
           positionNamesRef.current[request.positionId] ?? request.positionId,
+          t("turn.unrenderableOutput"),
         );
         setTurns((current) => replaceTurn(current, returned));
       }
@@ -498,12 +530,12 @@ export function App() {
       return true;
     } catch {
       setTurnStream((current) => cancelPendingTurn(current));
-      setTurnError("回合创建失败：控制面不可达");
+      setTurnError(t("turn.createFailOffline"));
       return false;
     } finally {
       setTurnBusy(false);
     }
-  }, [loadTurnHistory]);
+  }, [loadTurnHistory, t]);
 
   /** Group spawn (#52): the 202 spawn list carries pre-assigned turnIds; seed
    * one live buffer per mentioned member so SSE deltas aggregate per member. */
@@ -546,14 +578,14 @@ export function App() {
     try {
       const res = await window.owb.cancelTurn(positionId);
       if (res.status !== 200) {
-        setTurnError(apiErrorMessage(res.body, "中断请求被拒绝"));
+        setTurnError(apiErrorMessage(res.body, t("turn.cancelRejected")));
       }
     } catch {
-      setTurnError("中断请求失败：控制面不可达");
+      setTurnError(t("turn.cancelFailOffline"));
     } finally {
       setTurnCancelling(false);
     }
-  }, []);
+  }, [t]);
 
   /** Operator verdict (issue #25 Slice B): the verdict is a new resume turn
    * whose sealed envelope carries pendingApproval; granted defaults scope to
@@ -595,51 +627,51 @@ export function App() {
     try {
       const response = await window.owb.orgApply(manifest);
       if (response.status !== 200) {
-        setOrgFeedback({ tone: "warn", text: apiErrorMessage(response.body, "组织变更被拒绝；应用态未更新，提案保留可修正") });
+        setOrgFeedback({ tone: "warn", text: apiErrorMessage(response.body, t("org.applyRejected")) });
         return false;
       }
       setOrgFeedback({ tone: "info", text: successMessage });
       await refresh();
       return true;
     } catch {
-      setOrgFeedback({ tone: "warn", text: "组织变更状态不确定：控制面不可达；不会自动重试" });
+      setOrgFeedback({ tone: "warn", text: t("org.applyUncertain") });
       return false;
     } finally {
       setOrgBusy(false);
     }
-  }, [refresh]);
+  }, [refresh, t]);
 
   const movePosition = useCallback(async (id: string, reportTo: string | null) => {
     if (!snapshot) return false;
     if (id === snapshot.owner) {
-      setOrgFeedback({ tone: "warn", text: "企业负责人不能通过拖拽调岗" });
+      setOrgFeedback({ tone: "warn", text: t("org.ownerImmovable") });
       return false;
     }
     const source = findNodeById(snapshot.tree, id);
     if (!source) {
-      setOrgFeedback({ tone: "warn", text: `岗位 ${id} 已不在当前应用态，请刷新后重试` });
+      setOrgFeedback({ tone: "warn", text: t("org.stalePosition", { id }) });
       return false;
     }
     if (source.reportTo === reportTo) {
-      setOrgFeedback({ tone: "info", text: "汇报线没有变化，无需应用" });
+      setOrgFeedback({ tone: "info", text: t("org.noMoveChange") });
       return false;
     }
     if (reportTo === id || (reportTo !== null && containsNode(source, reportTo))) {
-      setOrgFeedback({ tone: "warn", text: "非法投放：岗位不能汇报给自己或自己的下属" });
+      setOrgFeedback({ tone: "warn", text: t("org.cycleDenied") });
       return false;
     }
-    return applyOrg({ schemaVersion: "change-manifest.v1", changes: [{ op: "move", id, reportTo }] }, `已将 ${id} 调整到 ${reportTo ?? "企业根"}`);
-  }, [applyOrg, snapshot]);
+    return applyOrg({ schemaVersion: "change-manifest.v1", changes: [{ op: "move", id, reportTo }] }, t("org.movedTo", { id, target: reportTo ?? t("org.enterpriseRoot") }));
+  }, [applyOrg, snapshot, t]);
 
   /** #33: hire is the only creation channel; success linkage = refresh + select the new node. */
   const hiredPosition = useCallback(async (positionId: string, name: string) => {
-    setOrgFeedback({ tone: "info", text: `${name} 已加入团队（hire-request.v1alpha1 契约面）` });
+    setOrgFeedback({ tone: "info", text: t("org.hired", { name }) });
     await refresh();
     setSelectedId(positionId);
-  }, [refresh]);
+  }, [refresh, t]);
 
   const dismissPosition = useCallback(async (id: string) =>
-    applyOrg({ schemaVersion: "change-manifest.v1", changes: [{ op: "delete", id }] }, `已裁撤 ${id}；目录保留在恢复区`), [applyOrg]);
+    applyOrg({ schemaVersion: "change-manifest.v1", changes: [{ op: "delete", id }] }, t("org.dismissed", { id })), [applyOrg, t]);
 
   /** Same-level insertion from an insertion-line drop or ⌘↑/⌘↓ (#32): the
    * reorder op carries the final sibling order; a cross-parent insertion is
@@ -648,7 +680,7 @@ export function App() {
     if (!snapshot) return false;
     const source = findNodeById(snapshot.tree, drop.id);
     if (!source) {
-      setOrgFeedback({ tone: "warn", text: `岗位 ${drop.id} 已不在当前应用态，请刷新后重试` });
+      setOrgFeedback({ tone: "warn", text: t("org.stalePosition", { id: drop.id }) });
       return false;
     }
     if (source.reportTo === drop.parentId) {
@@ -656,12 +688,12 @@ export function App() {
         ? snapshot.tree.map((node) => node.id)
         : findNodeById(snapshot.tree, source.reportTo)?.children.map((node) => node.id) ?? [];
       if (current.join("\u0000") === drop.order.join("\u0000")) {
-        setOrgFeedback({ tone: "info", text: "顺序没有变化，无需应用" });
+        setOrgFeedback({ tone: "info", text: t("org.noOrderChange") });
         return false;
       }
       return applyOrg(
         { schemaVersion: "change-manifest.v1", changes: [{ op: "reorder", parentId: drop.parentId, order: drop.order }] },
-        `已调整 ${drop.id} 的同级顺序`,
+        t("org.reordered", { id: drop.id }),
       );
     }
     return applyOrg(
@@ -672,9 +704,9 @@ export function App() {
           { op: "reorder", parentId: drop.parentId, order: drop.order },
         ],
       },
-      `已将 ${drop.id} 调整到 ${drop.parentId ?? "企业根"}`,
+      t("org.movedTo", { id: drop.id, target: drop.parentId ?? t("org.enterpriseRoot") }),
     );
-  }, [applyOrg, snapshot]);
+  }, [applyOrg, snapshot, t]);
 
   /** Single-step undo of the last drag adjustment (#32 AC-005). Structural
    * add/delete restores stay with BackupTray; 404 means nothing is undoable. */
@@ -684,23 +716,23 @@ export function App() {
     try {
       const response = await window.owb.orgUndo();
       if (response.status === 404) {
-        setOrgFeedback({ tone: "info", text: "没有可撤销的组织调整" });
+        setOrgFeedback({ tone: "info", text: t("org.nothingToUndo") });
         return false;
       }
       if (response.status !== 200) {
-        setOrgFeedback({ tone: "warn", text: apiErrorMessage(response.body, "撤销被拒绝") });
+        setOrgFeedback({ tone: "warn", text: apiErrorMessage(response.body, t("org.undoRejected")) });
         return false;
       }
-      setOrgFeedback({ tone: "info", text: "已撤销最近一次组织调整" });
+      setOrgFeedback({ tone: "info", text: t("org.undone") });
       await refresh();
       return true;
     } catch {
-      setOrgFeedback({ tone: "warn", text: "撤销状态不确定：控制面不可达；不会自动重试" });
+      setOrgFeedback({ tone: "warn", text: t("org.undoUncertain") });
       return false;
     } finally {
       setOrgBusy(false);
     }
-  }, [refresh]);
+  }, [refresh, t]);
 
   const restorePosition = useCallback(async (backupId: string) => {
     setOrgBusy(true);
@@ -708,20 +740,20 @@ export function App() {
     try {
       const response = await window.owb.orgRestore(backupId);
       if (response.status !== 200) {
-        setOrgFeedback({ tone: "warn", text: apiErrorMessage(response.body, "恢复被拒绝") });
+        setOrgFeedback({ tone: "warn", text: apiErrorMessage(response.body, t("org.restoreRejected")) });
         return false;
       }
       const body = response.body as { positionId: string; restored: boolean };
-      setOrgFeedback({ tone: "info", text: body.restored ? `已恢复 ${body.positionId}` : `${body.positionId} 已在应用态，无需重复恢复` });
+      setOrgFeedback({ tone: "info", text: body.restored ? t("org.restored", { id: body.positionId }) : t("org.alreadyRestored", { id: body.positionId }) });
       await refresh();
       return true;
     } catch {
-      setOrgFeedback({ tone: "warn", text: "恢复状态不确定：控制面不可达；不会自动重试" });
+      setOrgFeedback({ tone: "warn", text: t("org.restoreUncertain") });
       return false;
     } finally {
       setOrgBusy(false);
     }
-  }, [refresh]);
+  }, [refresh, t]);
 
   const engineOk = health?.engine?.available === true;
   /** The frozen org-tree.v1 carries ids/budgets only; display names and modes
@@ -765,19 +797,19 @@ export function App() {
     qoder: {
       configured: health?.hosts?.qoder.configured === true,
       ready: health?.hosts?.qoder.ready === true,
-      reason: health?.hosts?.qoder.nextStep ?? "Qoder Host 配置状态不可用",
+      reason: health?.hosts?.qoder.nextStep ?? t("misc.qoderHostUnknown"),
     },
     "claude-code": {
       configured: health?.hosts?.["claude-code"].configured === true,
       ready: health?.hosts?.["claude-code"].ready === true,
-      reason: health?.hosts?.["claude-code"].nextStep ?? "Claude Code Host 配置状态不可用",
+      reason: health?.hosts?.["claude-code"].nextStep ?? t("misc.claudeHostUnknown"),
     },
     "claude-local": {
       configured: health?.hosts?.["claude-local"]?.configured === true,
       ready: health?.hosts?.["claude-local"]?.ready === true,
-      reason: health?.hosts?.["claude-local"]?.nextStep ?? "Claude Code（本地登录）Host 探测状态不可用",
+      reason: health?.hosts?.["claude-local"]?.nextStep ?? t("misc.claudeLocalHostUnknown"),
     },
-  }), [health]);
+  }), [health, t]);
 
   const displayTurns = useMemo(() => {
     const historyRunIds = new Set(turns.flatMap((turn) => (turn.runId ? [turn.runId] : [])));
@@ -806,7 +838,7 @@ export function App() {
   // autoInsertSpace is off so two-char CJK labels keep exact accessible names.
   return (
     <ConfigProvider
-      locale={zhCN}
+      locale={locale === "en" ? enUS : zhCN}
       button={{ autoInsertSpace: false }}
       theme={{
         algorithm: themeMode === "dark" ? theme.darkAlgorithm : theme.defaultAlgorithm,
@@ -845,12 +877,13 @@ export function App() {
         <WindowControls />
         <span className="owb-wintitle__name">org-workbench</span>
         <span className="owb-wintitle__spacer" />
+        <LocaleToggle locale={locale} onChange={onChangeLocale} />
         <ThemeToggle mode={themeMode} />
         <span className="owb-wintitle__chip">
           <span
             className={engineOk ? "owb-led" : "owb-led owb-led--off"}
             role="img"
-            aria-label={engineOk ? "引擎可用" : "引擎离线"}
+            aria-label={engineOk ? t("misc.engineAvailable") : t("misc.engineOffline")}
           />
           engine <b>{engineOk ? "available" : "offline"}</b>
           {workspaceInfo?.open === true && workspaceInfo.business
@@ -865,16 +898,16 @@ export function App() {
     <AppShell
       moduleRail={
         <ModuleRail
-          label="模块"
+          label={t("misc.modules")}
           brand={<span className="owb-rail-brand">owb</span>}
           footer={<span className="owb-rail-tip" aria-hidden="true">LOCAL CONTROL PLANE</span>}
           items={[
-            { id: "org", label: "组织", icon: <Network aria-hidden="true" size={16} />, active: activeModule === "org", onSelect: () => setActiveModule("org") },
-            { id: "groups", label: "群聊", icon: <UsersRound aria-hidden="true" size={16} />, active: activeModule === "groups", onSelect: () => setActiveModule("groups") },
-            { id: "reports", label: "上报", icon: <FileChartColumn aria-hidden="true" size={16} />, active: activeModule === "reports", onSelect: () => { setActiveModule("reports"); void loadReports(); } },
+            { id: "org", label: t("rail.org"), icon: <Network aria-hidden="true" size={16} />, active: activeModule === "org", onSelect: () => setActiveModule("org") },
+            { id: "groups", label: t("rail.groups"), icon: <UsersRound aria-hidden="true" size={16} />, active: activeModule === "groups", onSelect: () => setActiveModule("groups") },
+            { id: "reports", label: t("rail.reports"), icon: <FileChartColumn aria-hidden="true" size={16} />, active: activeModule === "reports", onSelect: () => { setActiveModule("reports"); void loadReports(); } },
             {
               id: "approvals",
-              label: "审批",
+              label: t("rail.approvals"),
               icon: (
                 <Badge
                   count={approvalItems.filter((a) => a.decision.kind === "pending").length}
@@ -892,34 +925,34 @@ export function App() {
             // mem remains an upstream data plane, but its management surface
             // is rendered inside Workbench so operators do not need a second
             // client. DriveModule only consumes the bounded bridge.
-            { id: "drive", label: "网盘", icon: <HardDrive aria-hidden="true" size={16} />, active: activeModule === "drive", onSelect: () => setActiveModule("drive") },
-            { id: "docs", label: "文档", icon: <FolderTree aria-hidden="true" size={16} />, active: activeModule === "docs", onSelect: () => setActiveModule("docs") },
+            { id: "drive", label: t("rail.drive"), icon: <HardDrive aria-hidden="true" size={16} />, active: activeModule === "drive", onSelect: () => setActiveModule("drive") },
+            { id: "docs", label: t("rail.docs"), icon: <FolderTree aria-hidden="true" size={16} />, active: activeModule === "docs", onSelect: () => setActiveModule("docs") },
           ]}
         />
       }
       sidebar={
         <Sidebar
-          label="组织目录树"
+          label={t("tree.dir")}
           header={
             <>
               <div className="owb-side-head">
-                <span className="owb-side-head__label">组织目录树</span>
+                <span className="owb-side-head__label">{t("tree.dir")}</span>
                 {workspaceInfo?.open === true ? (
                   <>
-                    <AntButton size="small" disabled={orgBusy} onClick={() => void undoLastAdjustment()} title="撤销最近一次拖拽调整（⌘Z）">撤销</AntButton>
+                    <AntButton size="small" disabled={orgBusy} onClick={() => void undoLastAdjustment()} title={t("tree.undoTitle")}>{t("tree.undo")}</AntButton>
                     {/* ＋ 走装饰性图标而不是文案前缀，可及名保持「创建员工」。 */}
-                    <AntButton size="small" type="primary" disabled={orgBusy} icon={<Plus aria-hidden="true" size={12} />} onClick={() => setTreeHireParent(selectedId ?? snapshot?.owner ?? null)}>创建员工</AntButton>
+                    <AntButton size="small" type="primary" disabled={orgBusy} icon={<Plus aria-hidden="true" size={12} />} onClick={() => setTreeHireParent(selectedId ?? snapshot?.owner ?? null)}>{t("tree.create")}</AntButton>
                   </>
                 ) : null}
               </div>
               {/* 工作区条（设计稿 .workspace-strip）：名称 + open 状态 + 岗位数 */}
               {workspaceInfo?.open === true ? (
                 <div className="owb-workspace-strip">
-                  <span className="owb-workspace-strip__name">{workspaceInfo.business ?? "工作区"}</span>
+                  <span className="owb-workspace-strip__name">{workspaceInfo.business ?? t("tree.workspaceFallback")}</span>
                   <span className="owb-workspace-strip__meta">
                     <span className="owb-workspace-strip__open">●</span>
                     open
-                    {snapshot ? ` · ${snapshot.positionCount} 岗位` : null}
+                    {snapshot ? ` · ${t("tree.positions", { count: snapshot.positionCount })}` : null}
                   </span>
                 </div>
               ) : null}
@@ -928,7 +961,7 @@ export function App() {
           footer={
             workspaceInfo?.open === true ? <BackupTray backups={backups} busy={orgBusy} onRestore={restorePosition} /> : (
               <AntButton type="primary" block onClick={() => void openWorkspace()}>
-                打开工作区…
+                {t("tree.openCta")}
               </AntButton>
             )
           }
@@ -965,10 +998,10 @@ export function App() {
                 />
               </div>
             ) : (
-              <p className="owb-muted">组织数据不可用</p>
+              <p className="owb-muted">{t("tree.unavailable")}</p>
             )
           ) : (
-            <p className="owb-muted">尚未打开工作区</p>
+            <p className="owb-muted">{t("tree.notOpened")}</p>
           )}
           {workspaceInfo?.open === true ? (
             <HireDrawer
@@ -998,7 +1031,7 @@ export function App() {
                   className={engineOk ? "owb-led" : "owb-led owb-led--off"}
                   aria-hidden="true"
                 />
-                <span className="owb-src__text">{engineOk ? "引擎可用" : "引擎离线"}</span>
+                <span className="owb-src__text">{engineOk ? t("misc.engineAvailable") : t("misc.engineOffline")}</span>
               </span>
             </div>
           }
@@ -1007,10 +1040,10 @@ export function App() {
     >
       <div className="owb-main">
         {sseState === "connecting" ? (
-          <Alert type="info" showIcon role="status" title="事件流重连中…" />
+          <Alert type="info" showIcon role="status" title={t("misc.sseReconnecting")} />
         ) : null}
         {health && !engineOk ? (
-          <Alert type="warning" showIcon role="status" title={health.engine?.nextStep ?? "引擎不可用"} />
+          <Alert type="warning" showIcon role="status" title={health.engine?.nextStep ?? t("misc.engineUnavailable")} />
         ) : null}
         {turnError ? (
           <Alert type="warning" showIcon role="alert" title={turnError} />
@@ -1160,8 +1193,9 @@ function apiErrorMessage(body: unknown, fallback: string): string {
 }
 
 function TreeSkeleton() {
+  const t = useT();
   return (
-    <div className="owb-tree-skeleton" aria-label="组织树加载中">
+    <div className="owb-tree-skeleton" aria-label={t("tree.loading")}>
       {[0, 1, 2, 3].map((index) => (
         <Skeleton key={index} style={{ height: 22, width: `${100 - index * 18}%` }} />
       ))}
@@ -1215,13 +1249,14 @@ function normalizePositionForDisplay(position: PositionCardData): PositionCardDa
 }
 
 function WindowControls() {
+  const t = useT();
   return (
     <span className="owb-wintitle__controls">
       <button
         type="button"
         className="owb-wctl owb-wctl--close"
-        aria-label="关闭窗口"
-        title="关闭"
+        aria-label={t("win.close")}
+        title={t("win.closeTitle")}
         onClick={() => void window.owb.windowClose?.()}
       >
         <svg viewBox="0 0 10 10" aria-hidden="true">
@@ -1231,8 +1266,8 @@ function WindowControls() {
       <button
         type="button"
         className="owb-wctl owb-wctl--min"
-        aria-label="最小化窗口"
-        title="最小化"
+        aria-label={t("win.minimize")}
+        title={t("win.minimizeTitle")}
         onClick={() => void window.owb.windowMinimize?.()}
       >
         <svg viewBox="0 0 10 10" aria-hidden="true">
@@ -1243,8 +1278,8 @@ function WindowControls() {
       <button
         type="button"
         className="owb-wctl owb-wctl--max"
-        aria-label="最大化或还原窗口"
-        title="最大化 / 还原"
+        aria-label={t("win.maximize")}
+        title={t("win.maximizeTitle")}
         onClick={() => void window.owb.windowToggleMaximize?.()}
       >
         {/* #248 小 UI 单②：fullscreen 为绿底斜杠 ⃠ glyph。 */}
@@ -1285,6 +1320,7 @@ const ANTD_SEED = {
  * the track dim and labels it 声明期 — a position with no turn facts never
  * renders a fabricated percentage. */
 function MiniBudget({ positionId, ratio }: { positionId: string; ratio: number | null }) {
+  const t = useT();
   const declared = ratio === null;
   const pct = declared ? 100 : Math.min(Math.max(Math.round(ratio * 100), 0), 100);
   const over = !declared && ratio > 1;
@@ -1294,7 +1330,7 @@ function MiniBudget({ positionId, ratio }: { positionId: string; ratio: number |
       <span
         className="owb-mini-budget__track"
         role="meter"
-        aria-label={declared ? `${positionId} 预算声明` : `${positionId} 单任务预算消耗`}
+        aria-label={declared ? t("pos.miniBudgetDeclared", { id: positionId }) : t("pos.miniBudgetConsumed", { id: positionId })}
         aria-valuemin={0}
         aria-valuemax={100}
         aria-valuenow={declared ? undefined : Math.round(ratio * 100)}
@@ -1308,7 +1344,7 @@ function MiniBudget({ positionId, ratio }: { positionId: string; ratio: number |
         />
       </span>
       <span className="owb-mini-budget__label">
-        {declared ? "声明期" : `${Math.round(ratio * 100)}%`}
+        {declared ? t("rep.declaredPhase") : `${Math.round(ratio * 100)}%`}
       </span>
     </span>
   );
@@ -1321,12 +1357,13 @@ function Breadcrumbs({
   workspace: WorkspaceInfoResponse | null;
   selected: { id: string } | null;
 }) {
+  const t = useT();
   if (workspace?.open !== true) {
-    return <span className="owb-breadcrumb owb-muted">未打开工作区</span>;
+    return <span className="owb-breadcrumb owb-muted">{t("misc.workspaceClosedBc")}</span>;
   }
   // 设计稿：business / positions / <id>，末段是 primary 药丸。岗位 id（而不是
   // 展示名）与树标签、证据里的标识保持一致。
-  const parts: string[] = [workspace.business ?? "工作区"];
+  const parts: string[] = [workspace.business ?? t("tree.workspaceFallback")];
   if (selected) parts.push("positions", selected.id);
   // 设计稿的面包屑用独立的 "/" 分隔元素（首段展示字体、末段 primary 药丸）。
   return (

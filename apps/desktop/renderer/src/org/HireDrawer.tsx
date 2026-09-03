@@ -11,6 +11,7 @@ import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "r
 import { Button as AntButton, Drawer, Input, Select, Steps, message } from "antd";
 import { CheckCircle2, LoaderCircle, XCircle } from "lucide-react";
 import { Input as OwbInput } from "@fullstack-ai-infra/ui";
+import { useT } from "@org-workbench/ui";
 import {
   createHireDraft,
   initialHireFlow,
@@ -34,24 +35,21 @@ const { TextArea } = Input;
 /** DS-33-001 §2: 60s without any event or response → S4 failure, never wait forever. */
 const HIRE_STALL_TIMEOUT_MS = 60_000;
 
-const PHASE_COPY: Record<string, string> = {
-  validate: "正在校验 hire-request.v1alpha1 契约…",
-  stage: "正在接入组织…",
-  apply: "正在由引擎落树…",
+/** #146：S2 过程态文案仍由 hire.progress 事件驱动，词面走目录。 */
+const PHASE_COPY_KEYS: Record<string, string> = {
+  validate: "hire.phaseValidate",
+  stage: "hire.phaseStage",
+  apply: "hire.phaseApply",
 };
 
 /** DS-33-001 §4 失败人话文案：错误码原样展示（可复制），另给可读解释。 */
-const FAILURE_COPY: Record<string, string> = {
-  hire_position_exists: "该岗位 ID 已存在，换一个 ID 或修改后重试。",
-  hire_timeout: "60 秒内未收到任何进展事件，已按超时失败；可重试。",
-  control_plane_unreachable: "控制面当前不可达，未产生任何效果；可重试。",
-  engine_unavailable: "digital-employee CLI 不可用，检查安装与路径配置后可重试。",
-  engine_capability_missing: "当前 CLI 构建缺少 hire 契约面（需 #194/#198），升级后重试。",
+const FAILURE_COPY_KEYS: Record<string, string> = {
+  hire_position_exists: "hire.errExists",
+  hire_timeout: "hire.errTimeout",
+  control_plane_unreachable: "hire.errOffline",
+  engine_unavailable: "hire.errCli",
+  engine_capability_missing: "hire.errCapability",
 };
-
-function failureCopy(code: string): string {
-  return FAILURE_COPY[code] ?? "创建被拒绝；hire 契约面未产生任何效果，已填内容保留。";
-}
 
 interface HireDrawerProps {
   open: boolean;
@@ -63,6 +61,7 @@ interface HireDrawerProps {
 }
 
 export function HireDrawer({ open, positions, presetReportTo, onClose, onHired }: HireDrawerProps) {
+  const t = useT();
   const [flow, dispatch] = useReducer(reduceHireFlow, undefined, () => initialHireFlow());
   const [name, setName] = useState("");
   const [positionId, setPositionId] = useState("");
@@ -73,7 +72,7 @@ export function HireDrawer({ open, positions, presetReportTo, onClose, onHired }
   const [taskIterations, setTaskIterations] = useState("");
   const [dayTokens, setDayTokens] = useState("");
   const [dayIterations, setDayIterations] = useState("");
-  const [phaseCopy, setPhaseCopy] = useState("正在提交…");
+  const [phaseCopy, setPhaseCopy] = useState(t("hire.phaseSubmit"));
   const [messageApi, contextHolder] = message.useMessage();
   const stallTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const unsubscribe = useRef<(() => void) | null>(null);
@@ -105,7 +104,7 @@ export function HireDrawer({ open, positions, presetReportTo, onClose, onHired }
         const envelope = event as { type?: string; payload?: { positionId?: string; phase?: string } };
         if (envelope.type !== "hire.progress" || envelope.payload?.positionId !== targetId) return;
         const phase = envelope.payload.phase ?? "";
-        setPhaseCopy((previous) => PHASE_COPY[phase] ?? previous);
+        setPhaseCopy((previous) => PHASE_COPY_KEYS[phase] !== undefined ? t(PHASE_COPY_KEYS[phase]) : previous);
         if (stallTimer.current !== null) {
           clearTimeout(stallTimer.current);
           stallTimer.current = setTimeout(() => {
@@ -114,7 +113,7 @@ export function HireDrawer({ open, positions, presetReportTo, onClose, onHired }
         }
       });
     },
-    [],
+    [t],
   );
 
   const idValid = isPositionId(positionId);
@@ -149,14 +148,14 @@ export function HireDrawer({ open, positions, presetReportTo, onClose, onHired }
     const draft = buildDraft();
     dispatch({ type: "edit", draft });
     dispatch({ type: "submit" });
-    setPhaseCopy("正在提交…");
+    setPhaseCopy(t("hire.phaseSubmit"));
     armStallTimer(draft.id);
     try {
       const response = await window.owb.hire(toHirePositionRequest(draft));
       clearTimers();
       if (response.status === 200 && response.body.status === "hired") {
         dispatch({ type: "succeed", positionId: draft.id });
-        messageApi.success(`${draft.name} 已加入团队`);
+        messageApi.success(t("hire.joined", { name: draft.name }));
         onHired(draft.id, draft.name);
         onClose();
         dispatch({ type: "reset", draft: createHireDraft({ reportTo: presetReportTo }) });
@@ -175,7 +174,7 @@ export function HireDrawer({ open, positions, presetReportTo, onClose, onHired }
       clearTimers();
       dispatch({ type: "fail", code: "control_plane_unreachable", retryable: true });
     }
-  }, [armStallTimer, buildDraft, clearTimers, messageApi, onClose, onHired, presetReportTo]);
+  }, [armStallTimer, buildDraft, clearTimers, messageApi, onClose, onHired, presetReportTo, t]);
 
   const retry = useCallback(async () => {
     dispatch({ type: "retry" });
@@ -183,14 +182,14 @@ export function HireDrawer({ open, positions, presetReportTo, onClose, onHired }
     const draft = flow.phase === "failed" ? flow.draft : buildDraft();
     dispatch({ type: "edit", draft });
     dispatch({ type: "submit" });
-    setPhaseCopy("正在提交…");
+    setPhaseCopy(t("hire.phaseSubmit"));
     armStallTimer(draft.id);
     try {
       const response = await window.owb.hire(toHirePositionRequest(draft));
       clearTimers();
       if (response.status === 200 && response.body.status === "hired") {
         dispatch({ type: "succeed", positionId: draft.id });
-        messageApi.success(`${draft.name} 已加入团队`);
+        messageApi.success(t("hire.joined", { name: draft.name }));
         onHired(draft.id, draft.name);
         onClose();
         return;
@@ -201,7 +200,7 @@ export function HireDrawer({ open, positions, presetReportTo, onClose, onHired }
       clearTimers();
       dispatch({ type: "fail", code: "control_plane_unreachable", retryable: true });
     }
-  }, [armStallTimer, buildDraft, clearTimers, flow, messageApi, onClose, onHired]);
+  }, [armStallTimer, buildDraft, clearTimers, flow, messageApi, onClose, onHired, t]);
 
   const stepCurrent = useMemo(() => {
     if (flow.phase === "draft") return 0;
@@ -212,7 +211,7 @@ export function HireDrawer({ open, positions, presetReportTo, onClose, onHired }
 
   return (
     <Drawer
-      title="创建员工"
+      title={t("tree.create")}
       width={480}
       open={open}
       onClose={() => {
@@ -226,46 +225,46 @@ export function HireDrawer({ open, positions, presetReportTo, onClose, onHired }
       {(flow.phase === "draft") && (
         <div className="owb-hire-drawer">
           <div className="owb-form-grid">
-            <label>姓名*</label>
-            <OwbInput value={name} maxLength={24} onChange={(e) => setName(e.target.value)} placeholder="员工姓名（≤24 字）" />
-            <label>岗位 ID*</label>
-            <OwbInput value={positionId} onChange={(e) => setPositionId(e.target.value)} placeholder="小写字母、数字与连字符，≤64 位" />
-            {!idValid && positionId !== "" ? <p className="owb-hire-drawer__hint owb-hire-drawer__hint--error">岗位 ID 仅允许小写字母、数字与连字符</p> : null}
-            <label>职责描述*</label>
-            <TextArea value={description} maxLength={500} rows={3} onChange={(e) => setDescription(e.target.value)} placeholder="≤500 字" />
-            <label>上级</label>
+            <label>{t("hire.name")}</label>
+            <OwbInput value={name} maxLength={24} onChange={(e) => setName(e.target.value)} placeholder={t("hire.namePh")} />
+            <label>{t("hire.id")}</label>
+            <OwbInput value={positionId} onChange={(e) => setPositionId(e.target.value)} placeholder={t("hire.idPh")} />
+            {!idValid && positionId !== "" ? <p className="owb-hire-drawer__hint owb-hire-drawer__hint--error">{t("hire.idInvalid")}</p> : null}
+            <label>{t("hire.desc")}</label>
+            <TextArea value={description} maxLength={500} rows={3} onChange={(e) => setDescription(e.target.value)} placeholder={t("hire.descPh")} />
+            <label>{t("hire.reportTo")}</label>
             <Select
               value={reportTo ?? ""}
               onChange={(value: string) => setReportTo(value === "" ? null : value)}
-              options={[{ value: "", label: "企业负责人（根）" }, ...positions.map((p) => ({ value: p.id, label: `${p.name}（${p.id}）` }))]}
+              options={[{ value: "", label: t("hire.ownerRoot") }, ...positions.map((p) => ({ value: p.id, label: t("hire.reportOption", { name: p.name, id: p.id }) }))]}
             />
-            <label>运行模式</label>
-            <Select value={mode} onChange={(value: HireDraft["mode"]) => setMode(value)} options={[{ value: "read_only", label: "只读（read_only）" }, { value: "approval_required", label: "需审批（approval_required）" }]} />
-            <label>每任务 token 上限*</label>
-            <OwbInput value={taskTokens} inputMode="numeric" onChange={(e) => setTaskTokens(e.target.value)} placeholder="正整数" />
-            <label>每任务迭代上限</label>
-            <OwbInput value={taskIterations} inputMode="numeric" onChange={(e) => setTaskIterations(e.target.value)} placeholder="选填" />
-            <label>每日 token 上限*</label>
-            <OwbInput value={dayTokens} inputMode="numeric" onChange={(e) => setDayTokens(e.target.value)} placeholder="正整数" />
-            <label>每日迭代上限</label>
-            <OwbInput value={dayIterations} inputMode="numeric" onChange={(e) => setDayIterations(e.target.value)} placeholder="选填" />
+            <label>{t("hire.mode")}</label>
+            <Select value={mode} onChange={(value: HireDraft["mode"]) => setMode(value)} options={[{ value: "read_only", label: t("hire.modeReadOnly") }, { value: "approval_required", label: t("hire.modeApproval") }]} />
+            <label>{t("hire.taskTokens")}</label>
+            <OwbInput value={taskTokens} inputMode="numeric" onChange={(e) => setTaskTokens(e.target.value)} placeholder={t("hire.positiveInt")} />
+            <label>{t("hire.taskIters")}</label>
+            <OwbInput value={taskIterations} inputMode="numeric" onChange={(e) => setTaskIterations(e.target.value)} placeholder={t("hire.optional")} />
+            <label>{t("hire.dayTokens")}</label>
+            <OwbInput value={dayTokens} inputMode="numeric" onChange={(e) => setDayTokens(e.target.value)} placeholder={t("hire.positiveInt")} />
+            <label>{t("hire.dayIters")}</label>
+            <OwbInput value={dayIterations} inputMode="numeric" onChange={(e) => setDayIterations(e.target.value)} placeholder={t("hire.optional")} />
           </div>
-          <p className="owb-hire-drawer__hint">创建将由系统执行，可能需要几秒到一分钟。</p>
+          <p className="owb-hire-drawer__hint">{t("hire.hint")}</p>
           <footer className="owb-modal__footer">
-            <AntButton onClick={onClose}>取消</AntButton>
-            <AntButton type="primary" disabled={!formValid} onClick={() => void submit()}>开始创建</AntButton>
+            <AntButton onClick={onClose}>{t("dlg.cancel")}</AntButton>
+            <AntButton type="primary" disabled={!formValid} onClick={() => void submit()}>{t("hire.start")}</AntButton>
           </footer>
         </div>
       )}
       {(flow.phase === "submitting" || flow.phase === "approval") && (
         <div className="owb-hire-drawer">
-          <Steps current={stepCurrent} items={[{ title: "提交" }, { title: "系统执行" }, { title: "就绪" }]} />
+          <Steps current={stepCurrent} items={[{ title: t("hire.stepSubmit") }, { title: t("hire.stepExec") }, { title: t("hire.stepReady") }]} />
           <div className="owb-hire-drawer__running">
             <LoaderCircle aria-hidden="true" className="owb-hire-drawer__spin" size={18} />
             <span aria-live="polite">{phaseCopy}</span>
           </div>
           <footer className="owb-modal__footer">
-            <AntButton disabled title="hire 静态面无中止语义">执行中不可取消</AntButton>
+            <AntButton disabled title={t("hire.noCancelTitle")}>{t("hire.noCancel")}</AntButton>
           </footer>
         </div>
       )}
@@ -274,11 +273,11 @@ export function HireDrawer({ open, positions, presetReportTo, onClose, onHired }
           <div className="owb-hire-drawer__failed">
             <XCircle aria-hidden="true" size={22} />
             <p className="owb-hire-drawer__failed-code">{flow.code}</p>
-            <p>{failureCopy(flow.code)}</p>
+            <p>{t(FAILURE_COPY_KEYS[flow.code] ?? "hire.errDenied")}</p>
           </div>
           <footer className="owb-modal__footer">
-            <AntButton onClick={() => dispatch({ type: "retry" })}>修改后重试</AntButton>
-            <AntButton type="primary" disabled={!flow.retryable} onClick={() => void retry()}>重试</AntButton>
+            <AntButton onClick={() => dispatch({ type: "retry" })}>{t("hire.editRetry")}</AntButton>
+            <AntButton type="primary" disabled={!flow.retryable} onClick={() => void retry()}>{t("hire.retry")}</AntButton>
           </footer>
         </div>
       )}
@@ -286,7 +285,7 @@ export function HireDrawer({ open, positions, presetReportTo, onClose, onHired }
         <div className="owb-hire-drawer">
           <div className="owb-hire-drawer__done">
             <CheckCircle2 aria-hidden="true" size={22} />
-            <p>{flow.draft.name} 已加入团队</p>
+            <p>{t("hire.joined", { name: flow.draft.name })}</p>
           </div>
         </div>
       )}

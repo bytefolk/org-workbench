@@ -18,6 +18,7 @@ import {
   Select,
   Tag,
 } from "antd";
+import { useOwbLocale, useT } from "@org-workbench/ui";
 import type { TurnEngine, TurnTerminalReason } from "@org-workbench/shared";
 
 /** Event classes rendered on the timeline. `model.delta` is intentionally excluded. */
@@ -189,20 +190,23 @@ export function groupEventsByRun(events: AuditTimelineEvent[]): Array<{ runId: s
   return order.map((runId) => ({ runId, events: map.get(runId) ?? [] }));
 }
 
-/** Terminal reason → human-readable Chinese label (design § 6.1). */
-function terminalReasonLabel(reason: string | undefined): string {
-  switch (reason) {
-    case "goal_met": return "可信终态";
-    case "turn_budget_exceeded": return "回合预算超限";
-    case "position_budget_exceeded": return "岗位预算超限";
-    case "iteration_cap": return "迭代上限";
-    case "doom_loop": return "循环";
-    case "deadline_exceeded": return "超时";
-    case "cancelled": return "已取消";
-    case "engine_internal_error": return "引擎内部错误";
-    case "invalid_output_exhausted": return "输出无效已耗尽";
-    default: return reason ?? "";
-  }
+/** Terminal reason → catalog key (design § 6.1); words resolve through t(). */
+const TERMINAL_REASON_KEYS: Record<string, string> = {
+  goal_met: "turn.trusted",
+  turn_budget_exceeded: "rep.reasonTurnBudget",
+  position_budget_exceeded: "rep.reasonPositionBudget",
+  iteration_cap: "rep.reasonIterationCap",
+  doom_loop: "rep.reasonDoomLoop",
+  deadline_exceeded: "rep.reasonDeadline",
+  cancelled: "rep.reasonCancelled",
+  engine_internal_error: "rep.reasonEngineError",
+  invalid_output_exhausted: "rep.reasonInvalidOutput",
+};
+
+function terminalReasonLabel(reason: string | undefined, t: (key: string, vars?: Record<string, string | number>) => string): string {
+  if (reason === undefined) return "";
+  const key = TERMINAL_REASON_KEYS[reason];
+  return key !== undefined ? t(key) : reason;
 }
 
 /** Deep-link route for the cost dashboard. Uses hash-router pattern; caller may override. */
@@ -227,6 +231,7 @@ export function AuditTimeline({
   onCursorChange,
   onOpenCostDashboard,
 }: AuditTimelineProps) {
+  const t = useT();
   // Filter out `model.delta` unconditionally (streaming text is not evidence).
   const evidenceOnly = useMemo(
     () => events.filter((event) => (event.type as string) !== "model.delta"),
@@ -259,40 +264,40 @@ export function AuditTimeline({
   }, [positions, evidenceOnly]);
 
   const classOptions: Array<{ value: AuditTimelineEventClass; label: string }> = [
-    { value: "turn", label: "回合" },
-    { value: "approval", label: "审批" },
-    { value: "escalation", label: "升级" },
-    { value: "org", label: "组织变更" },
+    { value: "turn", label: t("rep.classTurn") },
+    { value: "approval", label: t("rep.classApproval") },
+    { value: "escalation", label: t("rep.classEscalation") },
+    { value: "org", label: t("rep.classOrg") },
   ];
 
   const pageSize = page?.pageSize ?? 50;
   const totalCount = page?.total ?? visible.length;
 
   return (
-    <section className="owb-timeline" aria-label="Turn / 审计时间线">
-      <div className="owb-timeline__toolbar" role="toolbar" aria-label="时间线筛选">
+    <section className="owb-timeline" aria-label={t("rep.timelineAria")}>
+      <div className="owb-timeline__toolbar" role="toolbar" aria-label={t("rep.timelineFilterAria")}>
         <Select
           size="small"
           mode="multiple"
           allowClear
-          placeholder="岗位（全部）"
+          placeholder={t("rep.filterPositionPh")}
           className="owb-timeline__filter owb-timeline__filter--position"
           value={activeFilters.positionIds ?? []}
           options={positionOptions}
           onChange={(value: string[]) => updateFilters({ ...activeFilters, positionIds: value })}
-          aria-label="按岗位过滤"
+          aria-label={t("rep.filterPositionAria")}
           data-testid="timeline-filter-position"
         />
         <Select
           size="small"
           mode="multiple"
           allowClear
-          placeholder="事件类（全部）"
+          placeholder={t("rep.filterClassPh")}
           className="owb-timeline__filter owb-timeline__filter--class"
           value={activeFilters.classes ?? []}
           options={classOptions}
           onChange={(value: AuditTimelineEventClass[]) => updateFilters({ ...activeFilters, classes: value })}
-          aria-label="按事件类过滤"
+          aria-label={t("rep.filterClassAria")}
           data-testid="timeline-filter-class"
         />
         <DatePicker.RangePicker
@@ -304,10 +309,10 @@ export function AuditTimeline({
             const [from, to] = dateStrings;
             updateFilters({ ...activeFilters, from: from || undefined, to: to || undefined });
           }}
-          aria-label="按时间范围过滤"
+          aria-label={t("rep.filterRangeAria")}
           data-testid="timeline-filter-range"
         />
-        <span className="owb-timeline__count" aria-live="polite">共 {visible.length} 条</span>
+        <span className="owb-timeline__count" aria-live="polite">{t("rep.totalCount", { count: visible.length })}</span>
       </div>
 
       {loading ? (
@@ -322,8 +327,8 @@ export function AuditTimeline({
           data-testid="timeline-empty"
           description={
             evidenceOnly.length === 0
-              ? "尚无可追溯事件——发出第一个回合后，这里会成为组织的完整记忆"
-              : "该组合下没有事件"
+              ? t("rep.timelineEmpty")
+              : t("rep.timelineEmptyFiltered")
           }
         />
       ) : (
@@ -378,7 +383,7 @@ export function AuditTimeline({
             onClick={() => onCursorChange?.(page.cursor)}
             data-testid="timeline-load-more"
           >
-            加载更多
+            {t("rep.loadMore")}
           </Button>
         </div>
       ) : null}
@@ -416,6 +421,8 @@ function TimelineGroupHead({
   events: AuditTimelineEvent[];
   onOpenCost?: (runId: string, positionId?: string) => void;
 }) {
+  const t = useT();
+  const localeTag = useLocaleTag();
   const first = events[0];
   const terminal = events.find(
     (e) => e.type === "run.failed" || e.type === "run.completed" || e.type === "turn.indeterminate",
@@ -441,26 +448,26 @@ function TimelineGroupHead({
         data-testid={`timeline-dot-${runId}`}
         aria-hidden="true"
       />
-      <span className="owb-timeline__group-time">{formatTime(first?.at)}</span>
+      <span className="owb-timeline__group-time">{formatTime(first?.at, localeTag)}</span>
       <strong className="owb-timeline__group-who">
-        {positionId ?? "组织变更"}
+        {positionId ?? t("rep.classOrg")}
         {engine ? <em className="owb-timeline__group-eng"> · {engine}</em> : null}
       </strong>
       <span className="owb-timeline__group-status" data-status={status}>
         {status === "run.failed"
-          ? `失败 · ${terminalReasonLabel(terminal?.terminalReason)}`
+          ? t("rep.statusFailed", { reason: terminalReasonLabel(terminal?.terminalReason, t) })
           : status === "turn.indeterminate"
-            ? "不确定"
+            ? t("turn.untrusted")
             : status === "run.completed"
-              ? "可信终态"
+              ? t("turn.trusted")
               : status === "org.audit"
-                ? "组织变更"
-                : "运行中"}
+                ? t("rep.classOrg")
+                : t("turn.statusRunning")}
       </span>
       {budgetRelated ? (
         <>
           <Tag color="red" className="owb-timeline__budget-tag" data-testid={`timeline-budget-tag-${runId}`}>
-            预算相关
+            {t("rep.budgetRelated")}
           </Tag>
           <a
             className="owb-timeline__cost-link"
@@ -473,7 +480,7 @@ function TimelineGroupHead({
               }
             }}
           >
-            → 成本看板
+            {t("rep.costLink")}
           </a>
         </>
       ) : null}
@@ -489,6 +496,8 @@ function TimelineEventRow({
   event: AuditTimelineEvent;
   onOpenCost?: (runId: string, positionId?: string) => void;
 }) {
+  const t = useT();
+  const localeTag = useLocaleTag();
   const isBudget = isBudgetRelatedEvent(event);
   const isRed = isRedDotEvent(event);
   const isIndeterminate = event.type === "turn.indeterminate";
@@ -510,7 +519,7 @@ function TimelineEventRow({
           data-indeterminate={isIndeterminate ? "true" : "false"}
           aria-hidden="true"
         />
-        <time className="owb-tc-head__time">{formatTime(event.at)}</time>
+        <time className="owb-tc-head__time">{formatTime(event.at, localeTag)}</time>
         <span className="owb-timeline__event-type">{typeLabel(event.type)}</span>
         {event.errorCode ? (
           <Tag color="red" className="owb-timeline__errcode">{event.errorCode}</Tag>
@@ -518,7 +527,7 @@ function TimelineEventRow({
         {isBudget ? (
           <>
             <Tag color="red" className="owb-timeline__budget-tag" data-testid={`timeline-event-budget-${event.id}`}>
-              预算相关
+              {t("rep.budgetRelated")}
             </Tag>
             <a
               className="owb-timeline__cost-link"
@@ -531,7 +540,7 @@ function TimelineEventRow({
                 }
               }}
             >
-              → 成本看板
+              {t("rep.costLink")}
             </a>
           </>
         ) : null}
@@ -578,8 +587,13 @@ function typeLabel(type: AuditTimelineEventType): string {
   }
 }
 
-function formatTime(value: string | undefined): string {
+function formatTime(value: string | undefined, localeTag = "zh-CN"): string {
   if (!value) return "";
   const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? value : date.toLocaleString("zh-CN", { hour12: false });
+  return Number.isNaN(date.getTime()) ? value : date.toLocaleString(localeTag, { hour12: false });
+}
+
+/** #146：时间格式跟随应用 locale（时间戳本身不变）。 */
+function useLocaleTag(): string {
+  return useOwbLocale() === "en" ? "en-US" : "zh-CN";
 }
