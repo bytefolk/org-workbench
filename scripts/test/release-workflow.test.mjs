@@ -99,15 +99,21 @@ test("an unsigned build cannot reach a published release", () => {
   assert.match(source, /Refusing to publish a non-draft release without signing credentials/);
   assert.match(source, /if: steps\.signing\.outputs\.signed != 'true'/);
 
-  // Draft is the default, not the exception. A tag push previously published
-  // outright, which would have put an unsigned build behind /releases/latest.
-  assert.match(source, /draft="--draft"/);
-  const publishStep = source.slice(source.indexOf("- name: Publish"));
+  // Draft is unconditional at creation, not a flag that might be cleared. #187
+  // moved publication into its own final step, so the release exists as a draft
+  // before anything decides whether it may leave that state.
+  const createStep = source.slice(source.indexOf("- name: Create the release as a draft"));
+  assert.match(createStep.slice(0, createStep.indexOf("- name: Read back")), /^\s+--draft \\$/m);
   assert.match(
-    publishStep,
+    createStep,
     /if \[ "\$\{\{ needs\.preflight\.outputs\.signed \}\}" = "true" \]/,
-    "clearing the draft flag must be conditional on signing",
+    "leaving draft must be conditional on signing",
   );
+
+  // And the step that actually publishes runs only on that decision.
+  assert.match(source, /- name: Publish the release\n\s+if: steps\.create\.outputs\.publish == 'true'/);
+  // No other step may clear the draft.
+  assert.equal([...source.matchAll(/--draft=false/g)].length, 1);
 });
 
 test("signing status is derived from credentials, not from a constant", () => {
@@ -185,5 +191,52 @@ test("every build leg validates its asset set before anything is uploaded", () =
   assert.ok(
     source.indexOf("Verify installer asset set") < source.indexOf("Upload release artifacts"),
     "asset-set validation must run before upload",
+  );
+});
+
+// #187 / RELEASING.md Phase 4. Each of these was verified by hand for v0.1.0
+// and gated by nothing; a hand proof does not run on the next release.
+test("#187 a lightweight tag is refused before anything is built", () => {
+  const source = workflow();
+  const step = source.slice(source.indexOf("- name: Refuse a lightweight tag"));
+  assert.match(step, /git cat-file -t "refs\/tags\/\$\{GITHUB_REF_NAME\}"/);
+  assert.match(step, /!= "tag"/);
+  assert.match(step, /must be annotated/);
+  // Refusals belong in preflight: nothing may be built from a tag that cannot
+  // be the release tag.
+  const preflight = source.slice(source.indexOf("  preflight:"), source.indexOf("  build:"));
+  assert.match(preflight, /- name: Refuse a lightweight tag/);
+});
+
+test("#187 a tag that is not reachable from main is refused before anything is built", () => {
+  const source = workflow();
+  const step = source.slice(source.indexOf("- name: Refuse a tag that is not reachable from main"));
+  assert.match(step, /git merge-base --is-ancestor/);
+  assert.match(step, /refs\/remotes\/origin\/main/);
+  assert.match(step, /\^\{commit\}/);
+  const preflight = source.slice(source.indexOf("  preflight:"), source.indexOf("  build:"));
+  assert.match(preflight, /- name: Refuse a tag that is not reachable from main/);
+  // Both checks need history the default shallow checkout does not fetch.
+  assert.match(preflight, /fetch-depth: 0/);
+});
+
+test("#187 the asset inventory is read back, and publication is the last step", () => {
+  const source = workflow();
+  const readback = source.slice(
+    source.indexOf("- name: Read back the asset inventory"),
+    source.indexOf("- name: Publish the release"),
+  );
+  assert.ok(readback.length > 0, "the readback must sit before the publish step");
+  // Read from the API, not from what the job believes it uploaded.
+  assert.match(readback, /gh api "repos\/\$\{\{ github\.repository \}\}\/releases/);
+  assert.match(readback, /reports no assets/);
+  assert.match(readback, /does not match what was uploaded/);
+  assert.match(readback, /select\(\.size == 0 or \.state != "uploaded" or \.digest == null\)/);
+
+  // Publication last, in the literal ordering of the file.
+  const steps = [...source.matchAll(/^      - name: (.+)$/gm)].map((match) => match[1]);
+  assert.equal(steps[steps.length - 1], "Publish the release");
+  assert.ok(
+    steps.indexOf("Read back the asset inventory") > steps.indexOf("Create the release as a draft"),
   );
 });

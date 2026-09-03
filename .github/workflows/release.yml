@@ -30,6 +30,11 @@ jobs:
     steps:
       - name: Check out org-workbench
         uses: actions/checkout@v6
+        with:
+          # The tag-object and reachability checks below read history and the
+          # annotated tag itself; the default shallow single-ref fetch has
+          # neither.
+          fetch-depth: 0
 
       - name: Read packaged version
         id: version
@@ -48,6 +53,38 @@ jobs:
             echo "::error::tag ${GITHUB_REF_NAME} does not match the packaged version ${expected}"
             exit 1
           fi
+
+      # #187 / RELEASING.md Phase 4: resolve the full tag ref and refuse a
+      # lightweight tag. A lightweight tag is a bare pointer with no tagger,
+      # message or object to peel, so there is nothing immutable to record as
+      # "the release tag" and nothing to prove the tag was made deliberately.
+      - name: Refuse a lightweight tag
+        if: github.event_name == 'push'
+        shell: bash
+        run: |
+          set -euo pipefail
+          object_type="$(git cat-file -t "refs/tags/${GITHUB_REF_NAME}")"
+          if [ "$object_type" != "tag" ]; then
+            echo "::error::${GITHUB_REF_NAME} is a ${object_type}, not an annotated tag; a release tag must be annotated"
+            exit 1
+          fi
+          echo "${GITHUB_REF_NAME} is an annotated tag object $(git rev-parse "refs/tags/${GITHUB_REF_NAME}")"
+
+      # #187 / Phase 4: refuse a non-main tag. A tag can point at any commit,
+      # including one that never reached the protected branch, and building from
+      # it would publish code that passed no review on main.
+      - name: Refuse a tag that is not reachable from main
+        if: github.event_name == 'push'
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch --prune --no-tags origin refs/heads/main:refs/remotes/origin/main
+          release_commit="$(git rev-parse --verify "refs/tags/${GITHUB_REF_NAME}^{commit}")"
+          if ! git merge-base --is-ancestor "${release_commit}" refs/remotes/origin/main; then
+            echo "::error::${GITHUB_REF_NAME} peels to ${release_commit}, which is not reachable from origin/main"
+            exit 1
+          fi
+          echo "${GITHUB_REF_NAME} peels to ${release_commit}, reachable from origin/main"
 
       # A published release is a thing people may already have downloaded and a
       # thing clients may already be updating from. Replacing its assets is not
@@ -206,25 +243,96 @@ jobs:
           done
           ls -la
 
-      - name: Publish
+      # #187 / RELEASING.md Phase 4: upload to a draft first. Publication is a
+      # separate, final step so nothing is reachable at /releases/latest before
+      # its assets have been read back.
+      - name: Create the release as a draft
+        id: create
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          set -euo pipefail
           tag="v${{ needs.preflight.outputs.version }}"
-          # Draft unless signing is configured and a published release was asked
-          # for. A tag push used to publish outright, which would have put an
-          # unsigned build behind /releases/latest and offered it to every client
-          # as an update.
-          draft="--draft"
+          # Whether this release may leave draft at all. Unsigned never does: an
+          # unsigned build behind /releases/latest would be offered to every
+          # client as an update electron-updater cannot verify.
+          publish=false
           if [ "${{ needs.preflight.outputs.signed }}" = "true" ]; then
             if [ "${{ github.event_name }}" = "push" ] || [ "${{ inputs.draft }}" != "true" ]; then
-              draft=""
+              publish=true
             fi
           fi
+          echo "publish=${publish}" >> "$GITHUB_OUTPUT"
+          echo "tag=${tag}" >> "$GITHUB_OUTPUT"
           gh release create "$tag" \
             --repo "${{ github.repository }}" \
             --title "$tag" \
             --notes "Unsigned build, install-only on both platforms. In-app update is refused while a build carries no publisher identity: electron-updater skips signature verification entirely without one, so an update could not be checked before it replaced the app. macOS also needs a Developer ID build for Gatekeeper and Squirrel.Mac (#135); the Windows installer draws a SmartScreen prompt until Authenticode signing lands (#136). Install by downloading from this page." \
-            $draft \
+            --draft \
             incoming/*
+
+      # #187 / Phase 4: read back the exact non-empty asset inventory and the
+      # checksums, from the API rather than from what this job believes it
+      # uploaded. A draft has no tag-named endpoint, so it is found by tag in the
+      # release list.
+      - name: Read back the asset inventory
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          tag="${{ steps.create.outputs.tag }}"
+          expected="$(cd incoming && ls -1 | sort)"
+          release_id="$(gh api "repos/${{ github.repository }}/releases" \
+            --jq "[.[] | select(.tag_name == \"${tag}\")][0].id")"
+          if [ -z "$release_id" ] || [ "$release_id" = "null" ]; then
+            echo "::error::no release found for ${tag} after creating it"
+            exit 1
+          fi
+
+          # GitHub computes an asset digest shortly after upload, so the readback
+          # is retried rather than asserted on the first response.
+          for attempt in $(seq 1 12); do
+            # per_page rather than --paginate: with more than one page gh emits
+            # several concatenated JSON arrays, which jq cannot read as one.
+            assets="$(gh api "repos/${{ github.repository }}/releases/${release_id}/assets?per_page=100")"
+            pending="$(jq -r '[.[] | select(.state != "uploaded" or .digest == null)] | length' <<< "$assets")"
+            [ "$pending" = "0" ] && break
+            echo "waiting for ${pending} asset(s) to finish uploading (attempt ${attempt})"
+            sleep 5
+          done
+
+          actual="$(jq -r '[.[].name] | sort | .[]' <<< "$assets")"
+          if [ -z "$actual" ]; then
+            echo "::error::release ${tag} reports no assets"
+            exit 1
+          fi
+          if ! diff <(printf '%s\n' "$expected") <(printf '%s\n' "$actual"); then
+            echo "::error::the release inventory does not match what was uploaded"
+            exit 1
+          fi
+
+          bad="$(jq -r '[.[] | select(.size == 0 or .state != "uploaded" or .digest == null) | .name] | join(" ")' <<< "$assets")"
+          if [ -n "$bad" ]; then
+            echo "::error::asset(s) empty, unfinished, or without a digest: ${bad}"
+            exit 1
+          fi
+          jq -r '.[] | "\(.name)  \(.size) bytes  \(.digest)"' <<< "$assets"
+
+      # The final step, and only for a signed release. Until #135 and #136 this
+      # is always skipped and the release stays a verified draft.
+      - name: Publish the release
+        if: steps.create.outputs.publish == 'true'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh release edit "${{ steps.create.outputs.tag }}" \
+            --repo "${{ github.repository }}" \
+            --draft=false
+          gh release view "${{ steps.create.outputs.tag }}" \
+            --repo "${{ github.repository }}" \
+            --json isDraft,url \
+            --jq '"published: isDraft=\(.isDraft) \(.url)"'
