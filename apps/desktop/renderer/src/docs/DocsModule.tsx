@@ -237,6 +237,9 @@ export function DocsModule({ workspaceOpen, positions, selectedPositionId }: Doc
               <div className="owb-docs-module__resolve">
                 <Input.TextArea
                   aria-label={t("docs.pasteRefAria")}
+                  name="doc-resolve-ref"
+                  autoComplete="off"
+                  spellCheck={false}
                   placeholder={t("docs.resolvePh")}
                   autoSize={{ minRows: 2, maxRows: 4 }}
                   value={resolveText}
@@ -291,7 +294,10 @@ export function DocsModule({ workspaceOpen, positions, selectedPositionId }: Doc
         <p className="owb-docs-module__create-hint">{t("docs.noEditorHint")}</p>
         <Input
           aria-label={t("docs.fileNameAria")}
-          placeholder="handbook.md"
+          name="doc-create-name"
+          autoComplete="off"
+          spellCheck={false}
+          placeholder={t("docs.createPh")}
           value={createName}
           onChange={(event) => setCreateName(event.target.value)}
           onPressEnter={submitCreate}

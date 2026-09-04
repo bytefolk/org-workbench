@@ -492,7 +492,7 @@ export function GroupsPanel({
               </div>
               <div className="owb-groups__panel-title">
                 <h3>{groupLabel(selectedGroup)}</h3>
-                <span className="owb-groups__panel-ref">
+                <span className="owb-groups__panel-ref" translate="no">
                   conversation {shortRef(selectedGroup.conversationRef)} · {t("grp.memberWord", { count: selectedGroup.members.length })}
                 </span>
               </div>

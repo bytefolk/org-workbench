@@ -953,8 +953,8 @@ function AppInner({
                 <div className="owb-workspace-strip">
                   <span className="owb-workspace-strip__name">{workspaceInfo.business ?? t("tree.workspaceFallback")}</span>
                   <span className="owb-workspace-strip__meta">
-                    <span className="owb-workspace-strip__open">●</span>
-                    open
+                    <span className="owb-workspace-strip__open" aria-hidden="true">●</span>
+                    {t("tree.open")}
                     {snapshot ? ` · ${t("tree.positions", { count: snapshot.positionCount })}` : null}
                   </span>
                 </div>
@@ -1230,15 +1230,15 @@ function findNodeById(nodes: OrgTreeNodeV1[], id: string): OrgTreeNodeV1 | null 
 /** Per-task budget label for the boundary chip (设计稿 `40k/task`). Tokens
  * win over iterations because the engine bills tokens; a declaration with
  * neither cap renders — rather than a fabricated number. */
+const BUDGET_COMPACT = new Intl.NumberFormat("en-US", { notation: "compact", maximumFractionDigits: 1 });
+const BUDGET_PLAIN = new Intl.NumberFormat("en-US");
 function perTaskBudgetLabel(position: PositionCardData | null): string | null {
   const perTask = position?.budget?.perTask;
   if (!perTask) return null;
   if (typeof perTask.tokens === "number") {
-    const k = perTask.tokens / 1000;
-    const compact = k >= 1 ? `${Number.isInteger(k) ? k : k.toFixed(1)}k` : String(perTask.tokens);
-    return `${compact}/task`;
+    return `${BUDGET_COMPACT.format(perTask.tokens)}/task`;
   }
-  if (typeof perTask.iterations === "number") return `${perTask.iterations} iters/task`;
+  if (typeof perTask.iterations === "number") return `${BUDGET_PLAIN.format(perTask.iterations)} iters/task`;
   return null;
 }
 

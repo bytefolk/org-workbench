@@ -1,7 +1,0 @@
-✔ envelope builder keeps v1 byte-exact and pairs v1alpha2 strictly (#63 AC-1) (1.156709ms)
-✔ bare personal turn stays turn-envelope.v1 without a back-link (#63 AC-1) (95.858042ms)
-✔ session turn rides v1alpha2 with conversationRef == sessionId (#63 AC-3) (81.713458ms)
-✔ group spawn rides v1alpha2 with conversationRef == groupRef; legacy groupRef records stay readable (#63 AC-2/AC-5) (142.488291ms)
-ℹ tests 4
-ℹ pass 4
-ℹ fail 0

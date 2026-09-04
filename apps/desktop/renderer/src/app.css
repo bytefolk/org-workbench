@@ -103,6 +103,7 @@
   width: min(480px, calc(100vw - 32px));
   max-height: calc(100vh - 32px);
   overflow: auto;
+  overscroll-behavior: contain;
   border: 1px solid var(--ui-border-strong);
   border-radius: var(--ui-radius-xl, 18px);
   background: var(--ui-surface);
@@ -539,6 +540,11 @@
 @keyframes owb-budget-alert-in {
   from { opacity: 0; transform: translateY(-4px); }
   to   { opacity: 1; transform: translateY(0); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .owb-budget-dash__alert {
+    animation: none;
+  }
 }
 .owb-budget-dash__toolbar {
   display: flex;
@@ -2279,6 +2285,16 @@
   to { transform: rotate(360deg); }
 }
 
+.owb-hire-drawer__spin {
+  animation: owb-docs-spin 900ms linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .owb-hire-drawer__spin {
+    animation: none;
+  }
+}
+
 .owb-docs-panel__list {
   background: var(--ui-surface);
 }
@@ -3664,6 +3680,13 @@
   color: var(--ui-foreground);
 }
 
+.owb-ev--button:focus-visible {
+  outline: 2px solid var(--ui-focus);
+  outline-offset: 2px;
+  border-color: var(--ui-primary);
+  color: var(--ui-foreground);
+}
+
 /* 审批卡：左 3px lavender 边（设计稿 .approval） */
 .owb-turn__approval {
   display: grid;
@@ -4083,6 +4106,17 @@
 .owb-org-chart__zoom-pct:hover {
   background: color-mix(in srgb, var(--ui-surface) 60%, transparent);
   color: var(--ui-foreground);
+}
+
+.owb-org-chart__zoom-pct:focus-visible {
+  outline: 2px solid var(--ui-focus);
+  outline-offset: 2px;
+  color: var(--ui-foreground);
+}
+
+.owb-org-chart__body:focus-visible {
+  outline: 2px solid var(--ui-focus);
+  outline-offset: -2px;
 }
 
 .owb-org-chart.is-collapsed .owb-org-chart__body {
@@ -5056,6 +5090,11 @@
 }
 .owb-turn-panel__settings[open] .owb-turn-panel__settings-summary::before {
   transform: rotate(90deg);
+}
+@media (prefers-reduced-motion: reduce) {
+  .owb-turn-panel__settings-summary::before {
+    transition: none;
+  }
 }
 .owb-turn-panel__settings-body {
   display: grid;

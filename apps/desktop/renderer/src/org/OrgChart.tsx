@@ -216,6 +216,21 @@ export function OrgChart({
     setPanning(false);
   };
 
+  // 拖拽平移的键盘替代（方向键），缩放已有按钮；手势不能是唯一入口。
+  const onPanKeyDown = (event: React.KeyboardEvent<HTMLDivElement>): void => {
+    const STEP = 48;
+    const delta: Record<string, [number, number]> = {
+      ArrowUp: [0, STEP],
+      ArrowDown: [0, -STEP],
+      ArrowLeft: [STEP, 0],
+      ArrowRight: [-STEP, 0],
+    };
+    const d = delta[event.key];
+    if (!d) return;
+    event.preventDefault();
+    setView((v) => ({ ...v, x: v.x + d[0], y: v.y + d[1] }));
+  };
+
   // 缩放对齐 Mac 触控板习惯：捏合（wheel+ctrlKey）以光标为锚点。
   // React 根上的 wheel 是 passive 的，preventDefault 必须走原生监听。
   const ZOOM_MIN = 0.5;
@@ -330,6 +345,8 @@ export function OrgChart({
         className={`owb-org-chart__body${panning ? " is-panning" : ""}`}
         id="owb-org-chart-body"
         ref={bodyRef}
+        tabIndex={0}
+        onKeyDown={onPanKeyDown}
         onPointerDown={onPanPointerDown}
         onPointerMove={onPanPointerMove}
         onPointerUp={onPanEnd}

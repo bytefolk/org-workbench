@@ -26,8 +26,8 @@ export function ReportsCenter({ reports, loading, positionNames, positionColors,
   // escalation tab made a healthy workspace look broken and hid the evidence
   // that explains what this module is for.
   const [tabOverride, setTabOverride] = useState<Tab | null>(null);
-  if (loading) return <section className="owb-reports"><p className="owb-muted">{t("rep.loading")}</p></section>;
-  if (!reports) return <section className="owb-reports"><p className="owb-muted">{t("rep.unavailable")}</p></section>;
+  if (loading) return <section className="owb-reports"><p className="owb-muted" role="status">{t("rep.loading")}</p></section>;
+  if (!reports) return <section className="owb-reports"><p className="owb-muted" role="status">{t("rep.unavailable")}</p></section>;
   const tab = tabOverride ?? firstReportTab(reports, timelineEvents.length);
   return (
     <section className="owb-reports" aria-label={t("rep.center")}>
@@ -36,7 +36,7 @@ export function ReportsCenter({ reports, loading, positionNames, positionColors,
           <h1>{t("rep.center")}</h1>
           <p>{t("rep.lede")}</p>
         </div>
-        <div className="owb-reports__hero-signal" aria-label={t("rep.heroBoundaryAria")}>
+        <div className="owb-reports__hero-signal" role="note" aria-label={t("rep.heroBoundaryAria")}>
           <ShieldCheck aria-hidden="true" size={22} />
           <div><strong>{t("rep.factView")}</strong><small>{t("rep.factViewNote")}</small></div>
         </div>
@@ -49,7 +49,7 @@ export function ReportsCenter({ reports, loading, positionNames, positionColors,
         <TabButton active={tab === "evidence"} onClick={() => setTabOverride("evidence")} label={t("rep.tabEvidence")} count={reports.streams.evidence.length} />
         <TabButton active={tab === "timeline"} onClick={() => setTabOverride("timeline")} label={t("rep.tabTimeline")} count={timelineEvents.length} />
       </nav>
-      <div className="owb-report-stream" role="tabpanel" aria-label={t("rep.streamTabpanelAria", { tab: tabLabel(tab, t) })}>
+      <div className="owb-report-stream" role="region" aria-label={t("rep.streamTabpanelAria", { tab: tabLabel(tab, t) })}>
         {tab === "budgets" ? (
           <BudgetDashboard
             budgets={reports.budgets}
