@@ -392,6 +392,64 @@ test("Qoder binary resolution is explicit-first, shell-free, and Finder-safe on 
   );
   assert.equal(resolveQoderExecutable({ PATH: "/usr/bin:/bin", HOME: path.join(dir, "missing-home") }, "darwin"), null);
 
+  // #200: CN edition discovery + DIGITAL_EMPLOYEE_QODER_COMMAND override.
+  const pathQoderCliCn = path.join(pathBin, "qoderclicn");
+  const commandBin = path.join(dir, "command-qoder");
+  const commandOnlyBin = path.join(dir, "path-bin-only-command");
+  const commandBareEntry = path.join(commandOnlyBin, "qoderclicn");
+  const cnFinderCli = path.join(home, ".qoder-cn", "bin", "qoderclicn", "qoderclicn-1.1.31");
+  await fs.mkdir(commandOnlyBin, { recursive: true });
+  await fs.mkdir(path.dirname(cnFinderCli), { recursive: true });
+  for (const file of [pathQoderCliCn, commandBin, commandBareEntry, cnFinderCli]) {
+    await fs.writeFile(file, "#!/bin/sh\nprintf '1.1.31\\n'\n", { mode: 0o755 });
+  }
+  assert.equal(
+    resolveQoderExecutable(
+      { DIGITAL_EMPLOYEE_QODER_COMMAND: commandBin, PATH: pathBin, HOME: home },
+      "darwin",
+    ),
+    await fs.realpath(commandBin),
+    "DIGITAL_EMPLOYEE_QODER_COMMAND with an absolute path is authoritative",
+  );
+  assert.equal(
+    resolveQoderExecutable(
+      { DIGITAL_EMPLOYEE_QODER_COMMAND: "qoderclicn", PATH: commandOnlyBin, HOME: home },
+      "darwin",
+    ),
+    await fs.realpath(commandBareEntry),
+    "DIGITAL_EMPLOYEE_QODER_COMMAND with a bare command name is looked up on PATH",
+  );
+  assert.equal(
+    resolveQoderExecutable(
+      { DIGITAL_EMPLOYEE_QODER_COMMAND: path.dirname(commandBin), PATH: pathBin, HOME: home },
+      "darwin",
+    ),
+    null,
+    "an invalid DIGITAL_EMPLOYEE_QODER_COMMAND fails closed instead of silently choosing another binary",
+  );
+  const cnOnlyPath = path.join(dir, "path-bin-cn-only");
+  await fs.mkdir(cnOnlyPath, { recursive: true });
+  await fs.writeFile(path.join(cnOnlyPath, "qoderclicn"), "#!/bin/sh\nprintf '1.1.31\\n'\n", { mode: 0o755 });
+  assert.equal(
+    resolveQoderExecutable({ PATH: cnOnlyPath, HOME: home }, "darwin"),
+    await fs.realpath(path.join(cnOnlyPath, "qoderclicn")),
+    "the CN qoderclicn is discovered when the international qodercli is absent",
+  );
+  assert.equal(
+    resolveQoderExecutable({ PATH: pathBin, HOME: home }, "darwin"),
+    await fs.realpath(pathQoderCli),
+    "the international qodercli still wins over qoderclicn when both are installed",
+  );
+  const cnFinderHome = path.join(dir, "cn-only-home");
+  const cnOnlyFinderCli = path.join(cnFinderHome, ".qoder-cn", "bin", "qoderclicn", "qoderclicn");
+  await fs.mkdir(path.dirname(cnOnlyFinderCli), { recursive: true });
+  await fs.writeFile(cnOnlyFinderCli, "#!/bin/sh\nprintf '1.1.31\\n'\n", { mode: 0o755 });
+  assert.equal(
+    resolveQoderExecutable({ PATH: "/usr/bin:/bin", HOME: cnFinderHome }, "darwin"),
+    await fs.realpath(cnOnlyFinderCli),
+    "Finder-like PATH falls back to the known per-user macOS install for the CN edition",
+  );
+
   const finderProbe = probeQoderLocalBinary({ PATH: "/usr/bin:/bin", HOME: home }, 3000, "darwin");
   assert.deepEqual(finderProbe, { installed: true, version: "1.1.31", supported: true });
 });

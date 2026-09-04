@@ -742,7 +742,7 @@ function turnRunQoder(workspaceDir, positionId, input) {
 
     const qoderBin = resolveQoderExecutable(process.env);
     if (qoderBin === null) {
-      fail("turn_engine_unavailable", "cannot resolve an executable Qoder CLI; install qoder/qodercli or set ORG_WORKBENCH_QODER_BIN", true);
+      fail("turn_engine_unavailable", "cannot resolve an executable Qoder CLI; install qoder/qodercli (or qoderclicn for the China edition) or set ORG_WORKBENCH_QODER_BIN / DIGITAL_EMPLOYEE_QODER_COMMAND", true);
       return;
     }
     const requestedPermissionMode = process.env.ORG_WORKBENCH_QODER_PERMISSION_MODE;
@@ -774,7 +774,11 @@ function turnRunQoder(workspaceDir, positionId, input) {
         stdio: ["ignore", "pipe", "pipe"],
       });
     } catch {
-      fail("turn_engine_unavailable", "cannot spawn the resolved Qoder CLI; install qoder/qodercli or check ORG_WORKBENCH_QODER_BIN", true);
+      // Never disclose the resolved absolute path here — an operator-controlled
+      // ORG_WORKBENCH_QODER_BIN pointing at a private location would otherwise
+      // leak out through the turn stream. Basename is enough to spot an edition
+      // mismatch (qodercli vs qoderclicn).
+      fail("turn_engine_unavailable", `cannot spawn the resolved Qoder CLI (${path.basename(qoderBin)}); check ORG_WORKBENCH_QODER_BIN / DIGITAL_EMPLOYEE_QODER_COMMAND`, true);
       return;
     }
 
@@ -816,7 +820,8 @@ function turnRunQoder(workspaceDir, positionId, input) {
             }
           : null;
         if (event.is_error === true || (typeof event.subtype === "string" && event.subtype !== "success")) {
-          fail("qoder.result_error", typeof event.result === "string" ? event.result : stderrTail || "qoder reported an error result", false);
+          const resultText = typeof event.result === "string" ? event.result : stderrTail || "qoder reported an error result";
+          fail("qoder.result_error", `${resultText} (binary: ${path.basename(qoderBin)})`, false);
         } else {
           complete(typeof event.result === "string" ? event.result : "", usage && Object.keys(usage).length > 0 ? usage : null);
         }
@@ -825,7 +830,7 @@ function turnRunQoder(workspaceDir, positionId, input) {
 
     child.on("error", () => fail(
       "turn_engine_unavailable",
-      "cannot spawn the resolved Qoder CLI; install qoder/qodercli or check ORG_WORKBENCH_QODER_BIN",
+      `cannot spawn the resolved Qoder CLI (${path.basename(qoderBin)}); check ORG_WORKBENCH_QODER_BIN / DIGITAL_EMPLOYEE_QODER_COMMAND`,
       true,
     ));
     child.on("close", (code) => {
@@ -833,7 +838,7 @@ function turnRunQoder(workspaceDir, positionId, input) {
       if (code === 0) {
         complete("");
       } else {
-        fail("qoder.exit_nonzero", stderrTail.trim() || `qoder exited with code ${code}`, true);
+        fail("qoder.exit_nonzero", `${stderrTail.trim() || `qoder exited with code ${code}`} (binary: ${path.basename(qoderBin)})`, true);
       }
     });
 }
