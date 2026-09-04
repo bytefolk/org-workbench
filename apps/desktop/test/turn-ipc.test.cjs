@@ -1,0 +1,57 @@
+const assert = require("node:assert/strict");
+const test = require("node:test");
+const { turnHistoryPath, validateCancelRequest, validateCreateTurnRequest } = require("../src/turn-ipc.cjs");
+
+test("turn IPC accepts only the three contracted Hosts and exact request fields", () => {
+  assert.deepEqual(validateCreateTurnRequest({
+    positionId: "repo-owner",
+    input: "ship the release",
+    engine: "qoder",
+  }), {
+    ok: true,
+    request: { positionId: "repo-owner", input: "ship the release", engine: "qoder" },
+  });
+  assert.equal(validateCreateTurnRequest({
+    positionId: "repo-owner",
+    input: "ship",
+    engine: "claude-code",
+  }).ok, true);
+  assert.equal(validateCreateTurnRequest({
+    positionId: "repo-owner",
+    input: "ship",
+    engine: "claude-local",
+  }).ok, true);
+  assert.equal(validateCreateTurnRequest({
+    positionId: "repo-owner",
+    input: "ship",
+    engine: "openai",
+  }).ok, false);
+  assert.equal(validateCreateTurnRequest({
+    positionId: "repo-owner",
+    input: "ship",
+    engine: "qoder",
+    token: "must-never-cross-the-bridge",
+  }).ok, false);
+});
+
+test("turn history IPC constructs only a bounded position query", () => {
+  assert.equal(turnHistoryPath("repo-owner"), "/turns?positionId=repo-owner");
+  assert.equal(turnHistoryPath("7x"), "/turns?positionId=7x");
+  assert.equal(turnHistoryPath("a--b"), null);
+  assert.equal(turnHistoryPath("a-"), null);
+  assert.equal(turnHistoryPath("../../secret"), null);
+  assert.equal(turnHistoryPath(""), null);
+});
+
+test("cancel IPC accepts exactly {positionId} with a bounded position id", () => {
+  assert.deepEqual(validateCancelRequest({ positionId: "repo-owner" }), {
+    ok: true,
+    request: { positionId: "repo-owner" },
+  });
+  assert.equal(validateCancelRequest({}).ok, false);
+  assert.equal(validateCancelRequest({ positionId: "repo-owner", reason: "x" }).ok, false);
+  assert.equal(validateCancelRequest({ positionId: "../../secret" }).ok, false);
+  assert.equal(validateCancelRequest({ positionId: "" }).ok, false);
+  assert.equal(validateCancelRequest(null).ok, false);
+  assert.equal(validateCancelRequest(["repo-owner"]).ok, false);
+});

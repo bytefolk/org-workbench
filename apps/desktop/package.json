@@ -1,0 +1,32 @@
+{
+  "name": "@org-workbench/desktop",
+  "version": "0.1.0",
+  "description": "Electron shell for org-workbench. Spawns the local control plane and renders the org tree via a whitelisted IPC bridge.",
+  "license": "Apache-2.0",
+  "private": true,
+  "main": "src/main.js",
+  "scripts": {
+    "build:renderer": "vite build --config vite.config.ts",
+    "start": "electron ."
+  },
+  "devDependencies": {
+    "@fontsource/inter": "^5.3.0",
+    "@fontsource/jetbrains-mono": "^5.3.0",
+    "@fontsource/space-grotesk": "^5.3.0",
+    "@fullstack-ai-infra/ui": "file:../../../design-system",
+    "@testing-library/jest-dom": "^6.6.0",
+    "@testing-library/react": "^16.2.0",
+    "@types/react": "^18.3.0",
+    "@types/react-dom": "^18.3.0",
+    "@vitejs/plugin-react": "^4.7.0",
+    "electron": "43.4.1",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "vite": "^6.0.0",
+    "vitest": "^3.0.0"
+  },
+  "dependencies": {
+    "antd": "^6.6.1",
+    "react-markdown": "^9.1.0"
+  }
+}

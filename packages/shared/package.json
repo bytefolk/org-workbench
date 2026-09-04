@@ -1,0 +1,35 @@
+{
+  "name": "@org-workbench/shared",
+  "version": "0.0.0",
+  "description": "Contract types for org-workbench. Mirrors digital-employee contracts; the client never invents semantics.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "sideEffects": false,
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./position-id": {
+      "types": "./dist/position-id.d.ts",
+      "import": "./dist/position-id.js",
+      "require": "./position-id.cjs"
+    },
+    "./pending-approval": {
+      "types": "./dist/pending-approval.d.ts",
+      "import": "./dist/pending-approval.js",
+      "require": "./pending-approval.cjs"
+    },
+    "./docs": {
+      "types": "./dist/docs.d.ts",
+      "import": "./dist/docs.js"
+    }
+  },
+  "files": [
+    "dist",
+    "position-id.cjs",
+    "pending-approval.cjs"
+  ]
+}

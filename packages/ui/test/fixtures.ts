@@ -1,0 +1,42 @@
+import type { OrgTreeSnapshot } from "@org-workbench/shared";
+
+/**
+ * Fixture mirrors the engine's org-tree.v1 fixture shape
+ * (tests/apps/fixtures/org-tree-oss-maintainer.json): nested tree, children
+ * sorted by id, budget on every node.
+ */
+export const SNAPSHOT: OrgTreeSnapshot = {
+  schemaVersion: "org-tree.v1",
+  business: "oss-maintainer",
+  owner: "repo-owner",
+  updatedAt: "2026-08-23T00:00:00.000Z",
+  positionCount: 4,
+  depth: 2,
+  tree: [
+    {
+      id: "repo-owner",
+      reportTo: null,
+      budget: { perTask: { tokens: 40000, iterations: 12 }, perDay: { tokens: 400000, iterations: 96 } },
+      children: [
+        {
+          id: "community-operator",
+          reportTo: "repo-owner",
+          budget: { perTask: { tokens: 20000, iterations: 8 }, perDay: { tokens: 200000, iterations: 64 } },
+          children: [],
+        },
+        {
+          id: "issue-researcher",
+          reportTo: "repo-owner",
+          budget: { perTask: { tokens: 20000, iterations: 8 }, perDay: { tokens: 200000, iterations: 64 } },
+          children: [],
+        },
+        {
+          id: "release-engineer",
+          reportTo: "repo-owner",
+          budget: { perTask: { tokens: 20000 }, perDay: { tokens: 200000 } },
+          children: [],
+        },
+      ],
+    },
+  ],
+};

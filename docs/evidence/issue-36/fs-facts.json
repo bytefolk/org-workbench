@@ -1,0 +1,45 @@
+{
+  "recordDirMode": "700",
+  "records": {
+    "be231b64-c043-47b9-8400-97caef7febad": {
+      "dirMode": "700",
+      "recordMode": "600",
+      "keys": [
+        "assetId",
+        "createdAt",
+        "kind",
+        "schemaVersion",
+        "sourceRef",
+        "title"
+      ]
+    },
+    "08f6a918-f0ed-4a12-b55c-42156f5f7daf": {
+      "dirMode": "700",
+      "recordMode": "600",
+      "keys": [
+        "assetId",
+        "createdAt",
+        "kind",
+        "schemaVersion",
+        "sourceRef",
+        "title"
+      ]
+    },
+    "a7bb35b0-b0b4-4a5e-81fb-59f7a35c57e7": {
+      "dirMode": "700",
+      "recordMode": "600",
+      "keys": [
+        "assetId",
+        "createdAt",
+        "docRef",
+        "kind",
+        "schemaVersion",
+        "sourceRef",
+        "title"
+      ]
+    }
+  },
+  "indexMode": "600",
+  "indexVersion": "asset-index.v1alpha1",
+  "indexEntryCount": 3
+}
