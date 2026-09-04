@@ -87,10 +87,11 @@ export function DocsPanel({ positionId, listDocs, readDoc, reloadToken = 0 }: Do
     }
   };
 
+  const sizeFmt = new Intl.NumberFormat(undefined, { maximumFractionDigits: 1 });
   const formatSize = (size: number): string => {
-    if (size < 1024) return `${size} B`;
-    if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`;
-    return `${(size / (1024 * 1024)).toFixed(1)} MB`;
+    if (size < 1024) return `${sizeFmt.format(size)} B`;
+    if (size < 1024 * 1024) return `${sizeFmt.format(size / 1024)} KB`;
+    return `${sizeFmt.format(size / (1024 * 1024))} MB`;
   };
 
   const fileExtension = (path: string): string => {

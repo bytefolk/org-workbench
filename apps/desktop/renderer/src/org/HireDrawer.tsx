@@ -225,29 +225,30 @@ export function HireDrawer({ open, positions, presetReportTo, onClose, onHired }
       {(flow.phase === "draft") && (
         <div className="owb-hire-drawer">
           <div className="owb-form-grid">
-            <label>{t("hire.name")}</label>
-            <OwbInput value={name} maxLength={24} onChange={(e) => setName(e.target.value)} placeholder={t("hire.namePh")} />
-            <label>{t("hire.id")}</label>
-            <OwbInput value={positionId} onChange={(e) => setPositionId(e.target.value)} placeholder={t("hire.idPh")} />
+            <label htmlFor="hire-name">{t("hire.name")}</label>
+            <OwbInput id="hire-name" name="hire-name" autoComplete="off" value={name} maxLength={24} onChange={(e) => setName(e.target.value)} placeholder={t("hire.namePh")} />
+            <label htmlFor="hire-id">{t("hire.id")}</label>
+            <OwbInput id="hire-id" name="hire-id" autoComplete="off" spellCheck={false} value={positionId} onChange={(e) => setPositionId(e.target.value)} placeholder={t("hire.idPh")} />
             {!idValid && positionId !== "" ? <p className="owb-hire-drawer__hint owb-hire-drawer__hint--error">{t("hire.idInvalid")}</p> : null}
-            <label>{t("hire.desc")}</label>
-            <TextArea value={description} maxLength={500} rows={3} onChange={(e) => setDescription(e.target.value)} placeholder={t("hire.descPh")} />
-            <label>{t("hire.reportTo")}</label>
+            <label htmlFor="hire-desc">{t("hire.desc")}</label>
+            <TextArea id="hire-desc" name="hire-desc" value={description} maxLength={500} rows={3} onChange={(e) => setDescription(e.target.value)} placeholder={t("hire.descPh")} />
+            <label htmlFor="hire-report">{t("hire.reportTo")}</label>
             <Select
+              id="hire-report"
               value={reportTo ?? ""}
               onChange={(value: string) => setReportTo(value === "" ? null : value)}
               options={[{ value: "", label: t("hire.ownerRoot") }, ...positions.map((p) => ({ value: p.id, label: t("hire.reportOption", { name: p.name, id: p.id }) }))]}
             />
-            <label>{t("hire.mode")}</label>
-            <Select value={mode} onChange={(value: HireDraft["mode"]) => setMode(value)} options={[{ value: "read_only", label: t("hire.modeReadOnly") }, { value: "approval_required", label: t("hire.modeApproval") }]} />
-            <label>{t("hire.taskTokens")}</label>
-            <OwbInput value={taskTokens} inputMode="numeric" onChange={(e) => setTaskTokens(e.target.value)} placeholder={t("hire.positiveInt")} />
-            <label>{t("hire.taskIters")}</label>
-            <OwbInput value={taskIterations} inputMode="numeric" onChange={(e) => setTaskIterations(e.target.value)} placeholder={t("hire.optional")} />
-            <label>{t("hire.dayTokens")}</label>
-            <OwbInput value={dayTokens} inputMode="numeric" onChange={(e) => setDayTokens(e.target.value)} placeholder={t("hire.positiveInt")} />
-            <label>{t("hire.dayIters")}</label>
-            <OwbInput value={dayIterations} inputMode="numeric" onChange={(e) => setDayIterations(e.target.value)} placeholder={t("hire.optional")} />
+            <label htmlFor="hire-mode">{t("hire.mode")}</label>
+            <Select id="hire-mode" value={mode} onChange={(value: HireDraft["mode"]) => setMode(value)} options={[{ value: "read_only", label: t("hire.modeReadOnly") }, { value: "approval_required", label: t("hire.modeApproval") }]} />
+            <label htmlFor="hire-task-tokens">{t("hire.taskTokens")}</label>
+            <OwbInput id="hire-task-tokens" name="hire-task-tokens" autoComplete="off" value={taskTokens} inputMode="numeric" onChange={(e) => setTaskTokens(e.target.value)} placeholder={t("hire.positiveInt")} />
+            <label htmlFor="hire-task-iters">{t("hire.taskIters")}</label>
+            <OwbInput id="hire-task-iters" name="hire-task-iters" autoComplete="off" value={taskIterations} inputMode="numeric" onChange={(e) => setTaskIterations(e.target.value)} placeholder={t("hire.optional")} />
+            <label htmlFor="hire-day-tokens">{t("hire.dayTokens")}</label>
+            <OwbInput id="hire-day-tokens" name="hire-day-tokens" autoComplete="off" value={dayTokens} inputMode="numeric" onChange={(e) => setDayTokens(e.target.value)} placeholder={t("hire.positiveInt")} />
+            <label htmlFor="hire-day-iters">{t("hire.dayIters")}</label>
+            <OwbInput id="hire-day-iters" name="hire-day-iters" autoComplete="off" value={dayIterations} inputMode="numeric" onChange={(e) => setDayIterations(e.target.value)} placeholder={t("hire.optional")} />
           </div>
           <p className="owb-hire-drawer__hint">{t("hire.hint")}</p>
           <footer className="owb-modal__footer">
