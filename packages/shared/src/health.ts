@@ -1,0 +1,121 @@
+/** Shapes for GET /health and GET /workspace, GET /reports (frozen at v0). */
+
+import type { TurnEngine } from "./turns.js";
+
+export interface TurnHostHealth {
+  /** The Host's local preconditions are present; credential values never leave the server. */
+  configured: boolean;
+  /**
+   * Local preflight only. For the bundled Qoder adapter this means a supported
+   * local binary; for service-token Hosts it also requires the credential env.
+   * It never claims that a remote provider accepted the operator's account.
+   */
+  ready: boolean;
+  /** Actionable, non-sensitive explanation when the Host cannot accept a turn. */
+  nextStep?: string;
+}
+
+export interface HealthResponse {
+  status: "ok";
+  api: "v0";
+  server: {
+    version: string;
+    pid: number;
+  };
+  engine: {
+    /** Command the control plane spawns (pinned digital-employee CLI). */
+    command: string;
+    available: boolean;
+    version?: string;
+    /** Actionable next step when unavailable ("failure still has a path"). */
+    nextStep?: string;
+  };
+  /** Per-Host local preflight. This does not claim that a credential was accepted remotely. */
+  hosts: Record<TurnEngine, TurnHostHealth>;
+  workspace: {
+    open: boolean;
+    path?: string;
+  };
+}
+
+export interface WorkspaceInfoResponse {
+  open: boolean;
+  path?: string;
+  business?: string;
+  owner?: string;
+  version?: { seq: number; updatedAt: string };
+}
+
+export interface WorkspaceOpenRequest {
+  path: string;
+}
+
+import type { OrgRole } from "./org-tree.js";
+
+/** Report-center streams (D2: audits come from engine org-audit.v1). */
+export interface ReportsResponse {
+  schemaVersion: "reports.v1";
+  streams: {
+    escalations: EscalationEntry[];
+    audits: AuditEntry[];
+    evidence: EvidenceEntry[];
+  };
+  budgets: BudgetReport[];
+  page: { cursor: string | null; hasMore: boolean };
+}
+
+export interface ReportUsage {
+  inputTokens: number;
+  outputTokens: number;
+  totalTokens: number;
+}
+
+export interface EvidenceEntry {
+  schemaVersion: "turn-evidence.v1";
+  positionId: string;
+  turnId: string;
+  conversationId: string;
+  engine: TurnEngine;
+  status: "running" | "completed" | "failed" | "indeterminate";
+  createdAt: string;
+  updatedAt: string;
+  envelopeDigest: string;
+  runId?: string;
+  usage: ReportUsage;
+  errorCode?: string;
+}
+
+export interface EscalationEntry {
+  schemaVersion: "turn-escalation.v1";
+  positionId: string;
+  turnId: string;
+  at: string;
+  status: "failed" | "indeterminate";
+  code: string;
+  reportingChain: string[];
+  budgetRelated: boolean;
+}
+
+export interface BudgetReport {
+  positionId: string;
+  declared: OrgRole["budget"];
+  recorded: ReportUsage;
+  latestTurn: ReportUsage | null;
+  /** Exact, non-predictive state: no record, within the declared cap, or exceeded. */
+  state: "unobserved" | "within" | "exceeded";
+}
+
+export interface AuditEntry {
+  schemaVersion: "org-audit.v1";
+  at: string;
+  actor: string;
+  workspace: string;
+  bootstrapped: boolean;
+  changes: {
+    hired: OrgRole[];
+    moved: Array<{ id: string; from: string | null; to: string | null }>;
+    dismissed: OrgRole[];
+    budgetUpdated: string[];
+  };
+  positionCount: number;
+}

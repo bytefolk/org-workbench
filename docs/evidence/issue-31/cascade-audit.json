@@ -1,0 +1,63 @@
+{
+  "transitionRules": [
+    {
+      "selector": "*, ::before, ::after",
+      "origin": "regular",
+      "cssText": "scroll-behavior:auto!important;animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important"
+    },
+    {
+      "selector": ".owb-modal__close, .owb-report-tabs button, .owb-turn__retry, .owb-turn__approval-grant, .owb-turn__approval-deny",
+      "origin": "regular",
+      "cssText": "transition:background-color var(--owb-duration-fast) var(--owb-ease-out),border-color var(--owb-duration-fast) var(--owb-ease-out),color var(--owb-duration-fast) var(--owb-ease-out)"
+    }
+  ],
+  "transitionComputed": [
+    {
+      "name": "transition-behavior",
+      "value": "normal, normal, normal"
+    },
+    {
+      "name": "transition-delay",
+      "value": "0s, 0s, 0s"
+    },
+    {
+      "name": "transition-duration",
+      "value": "1e-05s"
+    },
+    {
+      "name": "transition-property",
+      "value": "background-color, border-color, color"
+    },
+    {
+      "name": "transition-timing-function",
+      "value": "cubic-bezier(0.215, 0.61, 0.355, 1), cubic-bezier(0.215, 0.61, 0.355, 1), cubic-bezier(0.215, 0.61, 0.355, 1)"
+    },
+    {
+      "name": "view-transition-class",
+      "value": "none"
+    },
+    {
+      "name": "view-transition-group",
+      "value": "normal"
+    },
+    {
+      "name": "view-transition-name",
+      "value": "none"
+    },
+    {
+      "name": "view-transition-scope",
+      "value": "none"
+    }
+  ],
+  "newSessInfo": {
+    "cls": "ant-btn css-viwxw0 css-var-r0 ant-btn-default ant-btn-color-default ant-btn-variant-outlined",
+    "height": "34px",
+    "minHeight": "auto",
+    "padding": "0px 10px",
+    "fontSize": "12px",
+    "lineHeight": "13.8px",
+    "borderWidth": "1px",
+    "boxSizing": "border-box",
+    "rect": 34
+  }
+}
