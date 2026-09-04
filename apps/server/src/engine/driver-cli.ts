@@ -333,6 +333,15 @@ function turnEnvironment(engine: TurnEngine, bundledElectronEngine: boolean): No
       if (source[key] !== undefined) environment[key] = source[key];
     }
     if (source.QODER_PERSONAL_ACCESS_TOKEN !== undefined) environment.QODER_PERSONAL_ACCESS_TOKEN = source.QODER_PERSONAL_ACCESS_TOKEN;
+    // #200: symmetric with DIGITAL_EMPLOYEE_CLAUDE_COMMAND below. The
+    // digital-employee CLI honours this override on its `turn run` path
+    // (upstream TURN_ENGINE_QODER_COMMAND_ENV); it names a binary and carries
+    // no credential, so it fits the existing allowlist discipline. Without
+    // this the CN edition is unreachable when an operator pins
+    // ORG_WORKBENCH_DIGITAL_EMPLOYEE_CLI.
+    if (source.DIGITAL_EMPLOYEE_QODER_COMMAND !== undefined) {
+      environment.DIGITAL_EMPLOYEE_QODER_COMMAND = source.DIGITAL_EMPLOYEE_QODER_COMMAND;
+    }
     // These are adapter controls, not provider/runtime variables. They cross
     // only the desktop-owned bundled qoder-engine boundary; an operator CLI
     // must not gain them merely because the selected turn engine is Qoder.

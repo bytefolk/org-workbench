@@ -171,10 +171,10 @@ function isBundledQoderEngine(version: string | undefined): boolean {
 function bundledQoderNextStep(state: QoderLocalBinaryState, engineAvailable: boolean): string | undefined {
   if (!engineAvailable) return "先修复 bundled qoder-engine 的本地启动配置";
   if (state.failure === "timed_out") {
-    return "Qoder CLI 版本探测超时；检查本机进程状态，或用 ORG_WORKBENCH_QODER_BIN 指定可执行的 qoder/qodercli";
+    return "Qoder CLI 版本探测超时；检查本机进程状态，或用 ORG_WORKBENCH_QODER_BIN / DIGITAL_EMPLOYEE_QODER_COMMAND 指定可执行的 qoder/qodercli（国区版：qoderclicn）";
   }
   if (!state.installed || state.failure === "unavailable") {
-    return "安装 Qoder CLI 并确保 qoder 在 PATH 上，或用 ORG_WORKBENCH_QODER_BIN 指定 qoder/qodercli 二进制";
+    return "安装 Qoder CLI 并确保 qoder 在 PATH 上，或用 ORG_WORKBENCH_QODER_BIN / DIGITAL_EMPLOYEE_QODER_COMMAND 指定 qoder/qodercli 二进制（国区版命令名：qoderclicn / qodercn）";
   }
   if (!state.supported) {
     return state.version === null
