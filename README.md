@@ -18,7 +18,7 @@ org-workbench 是 [digital-employee](https://github.com/bytefolk/digital-employe
 - Context 导出接缝：显式 session 的可信 `completed` 回合在终态记录落盘后异步导出为两条 `context-occurrence.v1`；导出状态可跨重启恢复，失败不改变回合结果、也不重跑 Host。当前钉定 provider 为 [`context@f63f57f`](https://github.com/bytefolk/context/commit/f63f57f7b4cb7071309561f0383683017ae79eb2)，只走公共 CLI/stdio adapter，不直连 vault SQLite。
 - 上下文来源视图：岗位卡片现在展示真实的岗位文档、统一网盘 `mem` 和岗位级 `context` 来源；左侧目录树仍是唯一的汇报关系配置入口。Workbench 只负责来源绑定与权限边界，`mem` 继续负责文件/资产/检索，`context` 继续负责带范围的回合上下文与召回，不引入 Obsidian 客户端。当前 `mem` 来源先展示为可接入，待位置级 path grant 契约落地后再绑定，避免把全局网盘误授给单个岗位。
 - 里程碑：D0 骨架 → D1 组织树只读 → D2 拖拽/预算/裁撤恢复闭环 → D3 @岗位对话 → D4 本地上报中心。Qoder 的 bundled adapter 已有单机 E4 证据；委派链、长期 Context 与 Claude live E4 仍不在“已验证”范围。
-- #110 Lane A 已提供 macOS arm64 与 Windows x64 的**未签名、解包 staging**基础和 clean-staging smoke 编排；它只用于原生验证，不是可安装或已发布客户端。当前仓库仍无 tag、GitHub Release、签名安装包或应用内更新。
+- #110 Lane A 已提供 macOS arm64 与 Windows x64 的**未签名、解包 staging**基础和 clean-staging smoke 编排；它只用于原生验证，不是可安装客户端。macOS 免费发布通道现在使用 GitHub Release + 独立 Ed25519 更新签名：应用自动检查并下载 ZIP，用户正常退出时由 detached helper 替换并重新打开应用。它不提供 Apple/Gatekeeper 信任，首次启动仍可能需要手动允许；Developer ID 原生通道保留为后续方案。
 
 ## 快速开始
 
@@ -95,7 +95,7 @@ npm run smoke:package:windows
 
 `smoke:package:macos:behavior` 保留 #111 已合入的另一条边界：它使用本地确定性 Qoder/MCP fixture，验证 Finder 登录 PATH 恢复、renderer/preload、health，并通过 #119 的 durable session 路径创建 session、完成一次 fixture 回合及 session-history readback；session/turn store 的生产 import 会实际加载打包内显式列出的 `stable-read.js`。static/behavior 使用互斥且按 Windows 规则大小写无关的 control family，任何报告文件预留前先检测冲突；两族 controls 都从实际控制面 child env 剥离。两种模式共享 `loadFile`/renderer/window lifecycle fail-closed gate，但报告 schema 和结论仍独立。它不读取外部凭据，不证明真实账号 entitlement，也不能被写成 Lane A static smoke 或发布能力。Windows 没有对应 behavior claim。
 
-唯一打包配置是 `apps/desktop/electron-builder.config.cjs`；原 YAML 骨架已移除，避免两份配置漂移。脚本固定使用 `electron-builder@26.15.3`、原生架构参数和 `--publish never`；macOS 明确不选择产品身份（主 executable 保留上游 linker ad-hoc 状态），Windows 明确 `signExecutable: false`，因此不会消费 CSC 环境去签 staging。`package:macos:unsigned` 与 `package:macos` 保持为兼容入口，并委托 canonical staging 命令。上述 staging 命令只生成解包目录；若需安装包，macOS 使用 `npm run package:dist:macos && npm run verify:dist:macos` 生成并验证 unsigned DMG/ZIP，Windows 使用 `npm run package:dist:windows && npm run verify:dist:windows` 生成并验证 unsigned、per-user NSIS。dist 命令不提供产品/分发签名或公证，不发布 GitHub Release，不实现自动更新，也不证明 Intel Mac 或跨平台运行结果。旧候选及旧集成 SHA 的 E3 不自动适用于当前修复；基于 `main@ff878d8` 的 current-main code head `4f9a983` 已在 macOS arm64 重新通过 focused 71/71、renderer guard 2/2、完整 `npm run check`、含 `stable-read.js` 的 34-entry/189-file 精确核验、static smoke 与独立 durable-session behavior smoke，完整 authority chain 见 [`docs/evidence/issue-110/lane-a/README.md`](docs/evidence/issue-110/lane-a/README.md)。Windows x64 仍需 `windows-latest` 原生运行，不能由本机 macOS 推断。源码开发入口 `npm run dev:desktop` 保持不变。
+唯一打包配置是 `apps/desktop/electron-builder.config.cjs`；原 YAML 骨架已移除，避免两份配置漂移。脚本固定使用 `electron-builder@26.15.3`、原生架构参数和 `--publish never`；默认 macOS staging 明确不选择产品身份（主 executable 保留上游 linker ad-hoc 状态），Windows 明确 `signExecutable: false`，因此不会消费 CSC 环境去签 staging。`package:macos:unsigned` 与 `package:macos` 保持为兼容入口，并委托 canonical staging 命令。本地 `package:dist:macos` 生成 unsigned DMG/ZIP；发布 workflow 额外生成 `latest-mac.json`，用 GitHub Actions Secret `OWB_UPDATE_SIGNING_PRIVATE_KEY` 签名 ZIP 的版本、架构、大小和 SHA-256。客户端内置公钥，只接受签名匹配的 GitHub Release，并在正常退出时自动替换。Gatekeeper 信任仍需 Apple Developer ID；首次启动可能需要“仍要打开”确认。未来若加入 Apple Developer 团队，签名构建会自动切换到 Developer ID 签名、公证、ticket stapling、Gatekeeper 验证和 Squirrel.Mac 原生通道；`OWB_NATIVE_MAC_UPDATES=true` 可用于显式切换。Windows 自动更新继续等待 #136。dist 命令不证明 Intel Mac 或跨平台运行结果。旧候选及旧集成 SHA 的 E3 不自动适用于当前修复；基于 `main@ff878d8` 的 current-main code head `4f9a983` 已在 macOS arm64 重新通过 focused 71/71、renderer guard 2/2、完整 `npm run check`、含 `stable-read.js` 的 34-entry/189-file 精确核验、static smoke 与独立 durable-session behavior smoke，完整 authority chain 见 [`docs/evidence/issue-110/lane-a/README.md`](docs/evidence/issue-110/lane-a/README.md)。Windows x64 仍需 `windows-latest` 原生运行，不能由本机 macOS 推断。源码开发入口 `npm run dev:desktop` 保持不变。
 
 **design-system 依赖说明**：`@fullstack-ai-infra/ui` 目前以开发期 `file:` 链接指向同级 `design-system` 克隆（骨架定稿方案 A：开发期 file: 链接，CI/正式包只认钉版）。链接要求该克隆已 `npm run build:package`（产出 dist，含 `--ui-sidebar-wide` 等 tokens）；设计系统发布 npm 后改钉版依赖。
 
@@ -131,4 +131,3 @@ clean-room（ADR-0004）：代码全原创，竞品仅借形态不搬代码。PR
 ## 许可
 
 Apache-2.0（见 [LICENSE](LICENSE)）。
-

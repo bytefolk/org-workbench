@@ -6,7 +6,9 @@ const path = require("node:path");
 const DESKTOP_RUNTIME_FILES = [
   "package.json",
   "src/main.js",
+  "src/macos-github-updater.cjs",
   "src/macos-login-path.cjs",
+  "src/macos-update-helper.cjs",
   "src/preload.js",
   "src/approval-ipc.cjs",
   "src/assets-ipc.cjs",
@@ -27,6 +29,7 @@ const DESKTOP_RUNTIME_FILES = [
   "src/vendor/electron-updater.cjs",
   "src/session-ipc.cjs",
   "src/turn-ipc.cjs",
+  "src/update-trust.cjs",
   "src/updater.cjs",
   "src/update-ipc.cjs",
   "src/window-ipc.cjs",
