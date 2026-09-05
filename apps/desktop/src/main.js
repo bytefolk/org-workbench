@@ -35,7 +35,7 @@ const {
   startPackagedSmokeLifecycle,
   LAYOUT_MEASURE_SCRIPT,
 } = require("./packaged-smoke.cjs");
-const { startUpdaterService } = require("./updater.cjs");
+const { defaultMacAppPath, startUpdaterService } = require("./updater.cjs");
 const {
   RELEASE_PAGE_URL,
   boundedUpdateResult,
@@ -85,6 +85,7 @@ const {
 const SERVER_ENTRY = path.join(__dirname, "..", "..", "server", "dist", "src", "index.js");
 const READY_TIMEOUT_MS = 15000;
 const READY_PREFIX = "org-workbench-server ready ";
+const UPDATE_CHECK_INTERVAL_MS = 6 * 60 * 60 * 1000;
 
 let controlPlane = null; // { child, port, token }
 let updaterService = null;
@@ -96,6 +97,7 @@ let trustedRendererUrl = null;
 let eventStreamRequest = null;
 let currentSseStatus = "connecting";
 let pendingFallbackNotice = null;
+let updateCheckTimer = null;
 
 function pinnedEngineCommandDefault() {
   const nodePath = process.execPath;
@@ -988,15 +990,39 @@ app.whenReady().then(async () => {
   updaterService = startUpdaterService({
     loadUpdater: () => require("./vendor/electron-updater.cjs").autoUpdater,
     onState: publishUpdateState,
+    currentVersion: app.getVersion(),
+    arch: process.arch,
+    appPath: process.platform === "darwin" ? defaultMacAppPath() : null,
+    execPath: process.execPath,
+    helperPath: path.join(__dirname, "macos-update-helper.cjs"),
+    parentPid: process.pid,
+    quit: () => app.quit(),
   });
   createWindow();
+  // macOS's free channel checks GitHub automatically and downloads only after
+  // the signed manifest has been verified. A verified download is applied on a
+  // normal app exit by the detached helper, so work is not interrupted by a
+  // surprise restart. Windows keeps its existing explicit UI flow.
+  void updaterService.check({ automatic: true });
+  updateCheckTimer = setInterval(() => {
+    void updaterService?.check({ automatic: true });
+  }, UPDATE_CHECK_INTERVAL_MS);
+  updateCheckTimer.unref?.();
 });
 
 app.on("window-all-closed", () => {
   app.quit();
 });
 
+app.on("before-quit", () => {
+  // If a verified macOS package was downloaded in the background, replace the
+  // app as part of this normal quit. The service's installing guard prevents a
+  // manual "Install and restart" click from spawning a second helper.
+  void updaterService?.installOnQuit?.();
+});
+
 app.on("quit", () => {
+  if (updateCheckTimer !== null) clearInterval(updateCheckTimer);
   if (eventStreamRequest) eventStreamRequest.destroy();
   if (controlPlane) controlPlane.child.kill();
 });

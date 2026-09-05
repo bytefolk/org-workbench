@@ -7,6 +7,10 @@
 
 含 PR #3（feat(d1): 组织树只读）与 PR #7（fix(examples)）。
 
+### Fixed
+
+- #135：新增免费 macOS GitHub 自动更新通道：发布 workflow 使用 `OWB_UPDATE_SIGNING_PRIVATE_KEY` 为 ZIP 元数据生成 Ed25519 签名，客户端校验后后台下载，并在正常退出时自动替换、重启；应用本身仍为 unsigned，Gatekeeper/Developer ID 方案保留为后续切换路径。
+
 ### Added
 ### Added
 

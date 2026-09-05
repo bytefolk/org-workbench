@@ -22,6 +22,7 @@ const windowsUnsigned: UpdateStatus = {
   available: true,
   requiresConfirmation: true,
   signed: false,
+  updateVerified: false,
   reason: "this build is unsigned, so a downloaded update could not be verified",
   platform: "win32",
 };
@@ -32,11 +33,12 @@ const macUnavailable: UpdateStatus = {
   available: false,
   requiresConfirmation: false,
   signed: false,
+  updateVerified: false,
   reason: "In-app update needs a Developer ID signed build. Tracked in #135.",
   platform: "darwin",
 };
 
-const windowsSigned: UpdateStatus = { ...windowsUnsigned, signed: true, reason: null };
+const windowsSigned: UpdateStatus = { ...windowsUnsigned, signed: true, updateVerified: true, reason: null };
 
 function result(overrides: Partial<UpdateResult> = {}): UpdateResult {
   return {

@@ -90,6 +90,7 @@ function installBridge(overrides: Partial<OwbBridge> = {}): OwbBridge {
         available: false,
         requiresConfirmation: false,
         signed: false,
+        updateVerified: false,
         reason: "no packaged resources path; this is a source-tree run",
         platform: "linux",
       }),
